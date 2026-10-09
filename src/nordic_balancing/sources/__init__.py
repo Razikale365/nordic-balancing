@@ -3,5 +3,6 @@
 from nordic_balancing.sources.energidataservice import EnergiDataServiceClient
 from nordic_balancing.sources.esett import ESettClient
 from nordic_balancing.sources.fingrid import FingridClient
+from nordic_balancing.sources.svk import SvKClient
 
-__all__ = ["ESettClient", "EnergiDataServiceClient", "FingridClient"]
+__all__ = ["ESettClient", "EnergiDataServiceClient", "FingridClient", "SvKClient"]

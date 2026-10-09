@@ -23,6 +23,7 @@ keywords = [
     "energinet",
     "fingrid",
     "esett",
+    "svenska-kraftnat",
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",

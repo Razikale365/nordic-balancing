@@ -45,6 +45,13 @@ class Direction(IntEnum):
     UP = 1
 
 
+class ReserveProduct(StrEnum):
+    """Reserve capacity market products."""
+
+    MFRR = "mFRR"
+    AFRR = "aFRR"
+
+
 def to_utc(value: datetime, name: str) -> datetime:
     """Return ``value`` in UTC, refusing naive datetimes."""
     if value.tzinfo is None or value.utcoffset() is None:
@@ -74,6 +81,38 @@ class ImbalancePrice:
     afrr_down_vwa_eur: float | None
     mfrr_up_price_eur: float | None
     mfrr_down_price_eur: float | None
+    source: str
+    resolution: timedelta
+    raw: Mapping[str, Any] = field(compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
+            raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
+        object.__setattr__(self, "raw", MappingProxyType(dict(self.raw)))
+
+    @property
+    def end(self) -> datetime:
+        """The exclusive end of the interval."""
+        return self.start + INTERVAL
+
+
+@dataclass(frozen=True, slots=True)
+class ReserveCapacity:
+    """The reserve capacity price and procured volume for one zone and interval.
+
+    Prices are in EUR per MW of capacity per hour; ``volume_mw`` is the procured
+    MW. ``None`` means not published yet OR not provided by this source.
+    ``resolution`` is the interval at which the source published the value; an
+    hourly value can be repeated across four normalised intervals. ``raw``
+    preserves the source record for inspecting fields that are not normalised.
+    """
+
+    start: datetime
+    zone: BiddingZone
+    product: ReserveProduct
+    direction: Direction
+    price_eur_per_mw: float | None
+    volume_mw: float | None
     source: str
     resolution: timedelta
     raw: Mapping[str, Any] = field(compare=False, repr=False)

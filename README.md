@@ -44,13 +44,16 @@ Set `FINGRID_API_KEY` to a free key from https://developer-data.fingrid.fi.
 Use `with FingridClient() as fingrid:` after importing it from `nordic_balancing`.
 Call `fingrid.imbalance_prices(start, end)` for FI prices, or `series(dataset_id, start, end)`.
 
+Svenska kraftnät needs no key.
+Call `SvKClient().capacity_market(ReserveProduct.MFRR, start, end)` for SE1–SE4 capacity prices and volumes.
+
 ## Planned sources
 
 | Source | Data | Access |
 |---|---|---|
 | Energinet — Energi Data Service | DK1/DK2 imbalance prices and components (**available**); mFRR/aFRR datasets | free, no key |
 | Fingrid | FI imbalance prices, mFRR price components and 15-minute series (**available**) | free API key |
-| Svenska kraftnät | SE1–SE4 mFRR capacity and activation | free (CC-BY-4.0) |
+| Svenska kraftnät | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) (**available**) | free (CC-BY-4.0) |
 | eSett | Imbalance prices, all 12 Nordic zones, from 2021-11-01 (**available**) | free, no key |
 | ENTSO-E Transparency Platform | balancing and imbalance series | free token |
 
