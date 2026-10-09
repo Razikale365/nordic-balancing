@@ -104,3 +104,6 @@ uv run pytest -m live      # calls the real APIs; not run by default
 
 MIT — see [LICENSE](LICENSE). Data retrieved through this library remains subject to each
 source's own terms of use.
+
+This is an independent project. It is not affiliated with, endorsed by or supported by
+Energinet, Fingrid, Svenska kraftnät, eSett, ENTSO-E or any other data provider.
