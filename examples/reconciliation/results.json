@@ -1,0 +1,2599 @@
+{
+  "2025-03-10": {
+    "energidataservice vs esett": {
+      "compared": 192,
+      "identical": 130,
+      "counts": {
+        "direction": 62
+      },
+      "divergences": [
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T00:45:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 61.25,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 61.25,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T04:30:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T04:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 6.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 6.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T05:15:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 35.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 35.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T05:30:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 35.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 35.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T05:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 35.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 35.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T06:30:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T07:00:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T07:00:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T07:30:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T07:45:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T08:00:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 128.42,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 128.42,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T08:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 128.42,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 128.42,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T09:00:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 549.72,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 549.72,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T09:15:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 549.72,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 549.72,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T10:15:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 268.2,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 268.2,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T10:30:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 268.2,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 268.2,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T10:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 268.2,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 268.2,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T11:00:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 40.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 40.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T11:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 40.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 40.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T11:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 40.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 40.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T12:00:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 77.36,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 77.36,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T12:15:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 77.36,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 77.36,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T12:30:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 77.36,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 77.36,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T12:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 77.32,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 77.32,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T12:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 77.36,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 77.36,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T13:15:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 83.91,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 83.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T13:15:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 83.96,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 83.96,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T13:30:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 83.91,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 83.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T13:30:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 83.96,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 83.96,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T14:30:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T14:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 38.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T15:30:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 26.15,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 26.15,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T15:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 37.8,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 37.8,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T16:15:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 249.51,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 249.51,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T16:30:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 249.51,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 249.51,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T16:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 249.51,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 249.51,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T17:00:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 42.11,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 42.11,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T17:15:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 42.11,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 42.11,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T17:30:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 42.11,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 42.11,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T17:45:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 42.11,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 42.11,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T18:00:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs NONE",
+          "primary": {
+            "price_eur": 38.27,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 38.27,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T18:00:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs NONE",
+          "primary": {
+            "price_eur": 38.27,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 38.27,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T19:00:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs NONE",
+          "primary": {
+            "price_eur": 158.44,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 158.44,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T19:00:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs NONE",
+          "primary": {
+            "price_eur": 160.4,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 160.4,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T19:15:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 158.44,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 158.44,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T19:30:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 160.4,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 160.4,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T19:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 160.4,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 160.4,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T20:30:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 45.88,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 45.88,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T21:30:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 40.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 40.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T21:30:00+00:00",
+          "kind": "direction",
+          "detail": "UP vs DOWN",
+          "primary": {
+            "price_eur": 45.99,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 45.99,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T21:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 40.0,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 40.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T22:00:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 97.95,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 97.95,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T22:00:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 97.93,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 97.93,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T22:30:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 97.95,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 97.95,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T22:30:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 97.93,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 97.93,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T23:00:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T23:00:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T23:15:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T23:15:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-03-10T23:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-10T23:45:00+00:00",
+          "kind": "direction",
+          "detail": "DOWN vs UP",
+          "primary": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 104.39,
+            "resolution_min": 15
+          }
+        }
+      ]
+    },
+    "fingrid vs esett": {
+      "compared": 96,
+      "identical": 0,
+      "counts": {
+        "resolution": 96
+      },
+      "divergences": [
+        {
+          "zone": "FI",
+          "start": "2025-03-10T00:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -8.55,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -8.55,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T00:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -8.55,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -8.55,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T00:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -8.55,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -8.55,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T00:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -8.55,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -8.55,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T01:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -17.06,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -17.06,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T01:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -17.06,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -17.06,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T01:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -17.06,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -17.06,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T01:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -17.06,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -17.06,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T02:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -9.14,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -9.14,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T02:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -9.14,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -9.14,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T02:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -9.14,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -9.14,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T02:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -9.14,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -9.14,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T03:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -9.25,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -9.25,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T03:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -9.25,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -9.25,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T03:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -9.25,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -9.25,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T03:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -9.25,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -9.25,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T04:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.25,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.25,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T04:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.25,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.25,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T04:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.25,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.25,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T04:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.25,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.25,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T05:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -24.45,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -24.45,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T05:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -24.45,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -24.45,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T05:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -24.45,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -24.45,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T05:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -24.45,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -24.45,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T06:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -1.27,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -1.27,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T06:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -1.27,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -1.27,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T06:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -1.27,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -1.27,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T06:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -1.27,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -1.27,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T07:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -10.57,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -10.57,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T07:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -10.57,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -10.57,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T07:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -10.57,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -10.57,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T07:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -10.57,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -10.57,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T08:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -6.49,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -6.49,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T08:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -6.49,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -6.49,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T08:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -6.49,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -6.49,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T08:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -6.49,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -6.49,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T09:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 227.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 227.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T09:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 227.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 227.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T09:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 227.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 227.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T09:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 227.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 227.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T10:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 195.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 195.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T10:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 195.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 195.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T10:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 195.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 195.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T10:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 195.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 195.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T11:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 26.08,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 26.08,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T11:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 26.08,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 26.08,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T11:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 26.08,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 26.08,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T11:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 26.08,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 26.08,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T12:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 198.12,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 198.12,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T12:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 198.12,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 198.12,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T12:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 198.12,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 198.12,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T12:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 198.12,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 198.12,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T13:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 180.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 180.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T13:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 180.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 180.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T13:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 180.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 180.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T13:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 180.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 180.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T14:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 13.54,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 13.54,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T14:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 13.54,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 13.54,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T14:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 13.54,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 13.54,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T14:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 13.54,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 13.54,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T15:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -8.39,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -8.39,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T15:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -8.39,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -8.39,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T15:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -8.39,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -8.39,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T15:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": -8.39,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": -8.39,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T16:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.62,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.62,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T16:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.62,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.62,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T16:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.62,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.62,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T16:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.62,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.62,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T17:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 20.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 20.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T17:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 20.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 20.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T17:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 20.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 20.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T17:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 20.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 20.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T18:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T18:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T18:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T18:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T19:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T19:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T19:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T19:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 0.91,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 0.91,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T20:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 7.4,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 7.4,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T20:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 7.4,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 7.4,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T20:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 7.4,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 7.4,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T20:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 7.4,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 7.4,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T21:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 233.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 233.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T21:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 233.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 233.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T21:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 233.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 233.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T21:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 233.0,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 233.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T22:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 227.72,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 227.72,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T22:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 227.72,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 227.72,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T22:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 227.72,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 227.72,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T22:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 227.72,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 227.72,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T23:00:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 147.41,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 147.41,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T23:15:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 147.41,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 147.41,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T23:30:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 147.41,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 147.41,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "FI",
+          "start": "2025-03-10T23:45:00+00:00",
+          "kind": "resolution",
+          "detail": "60min vs 15min",
+          "primary": {
+            "price_eur": 147.41,
+            "resolution_min": 60
+          },
+          "reference": {
+            "price_eur": 147.41,
+            "resolution_min": 15
+          }
+        }
+      ]
+    }
+  },
+  "2025-03-19": {
+    "energidataservice vs esett": {
+      "compared": 192,
+      "identical": 190,
+      "counts": {
+        "rounding": 2
+      },
+      "divergences": [
+        {
+          "zone": "DK1",
+          "start": "2025-03-19T07:00:00+00:00",
+          "kind": "rounding",
+          "detail": "281.81 vs 281.8 EUR/MWh",
+          "primary": {
+            "price_eur": 281.81,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 281.8,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-03-19T08:30:00+00:00",
+          "kind": "rounding",
+          "detail": "9.35 vs 9.34 EUR/MWh",
+          "primary": {
+            "price_eur": 9.35,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 9.34,
+            "resolution_min": 15
+          }
+        }
+      ]
+    },
+    "fingrid vs esett": {
+      "compared": 96,
+      "identical": 96,
+      "counts": {},
+      "divergences": []
+    }
+  },
+  "2025-06-02": {
+    "energidataservice vs esett": {
+      "compared": 192,
+      "identical": 188,
+      "counts": {
+        "rounding": 4
+      },
+      "divergences": [
+        {
+          "zone": "DK1",
+          "start": "2025-06-02T06:15:00+00:00",
+          "kind": "rounding",
+          "detail": "17.53 vs 17.52 EUR/MWh",
+          "primary": {
+            "price_eur": 17.53,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 17.52,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-06-02T13:00:00+00:00",
+          "kind": "rounding",
+          "detail": "-13.35 vs -13.34 EUR/MWh",
+          "primary": {
+            "price_eur": -13.35,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": -13.34,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-06-02T13:30:00+00:00",
+          "kind": "rounding",
+          "detail": "-6.45 vs -6.44 EUR/MWh",
+          "primary": {
+            "price_eur": -6.45,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": -6.44,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-06-02T23:15:00+00:00",
+          "kind": "rounding",
+          "detail": "-5.61 vs -5.6 EUR/MWh",
+          "primary": {
+            "price_eur": -5.61,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": -5.6,
+            "resolution_min": 15
+          }
+        }
+      ]
+    },
+    "fingrid vs esett": {
+      "compared": 96,
+      "identical": 96,
+      "counts": {},
+      "divergences": []
+    }
+  },
+  "2025-10-02": {
+    "energidataservice vs esett": {
+      "compared": 192,
+      "identical": 188,
+      "counts": {
+        "rounding": 4
+      },
+      "divergences": [
+        {
+          "zone": "DK1",
+          "start": "2025-10-02T10:30:00+00:00",
+          "kind": "rounding",
+          "detail": "0.07 vs 0.08 EUR/MWh",
+          "primary": {
+            "price_eur": 0.07,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 0.08,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-10-02T11:00:00+00:00",
+          "kind": "rounding",
+          "detail": "-15.75 vs -15.74 EUR/MWh",
+          "primary": {
+            "price_eur": -15.75,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": -15.74,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2025-10-02T18:15:00+00:00",
+          "kind": "rounding",
+          "detail": "6.99 vs 7.0 EUR/MWh",
+          "primary": {
+            "price_eur": 6.99,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 7.0,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2025-10-02T22:00:00+00:00",
+          "kind": "rounding",
+          "detail": "-12.45 vs -12.46 EUR/MWh",
+          "primary": {
+            "price_eur": -12.45,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": -12.46,
+            "resolution_min": 15
+          }
+        }
+      ]
+    },
+    "fingrid vs esett": {
+      "compared": 96,
+      "identical": 96,
+      "counts": {},
+      "divergences": []
+    }
+  },
+  "2026-03-04": {
+    "energidataservice vs esett": {
+      "compared": 192,
+      "identical": 184,
+      "counts": {
+        "rounding": 8
+      },
+      "divergences": [
+        {
+          "zone": "DK1",
+          "start": "2026-03-04T05:00:00+00:00",
+          "kind": "rounding",
+          "detail": "56.77 vs 56.76 EUR/MWh",
+          "primary": {
+            "price_eur": 56.77,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 56.76,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2026-03-04T10:45:00+00:00",
+          "kind": "rounding",
+          "detail": "-9.37 vs -9.36 EUR/MWh",
+          "primary": {
+            "price_eur": -9.37,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": -9.36,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2026-03-04T17:15:00+00:00",
+          "kind": "rounding",
+          "detail": "54.43 vs 54.42 EUR/MWh",
+          "primary": {
+            "price_eur": 54.43,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 54.42,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2026-03-04T18:15:00+00:00",
+          "kind": "rounding",
+          "detail": "340.77 vs 340.76 EUR/MWh",
+          "primary": {
+            "price_eur": 340.77,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 340.76,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2026-03-04T19:15:00+00:00",
+          "kind": "rounding",
+          "detail": "61.05 vs 61.06 EUR/MWh",
+          "primary": {
+            "price_eur": 61.05,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 61.06,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2026-03-04T20:00:00+00:00",
+          "kind": "rounding",
+          "detail": "63.97 vs 63.96 EUR/MWh",
+          "primary": {
+            "price_eur": 63.97,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 63.96,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2026-03-04T22:15:00+00:00",
+          "kind": "rounding",
+          "detail": "57.09 vs 57.08 EUR/MWh",
+          "primary": {
+            "price_eur": 57.09,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 57.08,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK2",
+          "start": "2026-03-04T23:15:00+00:00",
+          "kind": "rounding",
+          "detail": "56.59 vs 56.6 EUR/MWh",
+          "primary": {
+            "price_eur": 56.59,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 56.6,
+            "resolution_min": 15
+          }
+        }
+      ]
+    },
+    "fingrid vs esett": {
+      "compared": 96,
+      "identical": 96,
+      "counts": {},
+      "divergences": []
+    }
+  },
+  "2026-09-15": {
+    "energidataservice vs esett": {
+      "compared": 192,
+      "identical": 190,
+      "counts": {
+        "rounding": 2
+      },
+      "divergences": [
+        {
+          "zone": "DK1",
+          "start": "2026-09-15T19:30:00+00:00",
+          "kind": "rounding",
+          "detail": "4.37 vs 4.38 EUR/MWh",
+          "primary": {
+            "price_eur": 4.37,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 4.38,
+            "resolution_min": 15
+          }
+        },
+        {
+          "zone": "DK1",
+          "start": "2026-09-15T20:15:00+00:00",
+          "kind": "rounding",
+          "detail": "24.16 vs 24.17 EUR/MWh",
+          "primary": {
+            "price_eur": 24.16,
+            "resolution_min": 15
+          },
+          "reference": {
+            "price_eur": 24.17,
+            "resolution_min": 15
+          }
+        }
+      ]
+    },
+    "fingrid vs esett": {
+      "compared": 96,
+      "identical": 96,
+      "counts": {},
+      "divergences": []
+    }
+  }
+}

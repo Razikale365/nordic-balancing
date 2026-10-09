@@ -28,6 +28,10 @@ by the strict `index > _start` mask (decorators.py:141-145) even though the API
 treats `periodEnd` as exclusive. Same server through `nordic_balancing.
 EntsoeClient` (7-day chunks, httpx.MockTransport): **35,520 rows, 0 missing**.
 
+A fix is already proposed upstream: [PR #539](https://github.com/EnergieID/entsoe-py/pull/539)
+(open as of 2026-10-09) changes this mask and adds a regression test. This
+reproduction only confirms the bug on the released 0.8.1; it adds nothing to that fix.
+
 ### 2. Resolution switch 2023-05-21T22:00Z (nordic_quirks.py, live eSett)
 
 `uv run python examples/entsoe_py_comparison/nordic_quirks.py`

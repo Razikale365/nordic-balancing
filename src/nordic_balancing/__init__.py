@@ -12,6 +12,12 @@ from nordic_balancing.models import (
     ReserveCapacity,
     ReserveProduct,
 )
+from nordic_balancing.reconcile import (
+    Divergence,
+    DivergenceKind,
+    ReconciliationReport,
+    reconcile_imbalance_prices,
+)
 from nordic_balancing.sources import (
     EnergiDataServiceClient,
     EntsoeClient,
@@ -27,6 +33,8 @@ __all__ = [
     "INTERVAL",
     "BiddingZone",
     "Direction",
+    "Divergence",
+    "DivergenceKind",
     "ESettClient",
     "EnergiDataServiceClient",
     "EntsoeClient",
@@ -35,10 +43,12 @@ __all__ = [
     "MarketChange",
     "NordicBalancingError",
     "RateLimitError",
+    "ReconciliationReport",
     "ReserveCapacity",
     "ReserveProduct",
     "SourceError",
     "SvKClient",
     "__version__",
     "changes_between",
+    "reconcile_imbalance_prices",
 ]

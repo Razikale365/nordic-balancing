@@ -70,6 +70,9 @@ Every client enforces the same contracts; a violation raises `SourceError`.
 - **C8 Transport.** Network and protocol failures surface as `SourceError`, never as
   raw `httpx` exceptions (after the bounded retries for HTTP 429/503).
 
+`reconcile_imbalance_prices` reports differences between two sources; it never merges
+series or picks a source.
+
 ## Planned sources
 
 | Source | Data | Access |
