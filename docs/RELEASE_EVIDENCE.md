@@ -130,10 +130,20 @@ Not duplicated here.
 - eSett history starts 2021-10-31T23:00Z; nothing earlier exists in this API.
 - Reconciliation classifies differences only; it never merges series or picks
   a source (`reconcile_imbalance_prices`, README).
+- `raw` is a read-only mapping over a deep copy private to each record. Only the
+  top level rejects writes; nested containers are mutable but unshared, so treat
+  them as read-only.
+- Fingrid `series()` has a verified hourly policy only for datasets 319, 244, 106
+  and 369 (per-interval prices/direction). Hourly records from any other dataset
+  raise `SourceError` rather than being repeated, since they may be additive totals.
+- eSett: a price published in only one of the sales/purchase columns is taken as
+  the single price (never observed in ~107k records sampled 2021-11 to 2026-10).
+- Energi Data Service: `DominatingDirection` must be exactly -1, 0 or 1 (observed
+  values in ~16.8k records: only those and null).
 
 ## Test coverage
 
-- Offline suite (default; `addopts` deselects `live`): **347 tests**, all
+- Offline suite (default; `addopts` deselects `live`): **370 tests**, all
   passing on 2026-10-09.
 - Live suite (`uv run pytest -m live`): **10 tests**. Verified 2026-10-09:
   8 passed (EDS 1, eSett 2, Fingrid 3, SvK 2); the 2 ENTSO-E tests skipped —
@@ -142,18 +152,19 @@ Not duplicated here.
 | File | Offline | Live |
 |---|---:|---:|
 | `tests/test_changes.py` | 7 | — |
-| `tests/test_energidataservice.py` | 37 | 1 |
+| `tests/test_energidataservice.py` | 44 | 1 |
 | `tests/test_entsoe.py` | 77 | 2 |
-| `tests/test_esett.py` | 58 | 2 |
-| `tests/test_fingrid.py` | 83 | 3 |
+| `tests/test_esett.py` | 59 | 2 |
+| `tests/test_fingrid.py` | 90 | 3 |
+| `tests/test_models.py` | 5 | — |
 | `tests/test_package.py` | 1 | — |
-| `tests/test_reconcile.py` | 24 | — |
+| `tests/test_reconcile.py` | 27 | — |
 | `tests/test_svk.py` | 60 | 2 |
 
 `uv run pytest --co -q | tail -1`:
 
 ```
-347/357 tests collected (10 deselected) in 0.74s
+370/380 tests collected (10 deselected)
 ```
 
 Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in

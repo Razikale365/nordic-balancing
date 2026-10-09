@@ -194,10 +194,14 @@ def _parse_imbalance(record: object) -> ImbalancePrice:
     purchase = _number(record, "imblPurchasePrice")
     if sales is not None and purchase is not None and sales != purchase:
         raise SourceError(f"{SOURCE}: single-price model violated: sales != purchase")
+    # Single-price model: sales and purchase are the same price by definition, so a
+    # price published in only one column is that price (never observed in ~107k
+    # records, 2021-11 to 2026-10, but it must not be dropped as None).
+    single = sales if sales is not None else purchase
     return ImbalancePrice(
         start=start,
         zone=BiddingZone[area],
-        imbalance_price_eur=sales,
+        imbalance_price_eur=single,
         imbalance_price_dkk=None,
         spot_price_eur=None,
         dominating_direction=_direction(record),

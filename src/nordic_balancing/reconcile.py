@@ -51,7 +51,9 @@ class ReconciliationReport:
     ``zones`` are the zones present in both inputs; ``compared`` is the number
     of (zone, start) keys in the union of both inputs over those zones, and
     ``identical`` is how many of them produced no divergence. Sources are
-    empty strings when an input was empty.
+    empty strings when an input was empty. Zones present in only one input are
+    not compared; they are listed in ``primary_only_zones`` and
+    ``reference_only_zones`` so a coverage gap is never silent.
     """
 
     primary_source: str
@@ -60,6 +62,8 @@ class ReconciliationReport:
     compared: int
     identical: int
     divergences: tuple[Divergence, ...]
+    primary_only_zones: tuple[BiddingZone, ...] = ()
+    reference_only_zones: tuple[BiddingZone, ...] = ()
 
     def counts(self) -> dict[DivergenceKind, int]:
         """Divergence totals per kind."""
@@ -75,7 +79,8 @@ def reconcile_imbalance_prices(
     """Classify every difference between two imbalance price series.
 
     Each input must come from a single ``source`` and must not repeat a
-    (zone, start) key. Only zones present in both inputs are compared.
+    (zone, start) key. Only zones present in both inputs are compared; the others are reported
+    as ``primary_only_zones`` / ``reference_only_zones``.
     ``tolerance_eur`` bounds ROUNDING: a price difference above it is PRICE,
     a non-zero one at or below it is ROUNDING. PRIMARY/REFERENCE names follow
     the argument order. The result describes differences; it never merges the
@@ -90,7 +95,9 @@ def reconcile_imbalance_prices(
         raise ValueError("tolerance_eur must be a finite non-negative number")
     primary_source, primary_records = _index(primary, "primary")
     reference_source, reference_records = _index(reference, "reference")
-    common = {zone for zone, _ in primary_records} & {zone for zone, _ in reference_records}
+    primary_zones = {zone for zone, _ in primary_records}
+    reference_zones = {zone for zone, _ in reference_records}
+    common = primary_zones & reference_zones
     keys = {key for key in (*primary_records, *reference_records) if key[0] in common}
     divergences: list[Divergence] = []
     identical = 0
@@ -114,6 +121,8 @@ def reconcile_imbalance_prices(
         compared=len(keys),
         identical=identical,
         divergences=tuple(divergences),
+        primary_only_zones=tuple(sorted(primary_zones - reference_zones)),
+        reference_only_zones=tuple(sorted(reference_zones - primary_zones)),
     )
 
 

@@ -243,7 +243,18 @@ def test_filters_subinterval_start_and_preserves_exclusive_end_precision() -> No
 def test_allows_one_or_both_single_prices_to_be_missing(override: dict[str, Any]) -> None:
     record = {**PUBLISHED, **override}
     price = client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(START, END)[0]
-    assert price.imbalance_price_eur == record["imblSalesPrice"]
+    # Single-price model: whichever column is published is the price; both null -> None.
+    expected = record["imblSalesPrice"]
+    if expected is None:
+        expected = record["imblPurchasePrice"]
+    assert price.imbalance_price_eur == expected
+
+
+def test_purchase_only_price_is_kept_not_dropped() -> None:
+    record = {**PUBLISHED, "imblSalesPrice": None, "imblPurchasePrice": 33.5}
+    price = client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(START, END)[0]
+    assert price.imbalance_price_eur == 33.5
+    assert price.raw["imblSalesPrice"] is None
 
 
 def test_rejects_sales_purchase_disagreement() -> None:

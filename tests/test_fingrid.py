@@ -624,3 +624,28 @@ def test_live_overlap_hour_uses_the_hourly_value_settled_by_esett() -> None:
         prices = fingrid.imbalance_prices(start, start + timedelta(hours=1))
     assert [p.imbalance_price_eur for p in prices] == [104.0] * 4
     assert any("319_superseded" in p.raw for p in prices)
+
+
+def test_other_datasets_reject_hourly_records() -> None:
+    # Hourly expansion is only defined for the imbalance price/direction datasets;
+    # repeating an hourly value of, e.g., an energy dataset would misstate it.
+    with pytest.raises(SourceError, match="dataset 75 returned 60-minute records"):
+        client(lambda _: page([hour(75, 0, 400)])).series(75, START, END)
+
+
+def test_other_datasets_reject_overlapping_granularities() -> None:
+    rows = [hour(75, 0, 400), row(75, 1, 90)]
+    with pytest.raises(SourceError, match="60-minute records"):
+        client(lambda _: page(rows)).series(75, START, END)
+
+
+def test_other_datasets_keep_15_minute_records() -> None:
+    rows = [row(75, q, value=float(q)) for q in range(4)]
+    values = client(lambda _: page(rows)).series(75, START, END)
+    assert values == [(START + q * INTERVAL, float(q)) for q in range(4)]
+
+
+@pytest.mark.parametrize("dataset", [319, 244, 106, 369])
+def test_imbalance_datasets_keep_their_hourly_policy(dataset: int) -> None:
+    values = client(lambda _: page([hour(dataset, 0, -1)])).series(dataset, START, END)
+    assert values == [(START + q * INTERVAL, -1.0) for q in range(4)]

@@ -215,10 +215,10 @@ def _direction(record: dict[str, Any]) -> Direction | None:
     value = _number(record, "DominatingDirection")
     if value is None:
         return None
-    try:
-        return Direction(int(value))
-    except ValueError as exc:
-        raise SourceError(f"{SOURCE}: unknown DominatingDirection {value!r}") from exc
+    # Exact match: int() would silently truncate a fractional value (0.6 -> 0).
+    if value not in (-1, 0, 1):
+        raise SourceError(f"{SOURCE}: unknown DominatingDirection {value!r}")
+    return Direction(int(value))
 
 
 def _parse_imbalance(record: dict[str, Any]) -> ImbalancePrice:

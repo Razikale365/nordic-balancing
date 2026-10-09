@@ -314,3 +314,20 @@ def test_transport_error_becomes_source_error() -> None:
         EnergiDataServiceClient(
             httpx.Client(transport=httpx.MockTransport(handler))
         ).imbalance_prices(START, END)
+
+
+@pytest.mark.parametrize("value", [0.6, -0.4, 1.9, -1.5])
+def test_rejects_fractional_dominating_direction(value: float) -> None:
+    # int() would silently truncate these to a valid direction.
+    record = {**PUBLISHED, "DominatingDirection": value}
+    with pytest.raises(SourceError, match="unknown DominatingDirection"):
+        client(lambda _: page([record])).imbalance_prices(START, END)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(-1, Direction.DOWN), (0, Direction.NONE), (1.0, Direction.UP)]
+)
+def test_accepts_exact_dominating_directions(value: float, expected: Direction) -> None:
+    record = {**PUBLISHED, "DominatingDirection": value}
+    price = client(lambda _: page([record])).imbalance_prices(START, END)[0]
+    assert price.dominating_direction is expected

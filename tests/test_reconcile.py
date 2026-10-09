@@ -250,3 +250,27 @@ def test_empty_input() -> None:
     assert report.zones == ()
     assert report.compared == 0
     assert report.divergences == ()
+
+
+def test_zones_in_only_one_input_are_reported_not_silently_dropped() -> None:
+    report = reconcile_imbalance_prices(
+        [record("a", zone=BiddingZone.DK1), record("a", zone=BiddingZone.FI)],
+        [record("b", zone=BiddingZone.DK1), record("b", zone=BiddingZone.DK2)],
+    )
+    assert report.zones == (BiddingZone.DK1,)
+    assert report.compared == 1
+    assert report.primary_only_zones == (BiddingZone.FI,)
+    assert report.reference_only_zones == (BiddingZone.DK2,)
+
+
+def test_full_overlap_has_no_coverage_gap() -> None:
+    report = reconcile_imbalance_prices([record("a")], [record("b")])
+    assert report.primary_only_zones == ()
+    assert report.reference_only_zones == ()
+
+
+def test_report_constructs_without_coverage_fields() -> None:
+    # Existing positional construction keeps working (the new fields default to ()).
+    report = ReconciliationReport("a", "b", (BiddingZone.DK1,), 0, 0, ())
+    assert report.primary_only_zones == ()
+    assert report.reference_only_zones == ()

@@ -24,6 +24,13 @@ _HOUR = timedelta(hours=1)
 # instant the hourly record is authoritative (eSett settled on it); after it, the
 # 15-minute record is. A record that loses is kept in ``superseded``, never dropped.
 _QUARTER_PRICING = datetime(2025, 3, 18, 23, tzinfo=UTC)
+# Datasets with a verified hourly policy: imbalance price (319), mFRR up/down price
+# (244, 106) and dominating direction (369). Their values are per-interval prices or
+# states, so an hourly value applies unchanged to each quarter, and the overlap rule
+# above was checked against eSett. Other datasets may hold additive quantities (MWh
+# per hour), where repeating an hourly value would be wrong, so hourly records from
+# them are rejected instead of reshaped.
+_HOURLY_POLICY_DATASETS = frozenset({319, 244, 106, 369})
 
 
 class _AuthenticatedTransport(httpx.BaseTransport):
@@ -124,10 +131,12 @@ class FingridClient:
     ) -> list[tuple[datetime, float | None]]:
         """Return validated values starting in ``[start, end)``, in UTC order.
 
-        Hourly records (published until 2025-03-18) are repeated across their
-        four quarter-hour starts, so the series always has 15-minute steps.
-        Where both granularities cover a quarter, the hourly value is used
-        before 2025-03-18T23:00Z and the 15-minute value from then on.
+        For datasets 319, 244, 106 and 369, hourly records (published until
+        2025-03-18) are repeated across their four quarter-hour starts, and where
+        both granularities cover a quarter the hourly value is used before
+        2025-03-18T23:00Z and the 15-minute value from then on. Any other dataset
+        must publish 15-minute records only; a 60-minute record raises
+        ``SourceError``, because repeating it could misstate an additive quantity.
         """
         return [(r.start, r.value) for r in self._records(dataset_id, start, end)]
 
@@ -243,6 +252,13 @@ class FingridClient:
                 "data changed or truncated"
             )
         records = [_parse_record(row, dataset_id) for row in rows]
+        if dataset_id not in _HOURLY_POLICY_DATASETS and any(
+            record.resolution == _HOUR for record in records
+        ):
+            raise SourceError(
+                f"{SOURCE}: dataset {dataset_id} returned 60-minute records; hourly "
+                "data is only supported for datasets 319, 244, 106 and 369"
+            )
         seen: set[tuple[datetime, timedelta]] = set()
         for record in records:
             if not query_start <= record.start < query_end:

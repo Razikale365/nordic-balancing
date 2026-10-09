@@ -38,11 +38,14 @@ Every query takes timezone-aware datetimes and returns intervals starting in
 `[start, end)`, keyed by their UTC start. A price of `None` means the source has
 not published it yet or does not provide it. `resolution` retains the source's
 publication interval; historical hourly values are expanded into four quarters.
-`raw` is a read-only copy of the source record.
+`raw` is a read-only mapping over a deep copy of the source record, private to
+that record; only its top level rejects writes, so treat nested values as read-only too.
 
 Set `FINGRID_API_KEY` to a free key from https://developer-data.fingrid.fi.
 Use `with FingridClient() as fingrid:` after importing it from `nordic_balancing`.
 Call `fingrid.imbalance_prices(start, end)` for FI prices, or `series(dataset_id, start, end)`.
+`series()` expands hourly records only for datasets 319, 244, 106 and 369; any other
+dataset must be 15-minute, and an hourly record raises `SourceError`.
 
 Svenska kraftnät needs no key.
 Call `SvKClient().capacity_market(ReserveProduct.MFRR, start, end)` for SE1–SE4 capacity prices and volumes.
@@ -71,7 +74,8 @@ Every client enforces the same contracts; a violation raises `SourceError`.
   raw `httpx` exceptions (after the bounded retries for HTTP 429/503).
 
 `reconcile_imbalance_prices` reports differences between two sources; it never merges
-series or picks a source.
+series or picks a source. Zones present in only one input are listed in
+`primary_only_zones` / `reference_only_zones` rather than dropped silently.
 
 See [docs/RELEASE_EVIDENCE.md](docs/RELEASE_EVIDENCE.md) for provider verification
 status, observed API behaviour and known limitations.

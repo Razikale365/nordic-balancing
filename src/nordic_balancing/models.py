@@ -52,6 +52,17 @@ class ReserveProduct(StrEnum):
     AFRR = "aFRR"
 
 
+def _copy_raw(value: Any) -> Any:
+    """Deep-copy a JSON-like value so no nested container is shared."""
+    if isinstance(value, Mapping):
+        return {key: _copy_raw(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_copy_raw(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_copy_raw(item) for item in value)
+    return value
+
+
 def to_utc(value: datetime, name: str) -> datetime:
     """Return ``value`` in UTC, refusing naive datetimes."""
     if value.tzinfo is None or value.utcoffset() is None:
@@ -68,6 +79,9 @@ class ImbalancePrice:
     interval at which the source published the value; an hourly value can be
     repeated across four normalised intervals. ``raw`` preserves the source
     record for inspecting fields that are not normalised.
+    ``raw`` is a read-only mapping over a deep copy made for this record alone:
+    nested containers are never shared with the source or with other records.
+    Only the top level rejects writes; treat nested values as read-only too.
     """
 
     start: datetime
@@ -88,7 +102,7 @@ class ImbalancePrice:
     def __post_init__(self) -> None:
         if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
             raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
-        object.__setattr__(self, "raw", MappingProxyType(dict(self.raw)))
+        object.__setattr__(self, "raw", MappingProxyType(_copy_raw(self.raw)))
 
     @property
     def end(self) -> datetime:
@@ -105,6 +119,9 @@ class ReserveCapacity:
     ``resolution`` is the interval at which the source published the value; an
     hourly value can be repeated across four normalised intervals. ``raw``
     preserves the source record for inspecting fields that are not normalised.
+    ``raw`` is a read-only mapping over a deep copy made for this record alone:
+    nested containers are never shared with the source or with other records.
+    Only the top level rejects writes; treat nested values as read-only too.
     """
 
     start: datetime
@@ -120,7 +137,7 @@ class ReserveCapacity:
     def __post_init__(self) -> None:
         if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
             raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
-        object.__setattr__(self, "raw", MappingProxyType(dict(self.raw)))
+        object.__setattr__(self, "raw", MappingProxyType(_copy_raw(self.raw)))
 
     @property
     def end(self) -> datetime:
