@@ -4,6 +4,7 @@ import traceback
 import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -21,17 +22,24 @@ from nordic_balancing.sources import EntsoeClient as SourceEntsoeClient
 KEY = "test-entsoe-token"
 NS = "urn:iec62325.351:tc57wg16:451-6:balancingdocument:4:0"
 NS_ALT = "urn:iec62325.351:tc57wg16:451-6:balancingdocument:2:1"
+NS_45 = "urn:iec62325.351:tc57wg16:451-6:balancingdocument:4:5"
+NS_30 = "urn:iec62325.351:tc57wg16:451-6:balancingdocument:3:0"
 ACK_NS = "urn:iec62325.351:tc57wg16:451-1:acknowledgementdocument:7:0"
 START = datetime(2026, 1, 15, tzinfo=UTC)
 END = START + timedelta(hours=1)
+FIXTURES = Path(__file__).parent / "fixtures" / "entsoe"
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
+def fixture(name: str) -> bytes:
+    return (FIXTURES / name).read_bytes()
+
+
 def point(position: Any, amount: Any = 21.0, category: str | None = None) -> str:
-    cat = f"<imbalance_price.category>{category}</imbalance_price.category>" if category else ""
+    cat = f"<imbalance_Price.category>{category}</imbalance_Price.category>" if category else ""
     return (
         f"<Point><position>{position}</position>"
-        f"<imbalance_price.amount>{amount}</imbalance_price.amount>{cat}</Point>"
+        f"<imbalance_Price.amount>{amount}</imbalance_Price.amount>{cat}</Point>"
     )
 
 
@@ -133,8 +141,12 @@ def test_parses_quarter_hour_prices_sorted_by_start_and_zone() -> None:
         "start": "2026-01-15T00:00:00Z",
         "resolution": "PT15M",
         "curveType": "A03",
+        "namespace": NS,
         "category": "A04",
+        "categories": [{"category": "A04", "amount": 21.0}],
         "amount": 21.0,
+        "flow_direction": None,
+        "financial_prices": [],
     }
 
 
@@ -380,13 +392,17 @@ def test_expands_hourly_points_and_trims_to_the_window() -> None:
         "start": "2026-01-15T00:00:00Z",
         "resolution": "PT60M",
         "curveType": "A03",
+        "namespace": NS,
         "category": "A05",
+        "categories": [{"category": "A05", "amount": 42.0}],
         "amount": 42.0,
+        "flow_direction": None,
+        "financial_prices": [],
     }
 
 
-@pytest.mark.parametrize("namespace", [NS, NS_ALT])
-def test_ignores_the_namespace_uri(namespace: str) -> None:
+@pytest.mark.parametrize("namespace", [NS, NS_45, NS_30, NS_ALT])
+def test_accepts_any_balancing_document_namespace(namespace: str) -> None:
     body = document(
         series(
             period(
@@ -483,7 +499,33 @@ def test_rejects_conflicting_duplicate_positions() -> None:
                     curve="A02",
                 )
             ),
-            "unknown curveType",
+            "curveType A02 is not supported",
+        ),
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:15Z",
+                        point(1, 21.0),
+                    ),
+                    curve="A05",
+                )
+            ),
+            "curveType A05 is not supported",
+        ),
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:15Z",
+                        point(1, 21.0),
+                    )
+                ),
+                namespace="urn:iec62325.351:tc57wg16:451-1:acknowledgementdocument:7:0",
+            ),
+            "unsupported namespace",
         ),
         (
             document(
@@ -580,7 +622,7 @@ def test_rejects_conflicting_duplicate_positions() -> None:
                     )
                 )
             ),
-            "unparseable imbalance_price.amount",
+            "unparseable imbalance_Price.amount",
         ),
         (
             document(
@@ -828,6 +870,112 @@ def test_context_manager_closes_only_owned_client_and_exports() -> None:
     assert SourceEntsoeClient is EntsoeClient
 
 
+def test_fixture_v45_a01_pt15m_single_price() -> None:
+    prices = client(
+        lambda _: httpx.Response(200, content=fixture("balancing-v4_5-a01-single-price.xml"))
+    ).imbalance_prices(START, END, [BiddingZone.SE3])
+    assert [p.imbalance_price_eur for p in prices] == [21.0, 21.5, 22.0, 22.5]
+    assert [p.start for p in prices] == [START + i * INTERVAL for i in range(4)]
+    assert prices[0].raw == {
+        "zone": "SE3",
+        "start": "2026-01-15T00:00:00Z",
+        "resolution": "PT15M",
+        "curveType": "A01",
+        "namespace": NS_45,
+        "category": "A04",
+        "categories": [{"category": "A04", "amount": 21.0}],
+        "amount": 21.0,
+        "flow_direction": "A01",
+        "financial_prices": [],
+    }
+    assert prices[2].raw["flow_direction"] == "A02"
+
+
+def test_fixture_v30_a03_pt60m_repeats_omitted_positions() -> None:
+    end = START + timedelta(hours=3)
+    prices = client(
+        lambda _: httpx.Response(200, content=fixture("balancing-v3_0-a03-pt60m-omitted.xml"))
+    ).imbalance_prices(START, end, [BiddingZone.FI])
+    assert [p.imbalance_price_eur for p in prices] == [10.5] * 8 + [12.25] * 4
+    assert [p.start for p in prices] == [START + i * INTERVAL for i in range(12)]
+    assert all(p.resolution == timedelta(hours=1) for p in prices)
+    assert prices[0].raw["namespace"] == NS_30
+    assert prices[0].raw["categories"] == [{"category": None, "amount": 10.5}]
+
+
+def test_fixture_v45_equal_dual_categories_collapse() -> None:
+    prices = client(
+        lambda _: httpx.Response(200, content=fixture("balancing-v4_5-dual-category-equal.xml"))
+    ).imbalance_prices(START + timedelta(hours=1), START + timedelta(hours=2), [BiddingZone.SE3])
+    assert [p.imbalance_price_eur for p in prices] == [30.0, 30.5, 31.0, 31.5]
+    assert prices[0].raw["namespace"] == NS_45
+    assert prices[0].raw["category"] == "A04"
+    assert prices[0].raw["categories"] == [
+        {"category": "A04", "amount": 30.0},
+        {"category": "A05", "amount": 30.0},
+    ]
+
+
+def test_fixture_v45_conflicting_dual_categories_raise() -> None:
+    with pytest.raises(SourceError, match="dual imbalance prices are not supported") as caught:
+        client(
+            lambda _: httpx.Response(
+                200, content=fixture("balancing-v4_5-dual-category-conflict.xml")
+            )
+        ).imbalance_prices(START, END, [BiddingZone.DK1])
+    assert "A04" in str(caught.value)
+    assert "A05" in str(caught.value)
+
+
+def test_fixture_v45_financial_price_only_points() -> None:
+    prices = client(
+        lambda _: httpx.Response(200, content=fixture("balancing-v4_5-financial-price-only.xml"))
+    ).imbalance_prices(START + timedelta(hours=2), START + timedelta(hours=3), [BiddingZone.NO1])
+    assert [p.imbalance_price_eur for p in prices] == [None] * 4
+    assert [p.raw["amount"] for p in prices] == [None] * 4
+    assert prices[0].raw["categories"] == [{"category": None, "amount": None}]
+    assert prices[0].raw["financial_prices"] == [
+        {"amount": 51.25, "direction": "A01", "price_descriptor": "A01"},
+        {"amount": -2.5, "direction": "A02", "price_descriptor": "A02"},
+    ]
+    assert prices[2].raw["financial_prices"][1] == {
+        "amount": -2.0,
+        "direction": None,
+        "price_descriptor": None,
+    }
+    assert prices[3].raw["financial_prices"] == [
+        {"amount": 50.5, "direction": None, "price_descriptor": "A03"}
+    ]
+
+
+def test_fixture_acknowledgement_no_matching_data() -> None:
+    prices = client(
+        lambda _: httpx.Response(200, content=fixture("acknowledgement-no-data.xml"))
+    ).imbalance_prices(START, END, [BiddingZone.SE3])
+    assert prices == []
+
+
+def test_fixture_zip_of_two_documents() -> None:
+    prices = client(
+        lambda _: httpx.Response(
+            200,
+            content=fixture("balancing-mixed.zip"),
+            headers={"Content-Type": "application/zip"},
+        )
+    ).imbalance_prices(START, START + timedelta(hours=2), [BiddingZone.SE3])
+    assert [p.imbalance_price_eur for p in prices] == [
+        21.0,
+        21.5,
+        22.0,
+        22.5,
+        30.0,
+        30.5,
+        31.0,
+        31.5,
+    ]
+    assert all(p.raw["namespace"] == NS_45 for p in prices)
+
+
 @pytest.mark.live
 def test_live_one_hour_of_se3_and_fi() -> None:
     if not os.environ.get("ENTSOE_API_KEY"):
@@ -849,3 +997,17 @@ def test_live_one_day_of_dk1() -> None:
         prices = entsoe.imbalance_prices(START, START + timedelta(days=1), [BiddingZone.DK1])
     assert prices
     assert all(p.zone is BiddingZone.DK1 for p in prices)
+
+
+@pytest.mark.parametrize("unit", ["KWH", "MW", ""])
+def test_rejects_a_price_unit_other_than_mwh(unit: str) -> None:
+    body = document(
+        series(period("2026-01-15T00:00Z", "2026-01-15T00:15Z", point(1, 21.0), resolution="PT15M"))
+    ).replace(
+        "<curveType>",
+        f"<price_Measurement_Unit.name>{unit}</price_Measurement_Unit.name><curveType>",
+    )
+    with pytest.raises(SourceError, match=r"price_Measurement_Unit.name"):
+        client(lambda _: httpx.Response(200, content=body.encode())).imbalance_prices(
+            START, START + timedelta(minutes=15), [BiddingZone.SE3]
+        )

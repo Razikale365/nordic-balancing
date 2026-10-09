@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Balancing_MarketDocument xmlns="urn:iec62325.351:tc57wg16:451-6:balancingdocument:4:5">
+  <mRID>doc-v45-fin-0005</mRID>
+  <revisionNumber>1</revisionNumber>
+  <type>A85</type>
+  <process.processType>A16</process.processType>
+  <sender_MarketParticipant.mRID codingScheme="A01">10X1001A1001A450</sender_MarketParticipant.mRID>
+  <sender_MarketParticipant.marketRole.type>A32</sender_MarketParticipant.marketRole.type>
+  <receiver_MarketParticipant.mRID codingScheme="A01">10X1001A1001A450</receiver_MarketParticipant.mRID>
+  <receiver_MarketParticipant.marketRole.type>A33</receiver_MarketParticipant.marketRole.type>
+  <createdDateTime>2026-01-15T12:00:00Z</createdDateTime>
+  <area_Domain.mRID codingScheme="A01">10YNO-1--------2</area_Domain.mRID>
+  <period.timeInterval>
+    <start>2026-01-15T02:00Z</start>
+    <end>2026-01-15T03:00Z</end>
+  </period.timeInterval>
+  <TimeSeries>
+    <mRID>1</mRID>
+    <businessType>A19</businessType>
+    <acquiring_Domain.mRID codingScheme="A01">10YNO-1--------2</acquiring_Domain.mRID>
+    <connecting_Domain.mRID codingScheme="A01">10YNO-1--------2</connecting_Domain.mRID>
+    <currency_Unit.name>EUR</currency_Unit.name>
+    <price_Measurement_Unit.name>MWH</price_Measurement_Unit.name>
+    <curveType>A01</curveType>
+    <Period>
+      <timeInterval>
+        <start>2026-01-15T02:00Z</start>
+        <end>2026-01-15T03:00Z</end>
+      </timeInterval>
+      <resolution>PT15M</resolution>
+      <Point>
+        <position>1</position>
+        <Financial_Price>
+          <amount>51.25</amount>
+          <direction>A01</direction>
+          <priceDescriptor.type>A01</priceDescriptor.type>
+        </Financial_Price>
+        <Financial_Price>
+          <amount>-2.5</amount>
+          <direction>A02</direction>
+          <priceDescriptor.type>A02</priceDescriptor.type>
+        </Financial_Price>
+      </Point>
+      <Point>
+        <position>2</position>
+        <Financial_Price>
+          <amount>52.0</amount>
+          <direction>A01</direction>
+          <priceDescriptor.type>A01</priceDescriptor.type>
+        </Financial_Price>
+        <Financial_Price>
+          <amount>-2.5</amount>
+          <direction>A02</direction>
+          <priceDescriptor.type>A02</priceDescriptor.type>
+        </Financial_Price>
+      </Point>
+      <Point>
+        <position>3</position>
+        <Financial_Price>
+          <amount>50.75</amount>
+          <direction>A01</direction>
+          <priceDescriptor.type>A01</priceDescriptor.type>
+        </Financial_Price>
+        <Financial_Price>
+          <amount>-2.0</amount>
+        </Financial_Price>
+      </Point>
+      <Point>
+        <position>4</position>
+        <Financial_Price>
+          <amount>50.5</amount>
+          <priceDescriptor.type>A03</priceDescriptor.type>
+        </Financial_Price>
+      </Point>
+    </Period>
+  </TimeSeries>
+</Balancing_MarketDocument>

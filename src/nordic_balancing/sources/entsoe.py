@@ -1,6 +1,13 @@
 """ENTSO-E Transparency Platform imbalance prices (document type A85).
 
-The XML structure handled here follows the ENTSO-E API guide and entsoe-py.
+The XML structure handled here was verified against the official IEC
+62325-451-6 balancing document schema, namespace versions 3.0 to 4.5, using
+the XSDs published in ENTSO-E's EDI library (CIM_xsd_package_v2026) and the
+generated models in entsoe-apy. In that schema a ``Point`` requires only
+``position``; ``imbalance_Price.amount``, ``imbalance_Price.category``,
+``flowDirection.direction``, ``Financial_Price`` components and ``Reason`` are
+all optional. ``Financial_Price`` components are preserved in ``raw`` but not
+interpreted: what they contribute to the published price is not verified.
 It has NOT been verified against the live API yet, because no API token is
 available. The parser is deliberately strict: any deviation from these
 assumptions raises ``SourceError`` instead of passing silently.
@@ -12,10 +19,10 @@ import os
 import time
 import zipfile
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from types import TracebackType
-from typing import Self
+from typing import Any, Self
 from xml.etree import ElementTree
 
 import httpx
@@ -51,10 +58,13 @@ _EIC_CODES = {
 @dataclass(frozen=True, slots=True)
 class _Point:
     start: datetime
-    amount: float
-    category: str | None
+    amount: float | None
+    categories: tuple[dict[str, float | str | None], ...]
+    flow_direction: str | None
+    financial_prices: tuple[dict[str, float | str | None], ...]
     resolution: str
     curve_type: str
+    namespace: str
 
 
 class EntsoeClient:
@@ -193,16 +203,43 @@ class EntsoeClient:
                             "start": point.start.isoformat().replace("+00:00", "Z"),
                             "resolution": point.resolution,
                             "curveType": point.curve_type,
-                            "category": point.category,
+                            "namespace": point.namespace,
+                            "category": point.categories[0]["category"],
+                            "categories": [dict(entry) for entry in point.categories],
                             "amount": point.amount,
+                            # flowDirection.direction is kept raw only: its A85
+                            # semantics are not verified, so it must not be
+                            # mapped to dominating_direction.
+                            "flow_direction": point.flow_direction,
+                            "financial_prices": [
+                                dict(component) for component in point.financial_prices
+                            ],
                         },
                     )
                     key = (zone, interval_start)
                     existing = collected.get(key)
                     if existing is None:
                         collected[key] = price
-                    elif existing.imbalance_price_eur != price.imbalance_price_eur:
-                        raise SourceError(f"{SOURCE}: dual imbalance prices are not supported")
+                        continue
+                    if existing.imbalance_price_eur != price.imbalance_price_eur:
+                        found = _category_names(existing.raw["categories"], price.raw["categories"])
+                        raise SourceError(
+                            f"{SOURCE}: dual imbalance prices are not supported "
+                            f"(categories: {found})"
+                        )
+                    merged: dict[str, Any] = dict(existing.raw)
+                    merged["categories"] = [
+                        *existing.raw["categories"],
+                        *price.raw["categories"],
+                    ]
+                    merged["flow_direction"] = _flow_direction(
+                        existing.raw["flow_direction"], price.raw["flow_direction"]
+                    )
+                    merged["financial_prices"] = [
+                        *existing.raw["financial_prices"],
+                        *price.raw["financial_prices"],
+                    ]
+                    collected[key] = replace(existing, raw=merged)
 
 
 def _format(value: datetime) -> str:
@@ -257,10 +294,13 @@ def _points(member: bytes, window_start: datetime, window_end: datetime) -> list
         return []
     if name != "Balancing_MarketDocument":
         raise SourceError(f"{SOURCE}: unknown root element {name!r}")
+    namespace = root.tag[1:].partition("}")[0] if root.tag.startswith("{") else ""
+    if "451-6:balancingdocument" not in namespace:
+        raise SourceError(f"{SOURCE}: unsupported namespace {namespace!r}")
     return [
         point
         for series in _children(root, "TimeSeries")
-        for point in _series_points(series, window_start, window_end)
+        for point in _series_points(series, namespace, window_start, window_end)
     ]
 
 
@@ -279,26 +319,37 @@ def _acknowledgement(root: ElementTree.Element) -> None:
 
 
 def _series_points(
-    series: ElementTree.Element, window_start: datetime, window_end: datetime
+    series: ElementTree.Element,
+    namespace: str,
+    window_start: datetime,
+    window_end: datetime,
 ) -> list[_Point]:
     currency = _child(series, "currency_Unit.name")
     if currency is not None and (currency.text or "").strip() != "EUR":
         raise SourceError(
             f"{SOURCE}: unsupported currency_Unit.name {(currency.text or '').strip()!r}"
         )
+    unit = _child(series, "price_Measurement_Unit.name")
+    if unit is not None and (unit.text or "").strip() != "MWH":
+        raise SourceError(
+            f"{SOURCE}: unsupported price_Measurement_Unit.name {(unit.text or '').strip()!r}"
+        )
     curve_type = _text(series, "curveType")
+    # A02, A04 and A05 have different semantics (instants or variable-size
+    # blocks, not a fixed-resolution series) and must not be guessed.
     if curve_type not in ("A01", "A03"):
-        raise SourceError(f"{SOURCE}: unknown curveType {curve_type!r}")
+        raise SourceError(f"{SOURCE}: curveType {curve_type} is not supported")
     return [
         point
         for period in _children(series, "Period")
-        for point in _period_points(period, curve_type, window_start, window_end)
+        for point in _period_points(period, curve_type, namespace, window_start, window_end)
     ]
 
 
 def _period_points(
     period: ElementTree.Element,
     curve_type: str,
+    namespace: str,
     window_start: datetime,
     window_end: datetime,
 ) -> list[_Point]:
@@ -314,7 +365,7 @@ def _period_points(
         raise SourceError(f"{SOURCE}: Period end is not after its start")
     step = _RESOLUTIONS[resolution]
     count = math.ceil((period_end - period_start) / step)
-    explicit: dict[int, tuple[float, str | None]] = {}
+    explicit: dict[int, _Point] = {}
     for element in _children(period, "Point"):
         position = _position(_text(element, "position"))
         if position > count:
@@ -324,19 +375,43 @@ def _period_points(
             raise SourceError(f"{SOURCE}: point is not on a 15-minute boundary")
         if not window_start <= start < window_end:
             raise SourceError(f"{SOURCE}: point outside requested window")
-        amount = _amount(_text(element, "imbalance_price.amount"))
-        category_element = _child(element, "imbalance_price.category")
-        category = (
-            (category_element.text or "").strip() or None if category_element is not None else None
+        amount_element = _child(element, "imbalance_Price.amount")
+        amount = (
+            _amount((amount_element.text or "").strip(), "imbalance_Price.amount")
+            if amount_element is not None
+            else None
+        )
+        record = _Point(
+            start=start,
+            amount=amount,
+            categories=(
+                {"category": _code(element, "imbalance_Price.category"), "amount": amount},
+            ),
+            flow_direction=_code(element, "flowDirection.direction"),
+            financial_prices=tuple(
+                _financial_price(component) for component in _children(element, "Financial_Price")
+            ),
+            resolution=resolution,
+            curve_type=curve_type,
+            namespace=namespace,
         )
         existing = explicit.get(position)
-        if existing is not None:
-            if existing[0] != amount:
-                raise SourceError(f"{SOURCE}: dual imbalance prices are not supported")
-        else:
-            explicit[position] = (amount, category)
+        if existing is None:
+            explicit[position] = record
+            continue
+        if existing.amount != record.amount:
+            raise SourceError(
+                f"{SOURCE}: dual imbalance prices are not supported "
+                f"(categories: {_category_names(existing.categories, record.categories)})"
+            )
+        explicit[position] = replace(
+            existing,
+            categories=existing.categories + record.categories,
+            flow_direction=_flow_direction(existing.flow_direction, record.flow_direction),
+            financial_prices=existing.financial_prices + record.financial_prices,
+        )
     points: list[_Point] = []
-    previous: tuple[float, str | None] | None = None
+    previous: _Point | None = None
     for index in range(1, count + 1):
         current = explicit.get(index)
         if current is None:
@@ -346,8 +421,36 @@ def _period_points(
         else:
             previous = current
         start = period_start + (index - 1) * step
-        points.append(_Point(start, current[0], current[1], resolution, curve_type))
+        points.append(replace(current, start=start))
     return points
+
+
+def _code(parent: ElementTree.Element, name: str) -> str | None:
+    element = _child(parent, name)
+    if element is None:
+        return None
+    return (element.text or "").strip() or None
+
+
+def _financial_price(element: ElementTree.Element) -> dict[str, float | str | None]:
+    return {
+        "amount": _amount(_text(element, "amount"), "Financial_Price.amount"),
+        "direction": _code(element, "direction"),
+        "price_descriptor": _code(element, "priceDescriptor.type"),
+    }
+
+
+def _flow_direction(first: str | None, second: str | None) -> str | None:
+    if first is not None and second is not None and first != second:
+        raise SourceError(f"{SOURCE}: conflicting flowDirection.direction {first!r} and {second!r}")
+    return first if first is not None else second
+
+
+def _category_names(*groups: Iterable[dict[str, Any]]) -> str:
+    found = sorted(
+        {entry["category"] for group in groups for entry in group if entry["category"] is not None}
+    )
+    return ", ".join(found) if found else "none"
 
 
 def _position(text: str) -> int:
@@ -360,13 +463,13 @@ def _position(text: str) -> int:
     return position
 
 
-def _amount(text: str) -> float:
+def _amount(text: str, name: str) -> float:
     try:
         amount = float(text)
     except ValueError as exc:
-        raise SourceError(f"{SOURCE}: unparseable imbalance_price.amount {text!r}") from exc
+        raise SourceError(f"{SOURCE}: unparseable {name} {text!r}") from exc
     if not math.isfinite(amount):
-        raise SourceError(f"{SOURCE}: imbalance_price.amount is not finite: {text!r}")
+        raise SourceError(f"{SOURCE}: {name} is not finite: {text!r}")
     return amount
 
 

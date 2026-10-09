@@ -48,8 +48,8 @@ def a85_zip(start: datetime, end: datetime) -> bytes:
         position += 1
         points.append(
             f"<Point><position>{position}</position>"
-            f"<imbalance_price.amount>{price_at(cursor)}</imbalance_price.amount>"
-            f"<imbalance_price.category>A04</imbalance_price.category></Point>"
+            f"<imbalance_Price.amount>{price_at(cursor)}</imbalance_Price.amount>"
+            f"<imbalance_Price.category>A04</imbalance_Price.category></Point>"
         )
         cursor += QUARTER
     fmt = "%Y-%m-%dT%H:%MZ"

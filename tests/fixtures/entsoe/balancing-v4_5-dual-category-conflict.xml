@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Balancing_MarketDocument xmlns="urn:iec62325.351:tc57wg16:451-6:balancingdocument:4:5">
+  <mRID>doc-v45-dual-conflict-4</mRID>
+  <revisionNumber>1</revisionNumber>
+  <type>A85</type>
+  <process.processType>A16</process.processType>
+  <sender_MarketParticipant.mRID codingScheme="A01">10X1001A1001A450</sender_MarketParticipant.mRID>
+  <sender_MarketParticipant.marketRole.type>A32</sender_MarketParticipant.marketRole.type>
+  <receiver_MarketParticipant.mRID codingScheme="A01">10X1001A1001A450</receiver_MarketParticipant.mRID>
+  <receiver_MarketParticipant.marketRole.type>A33</receiver_MarketParticipant.marketRole.type>
+  <createdDateTime>2026-01-15T12:00:00Z</createdDateTime>
+  <area_Domain.mRID codingScheme="A01">10YDK-1--------W</area_Domain.mRID>
+  <period.timeInterval>
+    <start>2026-01-15T00:00Z</start>
+    <end>2026-01-15T01:00Z</end>
+  </period.timeInterval>
+  <TimeSeries>
+    <mRID>1</mRID>
+    <businessType>A19</businessType>
+    <acquiring_Domain.mRID codingScheme="A01">10YDK-1--------W</acquiring_Domain.mRID>
+    <connecting_Domain.mRID codingScheme="A01">10YDK-1--------W</connecting_Domain.mRID>
+    <currency_Unit.name>EUR</currency_Unit.name>
+    <price_Measurement_Unit.name>MWH</price_Measurement_Unit.name>
+    <curveType>A01</curveType>
+    <Period>
+      <timeInterval>
+        <start>2026-01-15T00:00Z</start>
+        <end>2026-01-15T01:00Z</end>
+      </timeInterval>
+      <resolution>PT15M</resolution>
+      <Point>
+        <position>1</position>
+        <imbalance_Price.amount>40.0</imbalance_Price.amount>
+        <imbalance_Price.category>A04</imbalance_Price.category>
+      </Point>
+      <Point>
+        <position>2</position>
+        <imbalance_Price.amount>40.0</imbalance_Price.amount>
+        <imbalance_Price.category>A04</imbalance_Price.category>
+      </Point>
+      <Point>
+        <position>3</position>
+        <imbalance_Price.amount>40.0</imbalance_Price.amount>
+        <imbalance_Price.category>A04</imbalance_Price.category>
+      </Point>
+      <Point>
+        <position>4</position>
+        <imbalance_Price.amount>40.0</imbalance_Price.amount>
+        <imbalance_Price.category>A04</imbalance_Price.category>
+      </Point>
+    </Period>
+  </TimeSeries>
+  <TimeSeries>
+    <mRID>2</mRID>
+    <businessType>A19</businessType>
+    <acquiring_Domain.mRID codingScheme="A01">10YDK-1--------W</acquiring_Domain.mRID>
+    <connecting_Domain.mRID codingScheme="A01">10YDK-1--------W</connecting_Domain.mRID>
+    <currency_Unit.name>EUR</currency_Unit.name>
+    <price_Measurement_Unit.name>MWH</price_Measurement_Unit.name>
+    <curveType>A01</curveType>
+    <Period>
+      <timeInterval>
+        <start>2026-01-15T00:00Z</start>
+        <end>2026-01-15T01:00Z</end>
+      </timeInterval>
+      <resolution>PT15M</resolution>
+      <Point>
+        <position>1</position>
+        <imbalance_Price.amount>45.0</imbalance_Price.amount>
+        <imbalance_Price.category>A05</imbalance_Price.category>
+      </Point>
+      <Point>
+        <position>2</position>
+        <imbalance_Price.amount>45.0</imbalance_Price.amount>
+        <imbalance_Price.category>A05</imbalance_Price.category>
+      </Point>
+      <Point>
+        <position>3</position>
+        <imbalance_Price.amount>45.0</imbalance_Price.amount>
+        <imbalance_Price.category>A05</imbalance_Price.category>
+      </Point>
+      <Point>
+        <position>4</position>
+        <imbalance_Price.amount>45.0</imbalance_Price.amount>
+        <imbalance_Price.category>A05</imbalance_Price.category>
+      </Point>
+    </Period>
+  </TimeSeries>
+</Balancing_MarketDocument>
