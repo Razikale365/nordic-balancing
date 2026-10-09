@@ -14,6 +14,7 @@ from nordic_balancing.models import (
 )
 from nordic_balancing.sources import (
     EnergiDataServiceClient,
+    EntsoeClient,
     ESettClient,
     FingridClient,
     SvKClient,
@@ -28,6 +29,7 @@ __all__ = [
     "Direction",
     "ESettClient",
     "EnergiDataServiceClient",
+    "EntsoeClient",
     "FingridClient",
     "ImbalancePrice",
     "MarketChange",

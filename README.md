@@ -55,7 +55,7 @@ Call `SvKClient().capacity_market(ReserveProduct.MFRR, start, end)` for SE1–SE
 | Fingrid | FI imbalance prices, mFRR price components and 15-minute series (**available**) | free API key |
 | Svenska kraftnät | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) (**available**) | free (CC-BY-4.0) |
 | eSett | Imbalance prices, all 12 Nordic zones, from 2021-11-01 (**available**) | free, no key |
-| ENTSO-E Transparency Platform | balancing and imbalance series | free token |
+| ENTSO-E Transparency Platform | Imbalance prices (A85), all 12 Nordic zones (**available, not yet live-verified**) | free token (`ENTSOE_API_KEY`) |
 
 Out of scope: generic day-ahead price clients and mFRR bid submission — other projects
 already cover those.
