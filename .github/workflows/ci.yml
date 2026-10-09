@@ -24,3 +24,9 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy
       - run: uv run pytest
+      - run: uv build
+      - name: Smoke-test the built wheel in a clean environment
+        run: |
+          uv venv /tmp/smoke --python ${{ matrix.python-version }}
+          uv pip install --python /tmp/smoke --prerelease=allow dist/*.whl
+          /tmp/smoke/bin/python -c "import nordic_balancing as n; print(n.__version__, len(n.__all__))"

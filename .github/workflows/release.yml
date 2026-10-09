@@ -34,6 +34,11 @@ jobs:
       - run: uv run pytest
       - run: uv build
       - run: uvx twine check dist/*
+      - name: Smoke-test the built wheel in a clean environment
+        run: |
+          uv venv /tmp/smoke --python 3.12
+          uv pip install --python /tmp/smoke --prerelease=allow dist/*.whl
+          /tmp/smoke/bin/python -c "import nordic_balancing as n; print(n.__version__, len(n.__all__))"
       - uses: actions/upload-artifact@v4
         with:
           name: dist
