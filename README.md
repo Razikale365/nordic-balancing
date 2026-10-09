@@ -73,6 +73,9 @@ Every client enforces the same contracts; a violation raises `SourceError`.
 `reconcile_imbalance_prices` reports differences between two sources; it never merges
 series or picks a source.
 
+See [docs/RELEASE_EVIDENCE.md](docs/RELEASE_EVIDENCE.md) for provider verification
+status, observed API behaviour and known limitations.
+
 ## Planned sources
 
 | Source | Data | Access |
