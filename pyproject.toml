@@ -1,6 +1,6 @@
 [project]
 name = "nordic-balancing"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Python client for Nordic electricity balancing and imbalance data (Energinet, Fingrid, Svenska kraftnät, eSett, ENTSO-E), normalised to 15-minute UTC intervals."
 readme = "README.md"
 license = "MIT"
