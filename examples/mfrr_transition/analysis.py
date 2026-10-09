@@ -104,7 +104,8 @@ def plot(hourly: dict[tuple[str, datetime], tuple[bool, float]], zones: list[str
         axis.grid(alpha=0.3)
     ax_share.set_ylim(-0.02, 1.02)
     ax_share.set_title(
-        "Imbalance prices turned quarter-hourly on 2025-03-19 (dashed), not at EAM go-live (dotted)"
+        "Quarter-hour imbalance prices start to differ on 2025-03-19 (dashed); "
+        "EAM go-live 2025-03-04 (dotted)"
     )
     ax_share.legend(ncol=6, fontsize=8, loc="upper right")
     ax_range.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
