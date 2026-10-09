@@ -21,11 +21,14 @@ in UTC on 15-minute intervals and a dated record of resolution and price-formula
 ```python
 from datetime import UTC, datetime, timedelta
 
-from nordic_balancing import BiddingZone, EnergiDataServiceClient
+from nordic_balancing import BiddingZone, ESettClient, EnergiDataServiceClient
 
 start = datetime(2026, 1, 15, tzinfo=UTC)
 with EnergiDataServiceClient() as eds:
     prices = eds.imbalance_prices(start, start + timedelta(hours=1), [BiddingZone.DK1])
+
+with ESettClient() as esett:
+    nordic_prices = esett.imbalance_prices(start, start + timedelta(hours=1))  # all 12 zones
 
 for p in prices:
     print(p.start, p.zone, p.imbalance_price_eur, p.dominating_direction)
@@ -33,7 +36,9 @@ for p in prices:
 
 Every query takes timezone-aware datetimes and returns intervals starting in
 `[start, end)`, keyed by their UTC start. A price of `None` means the source has
-not published it yet.
+not published it yet or does not provide it. `resolution` retains the source's
+publication interval; historical hourly values are expanded into four quarters.
+`raw` is a read-only copy of the source record.
 
 ## Planned sources
 
@@ -42,7 +47,7 @@ not published it yet.
 | Energinet — Energi Data Service | DK1/DK2 imbalance prices and components (**available**); mFRR/aFRR datasets | free, no key |
 | Fingrid | FI imbalance and mFRR prices and bids | free API key |
 | Svenska kraftnät | SE1–SE4 mFRR capacity and activation | free (CC-BY-4.0) |
-| eSett | Nordic imbalance settlement | free |
+| eSett | Imbalance prices, all 12 Nordic zones, from 2021-11-01 (**available**) | free, no key |
 | ENTSO-E Transparency Platform | balancing and imbalance series | free token |
 
 Out of scope: generic day-ahead price clients and mFRR bid submission — other projects

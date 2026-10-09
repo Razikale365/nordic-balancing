@@ -19,7 +19,8 @@ from typing import Any, Self
 
 import httpx
 
-from nordic_balancing.errors import RateLimitError, SourceError
+from nordic_balancing._http import get_json
+from nordic_balancing.errors import SourceError
 from nordic_balancing.models import (
     INTERVAL,
     BiddingZone,
@@ -31,8 +32,7 @@ from nordic_balancing.models import (
 SOURCE = "energidataservice"
 BASE_URL = "https://api.energidataservice.dk"
 PAGE_SIZE = 10_000
-_RETRY_STATUSES = frozenset({429, 503})
-_DEFAULT_RETRY_AFTER = 10.0
+_DK = frozenset({BiddingZone.DK1, BiddingZone.DK2})
 
 _IMBALANCE_COLUMNS = (
     "TimeUTC",
@@ -101,7 +101,10 @@ class EnergiDataServiceClient:
         end_utc = to_utc(end, "end")
         if end_utc <= start_utc:
             raise ValueError("end must be after start")
-        zone_list = sorted(set(zones))
+        requested = list(zones)
+        if any(not isinstance(z, BiddingZone) or z not in _DK for z in requested):
+            raise ValueError("zones must contain only DK1 and DK2 BiddingZone values")
+        zone_list = sorted(set(requested))
         if not zone_list:
             raise ValueError("zones must not be empty")
 
@@ -134,23 +137,15 @@ class EnergiDataServiceClient:
                 return
 
     def _get(self, path: str, params: dict[str, str]) -> dict[str, Any]:
-        url = f"{self._base_url}{path}"
-        for attempt in range(self._max_retries + 1):
-            response = self._http.get(url, params=params)
-            if response.status_code not in _RETRY_STATUSES:
-                break
-            retry_after = _retry_after(response)
-            if attempt == self._max_retries:
-                raise RateLimitError(SOURCE, retry_after)
-            self._sleep(retry_after if retry_after is not None else _DEFAULT_RETRY_AFTER)
-        if response.is_error:
-            raise SourceError(
-                f"{SOURCE}: HTTP {response.status_code} for {path}: {response.text[:200]}"
-            )
-        try:
-            body = response.json()
-        except ValueError as exc:
-            raise SourceError(f"{SOURCE}: response for {path} is not JSON") from exc
+        body = get_json(
+            self._http,
+            self._base_url,
+            path,
+            params,
+            source=SOURCE,
+            max_retries=self._max_retries,
+            sleep=self._sleep,
+        )
         if not isinstance(body, dict):
             raise SourceError(f"{SOURCE}: response for {path} is not a JSON object")
         return body
@@ -159,16 +154,6 @@ class EnergiDataServiceClient:
 def _format(value: datetime) -> str:
     # The API accepts minute precision; seconds would be rejected.
     return value.strftime("%Y-%m-%dT%H:%M")
-
-
-def _retry_after(response: httpx.Response) -> float | None:
-    header = response.headers.get("Retry-After")
-    if header is None:
-        return None
-    try:
-        return max(float(header), 0.0)
-    except ValueError:
-        return None
 
 
 def _parse_time(value: object) -> datetime:
@@ -208,7 +193,7 @@ def _direction(record: dict[str, Any]) -> Direction | None:
 
 def _parse_imbalance(record: dict[str, Any]) -> ImbalancePrice:
     area = record.get("PriceArea")
-    if not isinstance(area, str) or area not in BiddingZone.__members__:
+    if not isinstance(area, str) or area not in _DK:
         raise SourceError(f"{SOURCE}: unknown PriceArea {area!r}")
     zone = BiddingZone[area]
     return ImbalancePrice(
@@ -221,7 +206,9 @@ def _parse_imbalance(record: dict[str, Any]) -> ImbalancePrice:
         satisfied_demand_mw=_number(record, "SatisfiedDemand"),
         afrr_up_vwa_eur=_number(record, "aFRRVWAUpEUR"),
         afrr_down_vwa_eur=_number(record, "aFRRVWADownEUR"),
-        mfrr_marginal_up_eur=_number(record, "mFRRMarginalPriceUpEUR"),
-        mfrr_marginal_down_eur=_number(record, "mFRRMarginalPriceDownEUR"),
+        mfrr_up_price_eur=_number(record, "mFRRMarginalPriceUpEUR"),
+        mfrr_down_price_eur=_number(record, "mFRRMarginalPriceDownEUR"),
         source=SOURCE,
+        resolution=INTERVAL,
+        raw=record,
     )

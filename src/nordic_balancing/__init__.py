@@ -5,7 +5,7 @@ from importlib.metadata import version
 from nordic_balancing.changes import CHANGES, MarketChange, changes_between
 from nordic_balancing.errors import NordicBalancingError, RateLimitError, SourceError
 from nordic_balancing.models import INTERVAL, BiddingZone, Direction, ImbalancePrice
-from nordic_balancing.sources import EnergiDataServiceClient
+from nordic_balancing.sources import EnergiDataServiceClient, ESettClient
 
 __version__ = version("nordic-balancing")
 
@@ -14,6 +14,7 @@ __all__ = [
     "INTERVAL",
     "BiddingZone",
     "Direction",
+    "ESettClient",
     "EnergiDataServiceClient",
     "ImbalancePrice",
     "MarketChange",

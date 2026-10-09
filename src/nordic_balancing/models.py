@@ -5,9 +5,12 @@ Every interval is identified by its start instant as a timezone-aware UTC
 settlement period.
 """
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import IntEnum, StrEnum
+from types import MappingProxyType
+from typing import Any
 
 INTERVAL = timedelta(minutes=15)
 
@@ -17,6 +20,16 @@ class BiddingZone(StrEnum):
 
     DK1 = "DK1"
     DK2 = "DK2"
+    FI = "FI"
+    NO1 = "NO1"
+    NO2 = "NO2"
+    NO3 = "NO3"
+    NO4 = "NO4"
+    NO5 = "NO5"
+    SE1 = "SE1"
+    SE2 = "SE2"
+    SE3 = "SE3"
+    SE4 = "SE4"
 
 
 class Direction(IntEnum):
@@ -44,8 +57,10 @@ class ImbalancePrice:
     """The imbalance price and its components for one zone and one interval.
 
     Prices are in EUR/MWh unless the field name says otherwise. ``None`` means
-    the source has not published the value (yet) — recent intervals are often
-    published before the final imbalance price is known.
+    not published yet OR not provided by this source. ``resolution`` is the
+    interval at which the source published the value; an hourly value can be
+    repeated across four normalised intervals. ``raw`` preserves the source
+    record for inspecting fields that are not normalised.
     """
 
     start: datetime
@@ -57,13 +72,16 @@ class ImbalancePrice:
     satisfied_demand_mw: float | None
     afrr_up_vwa_eur: float | None
     afrr_down_vwa_eur: float | None
-    mfrr_marginal_up_eur: float | None
-    mfrr_marginal_down_eur: float | None
+    mfrr_up_price_eur: float | None
+    mfrr_down_price_eur: float | None
     source: str
+    resolution: timedelta
+    raw: Mapping[str, Any] = field(compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
             raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
+        object.__setattr__(self, "raw", MappingProxyType(dict(self.raw)))
 
     @property
     def end(self) -> datetime:

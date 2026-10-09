@@ -197,3 +197,22 @@ def test_live_one_hour_of_dk_imbalance_prices() -> None:
     assert prices[0].start == start
     assert {p.zone for p in prices} == {BiddingZone.DK1, BiddingZone.DK2}
     assert all(p.imbalance_price_eur is not None for p in prices)
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.FI, BiddingZone.NO1, BiddingZone.SE3])
+def test_rejects_non_danish_zone_arguments(zone: BiddingZone) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        pytest.fail("non-Danish zones must not send an HTTP request")
+
+    with pytest.raises(ValueError, match="only DK1 and DK2"):
+        client(handler).imbalance_prices(START, END, [zone])
+
+
+def test_preserves_resolution_raw_and_renamed_mfrr_fields() -> None:
+    price = client(lambda _: page([PUBLISHED])).imbalance_prices(START, END)[0]
+    assert price.resolution == timedelta(minutes=15)
+    assert price.raw == PUBLISHED
+    assert price.mfrr_up_price_eur == 79.27
+    assert price.mfrr_down_price_eur == 40.14
+    with pytest.raises(TypeError):
+        price.raw["PriceArea"] = "DK1"  # type: ignore[index]

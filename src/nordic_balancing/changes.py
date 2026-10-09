@@ -4,9 +4,9 @@ The same series can mean something different before and after a market
 design change. Check :func:`changes_between` before comparing or training on
 data that spans one of these dates.
 
-Each entry cites the source that announced it. ``effective`` is the first
-instant (UTC) the new rule applies; for changes published as a Danish delivery
-day, that is midnight Danish time on that day.
+Each entry cites an announcement or the source where the change was observed.
+``effective`` is the first instant (UTC) the new rule applies; for changes
+published as a Danish delivery day, that is midnight Danish time on that day.
 """
 
 from collections.abc import Iterable
@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from nordic_balancing.models import BiddingZone, to_utc
 
 _EDS_IMBALANCE = "https://www.energidataservice.dk/tso-electricity/ImbalancePrice"
+_ESETT = "https://api.opendata.esett.com"
+_NORDIC = frozenset(BiddingZone)
 _DK = frozenset({BiddingZone.DK1, BiddingZone.DK2})
 
 
@@ -30,6 +32,24 @@ class MarketChange:
 
 
 CHANGES: tuple[MarketChange, ...] = (
+    MarketChange(
+        effective=datetime(2023, 5, 21, 22, 0, tzinfo=UTC),
+        zones=_NORDIC,
+        summary=(
+            "Imbalance settlement period changes from 60 to 15 minutes, "
+            "observed in eSett open data."
+        ),
+        source_url=_ESETT,
+    ),
+    MarketChange(
+        effective=datetime(2025, 3, 18, 23, 0, tzinfo=UTC),
+        zones=_NORDIC,
+        summary=(
+            "15-minute imbalance prices replace the hourly price repeated per quarter, "
+            "observed in eSett open data."
+        ),
+        source_url=_ESETT,
+    ),
     MarketChange(
         effective=datetime(2025, 3, 18, 23, 0, tzinfo=UTC),
         zones=_DK,
