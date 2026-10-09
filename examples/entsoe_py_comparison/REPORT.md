@@ -40,14 +40,20 @@ Confirmed exactly.
 
 First week of every second month 2023-07 → 2026-09, all 12 zones:
 
-| period                     | hours   | all-4-quarters identical |
-|----------------------------|---------|--------------------------|
-| before 2025-03-04 go-live  | 21,024  | **100.0 %** (every zone) |
-| after 2025-03-04 go-live   | 19,296  | **9.1 %** overall        |
+| period                                   | hours  | all-4-quarters identical |
+|------------------------------------------|--------|--------------------------|
+| before 2025-03-18T23:00Z (19 Mar CET)    | 22,176 | **100.0 %** (every zone) |
+| after                                    | 18,144 | **3.3 %** overall        |
 
-Per-zone after-shares: 6.3–14.7 % (NO zones slightly higher than DK/SE/FI).
-The claim holds: pre-go-live the imbalance price was effectively hourly even
-though published per quarter.
+Per-zone after-shares: 0.4–9.3 % (NO zones higher than DK/SE/FI).
+The claim holds, with a corrected date. Until 2025-03-19 00:00 CET the imbalance
+price was effectively hourly, even though it was published per quarter. The mFRR energy
+activation market went live on 2025-03-04, but mFRR and imbalance pricing moved to
+15 minutes only on 19 March
+([Fingrid](https://fingrid.fi/en/news/news/2025/go-live-of-15-min-intraday-cross-border-trading-in-the-nordics-on-1803-for-delivery-on-1903)).
+A first run that split at 2025-03-04 put the uniform first week of March 2025 into
+"after" and reported 9.1 %. That figure is superseded. See also
+`examples/mfrr_transition/` for the day-by-day view.
 
 ### 4. Unpublished intervals (same run, last ~6 h, all 12 zones)
 
@@ -85,8 +91,8 @@ Caller-visible behavior, read from entsoe-py 0.8.1 source:
 ## Gaps found in nordic-balancing itself
 
 - `ImbalancePrice.resolution` labels post-2023 quarters `15 min` even when all
-  four quarters of an hour carry identical values (pre-2025-03-04 reality was
-  effectively hourly). The label records publication cadence, not information
+  four quarters of an hour carry identical values (before 2025-03-19 the
+  values were effectively hourly). The label records publication cadence, not information
   content — a caller cannot distinguish "real" 15-min pricing.
 - `EntsoeClient` is mock-tested only; its A85 assumptions (single price, EUR,
   A01/A03, strict positions) may raise `SourceError` on real documents entsoe-py

@@ -6,7 +6,8 @@ Three measurements, bounded to ~25 requests with a 1-second pause between calls:
      values either side of it, for SE3 and FI, one day on each side.
   b. The "repeated hourly prices" claim: share of hours in which all four
      quarter-hour imbalance prices are identical, per zone, before vs after
-     2025-03-04 (Nordic mFRR energy activation market go-live). Sampled over
+     2025-03-19 00:00 CET, when mFRR and imbalance pricing moved to 15 minutes
+     (the mFRR EAM itself went live on 2025-03-04 with hourly prices). Sampled over
      the first week of every second month from 2023-07 to 2026-09.
   c. Unpublished intervals: the last ~6 hours for all 12 zones — how many
      intervals return ``imbalance_price_eur is None`` vs are missing entirely.
@@ -23,7 +24,7 @@ from pathlib import Path
 from nordic_balancing import BiddingZone, ESettClient, ImbalancePrice
 
 SWITCH = datetime(2023, 5, 21, 22, tzinfo=UTC)
-MFRR_EAM_GOLIVE = datetime(2025, 3, 4, tzinfo=UTC)
+QUARTER_PRICING = datetime(2025, 3, 18, 23, tzinfo=UTC)  # 15-min mFRR + imbalance pricing
 DAY = timedelta(days=1)
 QUARTER = timedelta(minutes=15)
 PAUSE = 1.0
@@ -112,7 +113,7 @@ def main() -> None:
             for (zone_value, hour), quarters in by_hour.items():
                 if len(quarters) != 4:
                     continue
-                period = "before" if hour < MFRR_EAM_GOLIVE else "after"
+                period = "before" if hour < QUARTER_PRICING else "after"
                 bucket = tally[zone_value][period]
                 bucket[0] += 1
                 if all(value is None for value in quarters):
@@ -153,7 +154,7 @@ def main() -> None:
         print(f"  {'ALL':<4} {row[0]} {row[1]}")
         results["repeated_hourly"] = {
             "sample": "first week of every second month, 2023-07 to 2026-09",
-            "boundary_utc": MFRR_EAM_GOLIVE.isoformat(),
+            "boundary_utc": QUARTER_PRICING.isoformat(),
             "per_zone": per_zone,
             "overall": overall,
         }
