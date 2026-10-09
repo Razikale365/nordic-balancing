@@ -47,6 +47,29 @@ Call `fingrid.imbalance_prices(start, end)` for FI prices, or `series(dataset_id
 Svenska kraftnät needs no key.
 Call `SvKClient().capacity_market(ReserveProduct.MFRR, start, end)` for SE1–SE4 capacity prices and volumes.
 
+## Data contracts
+
+Every client enforces the same contracts; a violation raises `SourceError`.
+
+- **C1 Window.** Queries take aware datetimes and return exactly the intervals
+  whose start is in `[start, end)`, at any sub-second precision of `start`/`end`.
+- **C2 Pagination.** Rows fetched must equal the total the source reported; a
+  missing or invalid total, a short or empty page before the total is reached,
+  or a mismatch is an error.
+- **C3 Duplicates.** Two source records for the same series key (zone and
+  interval start, plus product and direction for SvK) are an error, even when
+  the values are equal.
+- **C4 Missing vs unpublished.** An interval the source did not return is absent
+  from the result; a record returned with a null value has that field set to
+  `None`. Clients never fill gaps.
+- **C5 Numbers.** Values must be JSON numbers (`bool` rejected), finite and
+  convertible to `float`.
+- **C6 Outside window.** Records outside the requested query window are an error.
+- **C7 Resolution.** `resolution` is the source's publication interval; hourly
+  records are repeated across four quarters.
+- **C8 Transport.** Network and protocol failures surface as `SourceError`, never as
+  raw `httpx` exceptions (after the bounded retries for HTTP 429/503).
+
 ## Planned sources
 
 | Source | Data | Access |

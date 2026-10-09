@@ -54,6 +54,16 @@ def row(dataset: int = 319, quarter: int = 0, value: float | None = 21) -> dict[
     }
 
 
+def hour(dataset: int = 319, offset_hours: int = 0, value: float | None = 21) -> dict[str, Any]:
+    start = START + offset_hours * timedelta(hours=1)
+    return {
+        "datasetId": dataset,
+        "startTime": start.isoformat(),
+        "endTime": (start + timedelta(hours=1)).isoformat(),
+        "value": value,
+    }
+
+
 def page(records: list[Any], total: int | None = None, last_page: int = 1) -> httpx.Response:
     return httpx.Response(
         200,
@@ -314,8 +324,8 @@ def test_bounded_retry_budget(status: int) -> None:
         ({"startTime": "2026-01-15T00:05:00Z"}, "15-minute boundary"),
         ({"startTime": "2026-01-15T00:00:00.000001Z"}, "15-minute boundary"),
         ({"endTime": "invalid"}, "unparseable endTime"),
-        ({"endTime": "2026-01-15T00:30:00Z"}, "duration must be 15 minutes"),
-        ({"endTime": "2026-01-15T00:00:00Z"}, "duration must be 15 minutes"),
+        ({"endTime": "2026-01-15T00:30:00Z"}, "duration must be 15 or 60 minutes"),
+        ({"endTime": "2026-01-15T00:00:00Z"}, "duration must be 15 or 60 minutes"),
         ({"value": KEY}, "not a number"),
         ({"value": True}, "not a number"),
         ({"value": []}, "not a number"),
@@ -466,6 +476,131 @@ def test_context_manager_closes_only_owned_client_and_exports() -> None:
     assert SourceFingridClient is FingridClient
 
 
+def test_hourly_records_expand_to_quarter_starts_in_series() -> None:
+    values = client(lambda _: page([hour(value=-8.55)])).series(319, START, END)
+    assert values == [(START + i * INTERVAL, -8.55) for i in range(4)]
+
+
+def test_hourly_records_expand_in_imbalance_prices_with_hourly_resolution() -> None:
+    records = {
+        319: [hour(319, value=-8.55)],
+        244: [hour(244, value=40)],
+        106: [hour(106, value=2)],
+        369: [hour(369, value=-1)],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return page(records[int(request.url.path.split("/")[-2])])
+
+    prices = client(handler).imbalance_prices(START, END)
+    assert [p.start for p in prices] == [START + i * INTERVAL for i in range(4)]
+    for price in prices:
+        assert price.resolution == timedelta(hours=1)
+        assert price.imbalance_price_eur == -8.55
+        assert price.mfrr_up_price_eur == 40
+        assert price.mfrr_down_price_eur == 2
+        assert price.dominating_direction is Direction.DOWN
+        assert price.raw["319"]["endTime"] == "2026-01-15T01:00:00+00:00"
+
+
+def test_mixed_resolutions_in_one_response() -> None:
+    rows = [hour(319, 0, -8.55)] + [row(319, q, value=q * 10.0) for q in range(4, 8)]
+    values = client(lambda _: page(rows)).series(319, START, START + timedelta(hours=2))
+    assert values == [(START + i * INTERVAL, -8.55) for i in range(4)] + [
+        (START + i * INTERVAL, i * 10.0) for i in range(4, 8)
+    ]
+
+
+def test_finer_resolution_wins_overlapping_quarters_after_the_switch() -> None:
+    # From 2025-03-18T23:00Z pricing is 15-minute: the quarter record wins.
+    rows = [hour(319, 0, 100), row(319, 1, 7)]
+    values = client(lambda _: page(rows)).series(319, START, END)
+    assert values == [(START, 100.0), (START + INTERVAL, 7.0)] + [
+        (START + i * INTERVAL, 100.0) for i in (2, 3)
+    ]
+
+
+def _at(dataset: int, start: datetime, minutes: int, value: float) -> dict[str, Any]:
+    return {
+        "datasetId": dataset,
+        "startTime": start.isoformat(),
+        "endTime": (start + timedelta(minutes=minutes)).isoformat(),
+        "value": value,
+    }
+
+
+def test_hourly_record_wins_before_the_switch_and_loser_is_kept() -> None:
+    # Live 2025-03-16T09:00Z: hourly 104 (eSett settled 104), quarters 107.
+    start = datetime(2025, 3, 16, 9, tzinfo=UTC)
+    rows = {
+        dataset: [_at(dataset, start, 60, 104)]
+        + [_at(dataset, start + q * INTERVAL, 15, 107) for q in (0, 1, 2, 3)]
+        for dataset in (319, 244, 106, 369)
+    }
+    rows[369] = [_at(369, start, 60, 1)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return page(rows[int(request.url.path.split("/")[-2])])
+
+    fingrid = client(handler)
+    prices = fingrid.imbalance_prices(start, start + timedelta(hours=1))
+    assert [p.imbalance_price_eur for p in prices] == [104.0] * 4
+    assert all(p.resolution == timedelta(hours=1) for p in prices)
+    assert [r["value"] for r in prices[1].raw["319_superseded"]] == [107]
+    assert "369_superseded" not in prices[1].raw
+    values = fingrid.series(319, start, start + timedelta(hours=1))
+    assert values == [(start + q * INTERVAL, 104.0) for q in range(4)]
+
+
+def test_quarter_record_wins_at_and_after_the_switch() -> None:
+    start = datetime(2025, 3, 18, 23, tzinfo=UTC)
+    rows = [_at(319, start, 60, 50), _at(319, start + INTERVAL, 15, 60)]
+    values = client(lambda _: page(rows)).series(319, start, start + timedelta(hours=1))
+    assert values == [(start, 50.0), (start + INTERVAL, 60.0)] + [
+        (start + q * INTERVAL, 50.0) for q in (2, 3)
+    ]
+
+
+def test_same_start_in_both_resolutions_is_not_a_duplicate() -> None:
+    start = datetime(2025, 3, 16, 9, tzinfo=UTC)
+    rows = [_at(319, start, 60, 104), _at(319, start, 15, 107)]
+    values = client(lambda _: page(rows)).series(319, start, start + INTERVAL)
+    assert values == [(start, 104.0)]
+
+
+def test_same_start_and_resolution_twice_is_a_duplicate() -> None:
+    start = datetime(2025, 3, 16, 9, tzinfo=UTC)
+    rows = [_at(319, start, 60, 104), _at(319, start, 60, 104)]
+    with pytest.raises(SourceError, match="duplicate"):
+        client(lambda _: page(rows)).series(319, start, start + INTERVAL)
+
+
+def test_query_start_floors_to_the_hour_and_filters_to_window() -> None:
+    seen: list[httpx.Request] = []
+    start = START + timedelta(minutes=20)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return page([hour(319, 0, 5)])
+
+    values = client(handler).series(319, start, END)
+    assert seen[0].url.params["startTime"] == "2026-01-15T00:00:00Z"
+    assert values == [(START + i * INTERVAL, 5.0) for i in (2, 3)]
+
+
+@pytest.mark.live
+def test_live_hourly_imbalance_prices_expand_to_quarters() -> None:
+    if not os.environ.get("FINGRID_API_KEY"):
+        pytest.skip("FINGRID_API_KEY is not set and no key was found in the repo .env")
+    start = datetime(2025, 3, 10, tzinfo=UTC)
+    with FingridClient() as fingrid:
+        prices = fingrid.imbalance_prices(start, start + timedelta(hours=2))
+    assert len(prices) == 8
+    assert [p.start for p in prices] == [start + i * INTERVAL for i in range(8)]
+    assert all(p.resolution == timedelta(hours=1) for p in prices)
+    assert [p.imbalance_price_eur for p in prices] == [-8.55] * 4 + [-17.06] * 4
+
+
 @pytest.mark.live
 def test_live_one_hour_of_fi_imbalance_prices() -> None:
     if not os.environ.get("FINGRID_API_KEY"):
@@ -477,3 +612,15 @@ def test_live_one_hour_of_fi_imbalance_prices() -> None:
     assert all(p.zone is BiddingZone.FI for p in prices)
     assert all(p.resolution == INTERVAL for p in prices)
     assert all(p.imbalance_price_eur is not None for p in prices)
+
+
+@pytest.mark.live
+def test_live_overlap_hour_uses_the_hourly_value_settled_by_esett() -> None:
+    # 2025-03-16T09:00Z: Fingrid published hourly 104 and quarters 107; eSett settled 104.
+    if not os.environ.get("FINGRID_API_KEY"):
+        pytest.skip("FINGRID_API_KEY is not set and no key was found in the repo .env")
+    start = datetime(2025, 3, 16, 9, tzinfo=UTC)
+    with FingridClient() as fingrid:
+        prices = fingrid.imbalance_prices(start, start + timedelta(hours=1))
+    assert [p.imbalance_price_eur for p in prices] == [104.0] * 4
+    assert any("319_superseded" in p.raw for p in prices)

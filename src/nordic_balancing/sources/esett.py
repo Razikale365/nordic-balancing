@@ -1,6 +1,5 @@
 """Keyless eSett single imbalance prices, preserving publication resolution."""
 
-import math
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import replace
@@ -11,6 +10,7 @@ from typing import Any, Self
 import httpx
 
 from nordic_balancing._http import get_json
+from nordic_balancing._validate import finite_number, reject_duplicate
 from nordic_balancing.errors import SourceError
 from nordic_balancing.models import INTERVAL, BiddingZone, Direction, ImbalancePrice, to_utc
 
@@ -105,6 +105,7 @@ class ESettClient:
             # Millisecond precision must not exclude an interval just before end.
             query_end += timedelta(microseconds=1000 - remainder)
         prices: list[ImbalancePrice] = []
+        seen: set[tuple[BiddingZone, datetime]] = set()
         while query_start < query_end:
             chunk_end = min(query_start + _CHUNK, query_end)
             params = [
@@ -112,15 +113,18 @@ class ESettClient:
                 ("end", _format(chunk_end)),
                 *(("mba", _EIC_CODES[z]) for z in zone_list),
             ]
-            body = get_json(
-                self._http,
-                self._base_url,
-                "/EXP14/Prices",
-                params,
-                source=SOURCE,
-                max_retries=self._max_retries,
-                sleep=self._sleep,
-            )
+            try:
+                body = get_json(
+                    self._http,
+                    self._base_url,
+                    "/EXP14/Prices",
+                    params,
+                    source=SOURCE,
+                    max_retries=self._max_retries,
+                    sleep=self._sleep,
+                )
+            except httpx.HTTPError:
+                raise SourceError(f"{SOURCE}: request failed for /EXP14/Prices") from None
             if not isinstance(body, list):
                 raise SourceError(f"{SOURCE}: response for /EXP14/Prices is not a JSON array")
             for record in body:
@@ -129,6 +133,12 @@ class ESettClient:
                     raise SourceError(f"{SOURCE}: unrequested mba {price.zone.value!r}")
                 if not query_start <= price.start < chunk_end:
                     raise SourceError(f"{SOURCE}: timestampUTC outside requested chunk")
+                reject_duplicate(
+                    seen,
+                    (price.zone, price.start),
+                    source=SOURCE,
+                    detail=f"record for {price.zone.value} at {price.start.isoformat()}",
+                )
                 quarters = 4 if price.resolution == _HOUR else 1
                 for quarter in range(quarters):
                     interval_start = price.start + quarter * INTERVAL
@@ -161,18 +171,7 @@ def _parse_time(value: object) -> datetime:
 
 
 def _number(record: dict[str, Any], column: str) -> float | None:
-    value = record.get(column)
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise SourceError(f"{SOURCE}: {column} is not a number: {value!r}")
-    try:
-        number = float(value)
-    except OverflowError as exc:
-        raise SourceError(f"{SOURCE}: {column} is not finite: {value!r}") from exc
-    if not math.isfinite(number):
-        raise SourceError(f"{SOURCE}: {column} is not finite: {value!r}")
-    return number
+    return finite_number(record.get(column), source=SOURCE, column=column)
 
 
 def _direction(record: dict[str, Any]) -> Direction | None:

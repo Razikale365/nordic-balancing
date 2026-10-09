@@ -1,7 +1,6 @@
 """Keyless Svenska kraftnät (CKAN) reserve capacity market results."""
 
 import json
-import math
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import replace
@@ -12,6 +11,7 @@ from typing import Any, Self
 import httpx
 
 from nordic_balancing._http import get_json
+from nordic_balancing._validate import finite_number, reject_duplicate
 from nordic_balancing.errors import SourceError
 from nordic_balancing.models import (
     INTERVAL,
@@ -208,18 +208,7 @@ def _result(body: Any, path: str) -> dict[str, Any]:
 
 
 def _number(record: dict[str, Any], column: str) -> float | None:
-    value = record.get(column)
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise SourceError(f"{SOURCE}: {column} is not a number: {value!r}")
-    try:
-        number = float(value)
-    except OverflowError as exc:
-        raise SourceError(f"{SOURCE}: {column} is not finite: {value!r}") from exc
-    if not math.isfinite(number):
-        raise SourceError(f"{SOURCE}: {column} is not finite: {value!r}")
-    return number
+    return finite_number(record.get(column), source=SOURCE, column=column)
 
 
 def _parse_time(value: object) -> datetime:
@@ -263,10 +252,12 @@ def _parse_record(
         raise SourceError(f"{SOURCE}: unexpected price_unit {record.get('price_unit')!r}")
     if record.get("volume_unit") != "MW":
         raise SourceError(f"{SOURCE}: unexpected volume_unit {record.get('volume_unit')!r}")
-    key = (start, zone, direction)
-    if key in seen:
-        raise SourceError(f"{SOURCE}: duplicate record for {start.isoformat()} {zone} {direction}")
-    seen.add(key)
+    reject_duplicate(
+        seen,
+        (start, zone, direction),
+        source=SOURCE,
+        detail=f"record for {start.isoformat()} {zone} {direction}",
+    )
     return ReserveCapacity(
         start=start,
         zone=zone,

@@ -252,6 +252,15 @@ def test_rejects_sales_purchase_disagreement() -> None:
         client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(START, END)
 
 
+@pytest.mark.parametrize("price", [21.0, 22.0])
+def test_rejects_duplicate_zone_and_interval(price: float) -> None:
+    duplicate = {**PUBLISHED, "imblSalesPrice": price, "imblPurchasePrice": price}
+    with pytest.raises(SourceError, match="duplicate"):
+        client(lambda _: httpx.Response(200, json=[PUBLISHED, duplicate])).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
 @pytest.mark.parametrize(
     ("override", "message"),
     [
@@ -441,3 +450,13 @@ def test_live_hourly_to_quarter_hour_transition() -> None:
     assert all(p.imbalance_price_eur is not None for p in prices)
     assert len({p.imbalance_price_eur for p in prices[:4]}) == 1
     assert len({p.imbalance_price_eur for p in prices[4:8]}) == 1
+
+
+def test_transport_error_becomes_source_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.RemoteProtocolError("Server disconnected", request=request)
+
+    with pytest.raises(SourceError, match="request failed"):
+        ESettClient(httpx.Client(transport=httpx.MockTransport(handler))).imbalance_prices(
+            START, END
+        )

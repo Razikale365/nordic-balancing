@@ -45,7 +45,7 @@ def test_rejects_naive_datetimes() -> None:
 
 def test_nordic_changes_are_observed_and_apply_to_every_zone() -> None:
     observed = [c for c in CHANGES if c.source_url == "https://api.opendata.esett.com"]
-    assert len(CHANGES) == 4
+    assert len(CHANGES) == 5
     assert [c.effective for c in observed] == [
         datetime(2023, 5, 21, 22, tzinfo=UTC),
         datetime(2025, 3, 18, 23, tzinfo=UTC),

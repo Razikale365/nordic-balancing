@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from nordic_balancing import (
+    INTERVAL,
     BiddingZone,
     Direction,
     EnergiDataServiceClient,
@@ -100,16 +101,54 @@ def test_sends_utc_window_and_zone_filter() -> None:
 
 def test_pages_until_total_is_reached() -> None:
     offsets: list[str] = []
+    start = datetime(2026, 1, 1, tzinfo=UTC)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        offset = request.url.params["offset"]
-        offsets.append(offset)
-        return page([PUBLISHED] if offset == "0" else [NOT_YET_PUBLISHED], total=2)
+        limit = int(request.url.params["limit"])
+        offset = int(request.url.params["offset"])
+        offsets.append(request.url.params["offset"])
+        # A full page each time; the last page carries the single extra row.
+        records = [
+            {
+                **PUBLISHED,
+                "PriceArea": "DK1",
+                "TimeUTC": (start + (offset + i) * INTERVAL).strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            for i in range(min(limit, limit + 1 - offset))
+        ]
+        return page(records, total=limit + 1)
 
-    prices = client(handler).imbalance_prices(START, END)
+    prices = client(handler).imbalance_prices(start, start + timedelta(days=200), [BiddingZone.DK1])
 
-    assert offsets == ["0", "1"]
-    assert len(prices) == 2
+    assert offsets == ["0", "10000"]
+    assert len(prices) == 10001
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"records": []},
+        {"total": None, "records": []},
+        {"total": True, "records": []},
+        {"total": "2", "records": []},
+        {"total": 2.5, "records": []},
+        {"total": -1, "records": []},
+    ],
+)
+def test_rejects_missing_or_invalid_total(body: dict[str, Any]) -> None:
+    with pytest.raises(SourceError, match="invalid total"):
+        client(lambda _: httpx.Response(200, json=body)).imbalance_prices(START, END)
+
+
+@pytest.mark.parametrize("records", [[], [PUBLISHED]])
+def test_rejects_short_or_empty_page_before_total(records: list[dict[str, Any]]) -> None:
+    with pytest.raises(SourceError, match="before total"):
+        client(lambda _: page(records, total=5)).imbalance_prices(START, END)
+
+
+def test_rejects_row_count_exceeding_total() -> None:
+    with pytest.raises(SourceError, match="exceeds total"):
+        client(lambda _: page([PUBLISHED, NOT_YET_PUBLISHED], total=1)).imbalance_prices(START, END)
 
 
 def test_retries_rate_limit_honouring_retry_after() -> None:
@@ -154,6 +193,55 @@ def test_rejects_malformed_records(override: dict[str, Any], message: str) -> No
 
     with pytest.raises(SourceError, match=message):
         client(lambda _: page([record])).imbalance_prices(START, END)
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_rejects_non_finite_numbers(value: str) -> None:
+    record = {**PUBLISHED, "ImbalancePriceEUR": json.loads(value)}
+    body = json.dumps({"total": 1, "records": [record]})
+    with pytest.raises(SourceError, match="not finite"):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(START, END)
+
+
+def test_rejects_duplicate_zone_and_interval() -> None:
+    duplicate = {**PUBLISHED, "ImbalancePriceEUR": 99.0}
+    with pytest.raises(SourceError, match="duplicate"):
+        client(lambda _: page([PUBLISHED, duplicate])).imbalance_prices(START, END)
+
+
+def test_rejects_unrequested_zone() -> None:
+    with pytest.raises(SourceError, match="unrequested PriceArea"):
+        client(lambda _: page([PUBLISHED])).imbalance_prices(START, END, [BiddingZone.DK1])
+
+
+@pytest.mark.parametrize("time_utc", ["2026-10-09T02:00:00", "2026-10-09T03:00:00"])
+def test_rejects_records_outside_the_query_window(time_utc: str) -> None:
+    record = {**PUBLISHED, "TimeUTC": time_utc}
+    with pytest.raises(SourceError, match="outside requested window"):
+        client(lambda _: page([record])).imbalance_prices(START, END)
+
+
+def test_sub_minute_window_bounds_are_rounded_outwards_then_filtered() -> None:
+    seen: list[httpx.Request] = []
+    before_start = {**PUBLISHED, "TimeUTC": "2026-10-09T02:30:00", "PriceArea": "DK1"}
+    last_interval = {
+        **PUBLISHED,
+        "TimeUTC": "2026-10-09T02:45:00",
+        "PriceArea": "DK2",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return page([before_start, last_interval])
+
+    prices = client(handler).imbalance_prices(
+        START + timedelta(seconds=30), END - timedelta(seconds=30)
+    )
+
+    params = seen[0].url.params
+    assert params["start"] == "2026-10-09T02:30"
+    assert params["end"] == "2026-10-09T03:00"
+    assert [p.start for p in prices] == [START + INTERVAL]
 
 
 def test_http_error_is_a_source_error() -> None:
@@ -216,3 +304,13 @@ def test_preserves_resolution_raw_and_renamed_mfrr_fields() -> None:
     assert price.mfrr_down_price_eur == 40.14
     with pytest.raises(TypeError):
         price.raw["PriceArea"] = "DK1"  # type: ignore[index]
+
+
+def test_transport_error_becomes_source_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.RemoteProtocolError("Server disconnected", request=request)
+
+    with pytest.raises(SourceError, match="request failed"):
+        EnergiDataServiceClient(
+            httpx.Client(transport=httpx.MockTransport(handler))
+        ).imbalance_prices(START, END)

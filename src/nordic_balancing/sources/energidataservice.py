@@ -13,13 +13,14 @@ Free, no API key. Two behaviours of the API shape this client:
 import json
 import time
 from collections.abc import Callable, Iterable, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import TracebackType
 from typing import Any, Self
 
 import httpx
 
 from nordic_balancing._http import get_json
+from nordic_balancing._validate import finite_number, reject_duplicate
 from nordic_balancing.errors import SourceError
 from nordic_balancing.models import (
     INTERVAL,
@@ -108,15 +109,36 @@ class EnergiDataServiceClient:
         if not zone_list:
             raise ValueError("zones must not be empty")
 
+        # The API reads start/end at minute precision: round the query outwards,
+        # then filter the records back to the requested [start, end).
+        query_start = start_utc.replace(second=0, microsecond=0)
+        query_end = end_utc.replace(second=0, microsecond=0)
+        if query_end < end_utc:
+            query_end += timedelta(minutes=1)
         params = {
-            "start": _format(start_utc),
-            "end": _format(end_utc),
+            "start": _format(query_start),
+            "end": _format(query_end),
             "timezone": "UTC",
             "filter": json.dumps({"PriceArea": [z.value for z in zone_list]}),
             "columns": ",".join(_IMBALANCE_COLUMNS),
             "sort": "TimeUTC asc,PriceArea asc",
         }
-        prices = [_parse_imbalance(r) for r in self._records("ImbalancePrice", params)]
+        prices: list[ImbalancePrice] = []
+        seen: set[tuple[BiddingZone, datetime]] = set()
+        for record in self._records("ImbalancePrice", params):
+            price = _parse_imbalance(record)
+            if price.zone not in zone_list:
+                raise SourceError(f"{SOURCE}: unrequested PriceArea {price.zone.value!r}")
+            if not query_start <= price.start < query_end:
+                raise SourceError(f"{SOURCE}: TimeUTC outside requested window")
+            reject_duplicate(
+                seen,
+                (price.zone, price.start),
+                source=SOURCE,
+                detail=f"record for {price.zone.value} at {price.start.isoformat()}",
+            )
+            if start_utc <= price.start < end_utc:
+                prices.append(price)
         prices.sort(key=lambda p: (p.start, p.zone))
         return prices
 
@@ -130,22 +152,35 @@ class EnergiDataServiceClient:
             records = page.get("records")
             if not isinstance(records, list):
                 raise SourceError(f"{SOURCE}: response for {dataset} has no 'records' list")
-            yield from records
-            offset += len(records)
             total = page.get("total")
-            if not records or not isinstance(total, int) or offset >= total:
+            if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+                raise SourceError(f"{SOURCE}: response for {dataset} has invalid total")
+            offset += len(records)
+            if offset > total:
+                raise SourceError(
+                    f"{SOURCE}: row count {offset} exceeds total {total} for {dataset}"
+                )
+            if len(records) < PAGE_SIZE and offset < total:
+                raise SourceError(
+                    f"{SOURCE}: page for {dataset} ended at {offset} rows before total {total}"
+                )
+            yield from records
+            if offset >= total:
                 return
 
     def _get(self, path: str, params: dict[str, str]) -> dict[str, Any]:
-        body = get_json(
-            self._http,
-            self._base_url,
-            path,
-            params,
-            source=SOURCE,
-            max_retries=self._max_retries,
-            sleep=self._sleep,
-        )
+        try:
+            body = get_json(
+                self._http,
+                self._base_url,
+                path,
+                params,
+                source=SOURCE,
+                max_retries=self._max_retries,
+                sleep=self._sleep,
+            )
+        except httpx.HTTPError:
+            raise SourceError(f"{SOURCE}: request failed for {path}") from None
         if not isinstance(body, dict):
             raise SourceError(f"{SOURCE}: response for {path} is not a JSON object")
         return body
@@ -173,12 +208,7 @@ def _parse_time(value: object) -> datetime:
 
 
 def _number(record: dict[str, Any], column: str) -> float | None:
-    value = record.get(column)
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise SourceError(f"{SOURCE}: {column} is not a number: {value!r}")
-    return float(value)
+    return finite_number(record.get(column), source=SOURCE, column=column)
 
 
 def _direction(record: dict[str, Any]) -> Direction | None:

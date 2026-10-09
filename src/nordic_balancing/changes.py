@@ -17,6 +17,7 @@ from nordic_balancing.models import BiddingZone, to_utc
 
 _EDS_IMBALANCE = "https://www.energidataservice.dk/tso-electricity/ImbalancePrice"
 _ESETT = "https://api.opendata.esett.com"
+_FINGRID_319 = "https://data.fingrid.fi/en/datasets/319"
 _NORDIC = frozenset(BiddingZone)
 _DK = frozenset({BiddingZone.DK1, BiddingZone.DK2})
 
@@ -40,6 +41,18 @@ CHANGES: tuple[MarketChange, ...] = (
             "observed in eSett open data."
         ),
         source_url=_ESETT,
+    ),
+    MarketChange(
+        effective=datetime(2025, 3, 14, 23, 15, tzinfo=UTC),
+        zones=frozenset({BiddingZone.FI}),
+        summary=(
+            "Fingrid open data switched from hourly to 15-minute publication for "
+            "datasets 319, 244, 106 and 369; hourly records overlapped the new "
+            "15-minute records until 2025-03-18T23:00Z, sometimes with different "
+            "values (2025-03-16T09:00Z: hourly 104, quarters 107; eSett settled 104). "
+            "FingridClient uses the hourly record before 2025-03-18T23:00Z."
+        ),
+        source_url=_FINGRID_319,
     ),
     MarketChange(
         effective=datetime(2025, 3, 18, 23, 0, tzinfo=UTC),

@@ -4,7 +4,7 @@ import math
 import os
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from types import TracebackType
 from typing import Any, Self
@@ -12,12 +12,18 @@ from typing import Any, Self
 import httpx
 
 from nordic_balancing._http import get_json
+from nordic_balancing._validate import finite_number, reject_duplicate
 from nordic_balancing.errors import SourceError
 from nordic_balancing.models import INTERVAL, BiddingZone, Direction, ImbalancePrice, to_utc
 
 SOURCE = "fingrid"
 BASE_URL = "https://data.fingrid.fi/api"
 PAGE_SIZE = 20_000
+_HOUR = timedelta(hours=1)
+# Imbalance and mFRR pricing became 15-minute at 2025-03-19 00:00 CET. Before that
+# instant the hourly record is authoritative (eSett settled on it); after it, the
+# 15-minute record is. A record that loses is kept in ``superseded``, never dropped.
+_QUARTER_PRICING = datetime(2025, 3, 18, 23, tzinfo=UTC)
 
 
 class _AuthenticatedTransport(httpx.BaseTransport):
@@ -46,11 +52,13 @@ class _AuthenticatedTransport(httpx.BaseTransport):
 class _Record:
     start: datetime
     value: float | None
+    resolution: timedelta
     raw: dict[str, Any]
+    superseded: tuple[dict[str, Any], ...] = ()
 
 
 class FingridClient:
-    """Synchronous client for Fingrid's 15-minute datasets.
+    """Synchronous client for Fingrid's datasets.
 
     ``api_key`` defaults to ``FINGRID_API_KEY``. Pass your own ``httpx.Client``
     to control proxies, timeouts or transports; otherwise this instance owns it.
@@ -114,14 +122,24 @@ class FingridClient:
     def series(
         self, dataset_id: int, start: datetime, end: datetime
     ) -> list[tuple[datetime, float | None]]:
-        """Return validated 15-minute values starting in ``[start, end)``, in UTC order."""
+        """Return validated values starting in ``[start, end)``, in UTC order.
+
+        Hourly records (published until 2025-03-18) are repeated across their
+        four quarter-hour starts, so the series always has 15-minute steps.
+        Where both granularities cover a quarter, the hourly value is used
+        before 2025-03-18T23:00Z and the 15-minute value from then on.
+        """
         return [(r.start, r.value) for r in self._records(dataset_id, start, end)]
 
     def imbalance_prices(self, start: datetime, end: datetime) -> list[ImbalancePrice]:
         """Join FI imbalance prices with mFRR up/down prices and dominating direction.
 
-        Only starts published by dataset 319 are returned. Missing component rows
-        or null values remain ``None``. ``raw`` contains rows keyed by dataset ID.
+        Only starts published by dataset 319 are returned; hourly records are
+        repeated across their four quarters with ``resolution`` kept at one
+        hour. Missing component rows or null values remain ``None``. ``raw``
+        contains rows keyed by dataset ID; a record that was overlapped by the
+        other granularity (2025-03-14 to 2025-03-18) is kept under
+        ``"<dataset>_superseded"``.
         """
         datasets = {
             dataset: {r.start: r for r in self._records(dataset, start, end)}
@@ -146,11 +164,18 @@ class FingridClient:
                     mfrr_up_price_eur=up.value if up is not None else None,
                     mfrr_down_price_eur=down.value if down is not None else None,
                     source=SOURCE,
-                    resolution=INTERVAL,
+                    resolution=record.resolution,
                     raw={
-                        str(dataset): dict(rows[stamp].raw)
-                        for dataset, rows in datasets.items()
-                        if stamp in rows
+                        **{
+                            str(dataset): dict(rows[stamp].raw)
+                            for dataset, rows in datasets.items()
+                            if stamp in rows
+                        },
+                        **{
+                            f"{dataset}_superseded": [dict(r) for r in rows[stamp].superseded]
+                            for dataset, rows in datasets.items()
+                            if stamp in rows and rows[stamp].superseded
+                        },
                     },
                 )
             )
@@ -187,7 +212,9 @@ class FingridClient:
         end_utc = to_utc(end, "end")
         if end_utc <= start_utc:
             raise ValueError("end must be after start")
-        query_start = start_utc.replace(minute=start_utc.minute // 15 * 15, second=0, microsecond=0)
+        # Floor the query start to the hour so an hourly record covering start
+        # is fetched; round the end up so no 15-minute record start is missed.
+        query_start = start_utc.replace(minute=0, second=0, microsecond=0)
         query_end = end_utc.replace(minute=end_utc.minute // 15 * 15, second=0, microsecond=0)
         if query_end < end_utc:
             query_end += INTERVAL
@@ -216,14 +243,38 @@ class FingridClient:
                 "data changed or truncated"
             )
         records = [_parse_record(row, dataset_id) for row in rows]
-        seen: set[datetime] = set()
+        seen: set[tuple[datetime, timedelta]] = set()
         for record in records:
             if not query_start <= record.start < query_end:
                 raise SourceError(f"{SOURCE}: record outside requested window")
-            if record.start in seen:
-                raise SourceError(f"{SOURCE}: duplicate interval start")
-            seen.add(record.start)
-        return sorted((r for r in records if start_utc <= r.start < end_utc), key=lambda r: r.start)
+            reject_duplicate(
+                seen, (record.start, record.resolution), source=SOURCE, detail="interval start"
+            )
+        # Expand hourly records to quarter-hour starts. Around the 2025-03 switch
+        # Fingrid published both granularities for the same quarters, sometimes
+        # with different values; see _QUARTER_PRICING for which one is kept.
+        expanded: dict[datetime, _Record] = {}
+        for record in records:
+            for quarter in range(4 if record.resolution == _HOUR else 1):
+                start = record.start + quarter * INTERVAL
+                candidate = record if quarter == 0 else replace(record, start=start)
+                existing = expanded.get(start)
+                if existing is None:
+                    expanded[start] = candidate
+                    continue
+                preferred = _HOUR if start < _QUARTER_PRICING else INTERVAL
+                winner, loser = (
+                    (candidate, existing)
+                    if candidate.resolution == preferred
+                    else (existing, candidate)
+                )
+                expanded[start] = replace(
+                    winner, superseded=(*winner.superseded, loser.raw, *loser.superseded)
+                )
+        return sorted(
+            (r for r in expanded.values() if start_utc <= r.start < end_utc),
+            key=lambda r: r.start,
+        )
 
 
 def _page_rows(body: Any) -> list[Any]:
@@ -257,22 +308,13 @@ def _parse_record(record: object, dataset_id: int) -> _Record:
         raise SourceError(f"{SOURCE}: record has an unexpected datasetId")
     start = _parse_time(record.get("startTime"), "startTime")
     end = _parse_time(record.get("endTime"), "endTime")
-    if end - start != INTERVAL:
-        raise SourceError(f"{SOURCE}: record duration must be 15 minutes")
+    duration = end - start
+    if duration not in (INTERVAL, _HOUR):
+        raise SourceError(f"{SOURCE}: record duration must be 15 or 60 minutes")
     if "value" not in record:
         raise SourceError(f"{SOURCE}: value is missing")
-    value = record["value"]
-    number: float | None = None
-    if value is not None:
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise SourceError(f"{SOURCE}: value is not a number")
-        try:
-            number = float(value)
-        except OverflowError:
-            raise SourceError(f"{SOURCE}: value is not finite") from None
-        if not math.isfinite(number):
-            raise SourceError(f"{SOURCE}: value is not finite")
-    return _Record(start, number, dict(record))
+    number = finite_number(record["value"], source=SOURCE, column="value")
+    return _Record(start, number, _HOUR if duration == _HOUR else INTERVAL, dict(record))
 
 
 def _direction(value: float | None) -> Direction | None:
