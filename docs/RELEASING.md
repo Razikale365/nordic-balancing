@@ -17,8 +17,8 @@ No API token is stored in GitHub or locally.
 
 ## Each release
 
-1. Set `version` in `pyproject.toml` (for example `0.1.0`), run `uv lock`, and run the
-   gates:
+1. Set `version` in `pyproject.toml` (for example `0.1.0`), add a `CHANGELOG.md` entry,
+   run `uv lock`, and run the gates:
    `uv run ruff format --check . && uv run ruff check . && uv run mypy && uv run pytest -q && uv run pytest -q -m live`
 2. Commit and push to `main`, then wait for CI to pass.
 3. Create a GitHub release with the tag `v<version>` (for example `v0.1.0`) targeting

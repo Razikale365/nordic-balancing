@@ -5,7 +5,7 @@ a test, a command or a URL.
 
 ## Status
 
-- Version `0.1.0a2` (`pyproject.toml`), a pre-release; **pre-alpha** — the API will change
+- Version `0.1.0a3` (`pyproject.toml`), a pre-release; **pre-alpha** — the API will change
   (classifier `Development Status :: 2 - Pre-Alpha`). Published on PyPI as pre-releases.
 - Python `>=3.12` (`requires-python`); classifiers list 3.12 and 3.13.
 - Licence: MIT (`LICENSE`). Retrieved data remains under each source's own terms.
