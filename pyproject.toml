@@ -40,12 +40,19 @@ classifiers = [
 Homepage = "https://github.com/Razikale365/nordic-balancing"
 Issues = "https://github.com/Razikale365/nordic-balancing/issues"
 
+[project.optional-dependencies]
+pandas = [
+    "pandas>=2.1",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3",
     "mypy>=1.11",
     "ruff>=0.6",
     "hypothesis>=6.168.5",
+    "pandas-stubs>=3.0.5.260914",
+    "pandas>=2.1",
 ]
 
 [build-system]

@@ -9,7 +9,8 @@ a test, a command or a URL.
   (classifier `Development Status :: 2 - Pre-Alpha`). Published on PyPI as pre-releases.
 - Python `>=3.12` (`requires-python`); classifiers list 3.12 and 3.13.
 - Licence: MIT (`LICENSE`). Retrieved data remains under each source's own terms.
-- Runtime dependency: `httpx>=0.27,<1` only.
+- Runtime dependency: `httpx>=0.27,<1` only. Optional extra `pandas` (`pandas>=2.1`), used
+  only by `to_frame`; tested with pandas 2.1.4, 2.2.3 and 3.0.6.
 
 ## Provider matrix
 
@@ -166,7 +167,7 @@ Not duplicated here.
 
 ## Test coverage
 
-- Offline suite (default; `addopts` deselects `live`): **412 tests**, all
+- Offline suite (default; `addopts` deselects `live`): **421 tests**, all
   passing on 2026-10-09 (after the second audit). `tests/test_properties.py` holds
   Hypothesis property tests: for every client, splitting the window gives the same
   records, and every start is on the 15-minute grid in `[start, end)` with none
@@ -182,6 +183,7 @@ Not duplicated here.
 | `tests/test_entsoe.py` | 89 | 2 |
 | `tests/test_esett.py` | 59 | 2 |
 | `tests/test_fingrid.py` | 94 | 3 |
+| `tests/test_frame.py` | 9 | — |
 | `tests/test_models.py` | 5 | — |
 | `tests/test_package.py` | 1 | — |
 | `tests/test_properties.py` | 7 | — |
@@ -191,7 +193,7 @@ Not duplicated here.
 `uv run pytest --co -q | tail -1`:
 
 ```
-412/422 tests collected (10 deselected)
+421/431 tests collected (10 deselected)
 ```
 
 Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in

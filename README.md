@@ -3,7 +3,17 @@
 Python client for Nordic electricity **balancing** and **imbalance** data, normalised to
 15-minute UTC intervals.
 
-> **Status: pre-alpha.** Nothing is published yet; the API will change.
+> **Status: pre-alpha.** Alpha releases are on [PyPI](https://pypi.org/project/nordic-balancing/);
+> the API may still change between them. See [CHANGELOG.md](CHANGELOG.md).
+
+## Install
+
+```bash
+pip install --pre nordic-balancing            # httpx is the only dependency
+pip install --pre "nordic-balancing[pandas]"  # adds to_frame()
+```
+
+Python 3.12 or newer. `--pre` is needed while only alpha releases exist.
 
 ## Why
 
@@ -32,6 +42,16 @@ with ESettClient() as esett:
 
 for p in prices:
     print(p.start, p.zone, p.imbalance_price_eur, p.dominating_direction)
+```
+
+With the `pandas` extra, `to_frame` turns any list of records into a DataFrame: one row
+per record, one column per field except `raw`, `start` in UTC, `None` as `NaN`, and
+directions as nullable integers.
+
+```python
+from nordic_balancing import to_frame
+
+frame = to_frame(nordic_prices).set_index(["start", "zone"])
 ```
 
 Every query takes timezone-aware datetimes and returns intervals starting in
@@ -86,18 +106,19 @@ series or picks a source. Zones present in only one input are listed in
 See [docs/RELEASE_EVIDENCE.md](docs/RELEASE_EVIDENCE.md) for provider verification
 status, observed API behaviour and known limitations.
 
-## Planned sources
+## Sources
 
-| Source | Data | Access |
-|---|---|---|
-| Energinet — Energi Data Service | DK1/DK2 imbalance prices and components (**available**); mFRR/aFRR datasets | free, no key |
-| Fingrid | FI imbalance prices, mFRR price components and 15-minute series (**available**) | free API key |
-| Svenska kraftnät | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) (**available**) | free (CC-BY-4.0) |
-| eSett | Imbalance prices, all 12 Nordic zones, from 2021-11-01 (**available**) | free, no key |
-| ENTSO-E Transparency Platform | Imbalance prices (A85), all 12 Nordic zones (**available, not yet live-verified**) | free token (`ENTSOE_API_KEY`) |
+| Source | Client | Data | Access | Verified against the live API |
+|---|---|---|---|---|
+| Energinet — Energi Data Service | `EnergiDataServiceClient` | DK1/DK2 imbalance prices and components, from 2025-03-04 | free, no key | yes |
+| Fingrid | `FingridClient` | FI imbalance prices, mFRR up/down prices, dominating direction; any 15-minute dataset via `series()` | free API key | yes |
+| Svenska kraftnät | `SvKClient` | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) | free (CC-BY-4.0) | yes |
+| eSett | `ESettClient` | Imbalance prices, all 12 Nordic zones, from 2021-10-31T23:00Z | free, no key | yes |
+| ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones | free token (`ENTSOE_API_KEY`) | **no** — checked against the official XSDs only |
 
-Out of scope: generic day-ahead price clients and mFRR bid submission — other projects
-already cover those.
+Not covered yet: Energi Data Service mFRR/aFRR datasets, and activated balancing energy
+volumes. Out of scope: generic day-ahead price clients and mFRR bid submission — other
+projects already cover those.
 
 ## Development
 

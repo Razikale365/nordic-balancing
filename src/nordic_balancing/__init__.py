@@ -4,6 +4,7 @@ from importlib.metadata import version
 
 from nordic_balancing.changes import CHANGES, MarketChange, changes_between
 from nordic_balancing.errors import NordicBalancingError, RateLimitError, SourceError
+from nordic_balancing.frame import to_frame
 from nordic_balancing.models import (
     INTERVAL,
     BiddingZone,
@@ -51,4 +52,5 @@ __all__ = [
     "__version__",
     "changes_between",
     "reconcile_imbalance_prices",
+    "to_frame",
 ]

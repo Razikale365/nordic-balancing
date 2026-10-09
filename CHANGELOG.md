@@ -7,6 +7,17 @@ the project is pre-alpha and the API may change between alphas.
 
 Second audit, against the published 0.1.0a3. No public names are removed or renamed.
 
+### Added
+- `to_frame(records)` returns a pandas DataFrame with one typed column per field, leaving
+  out `raw`. pandas is an optional extra (`pip install "nordic-balancing[pandas]"`) and is
+  imported only when `to_frame` is called. Tested with pandas 2.1.4, 2.2.3 and 3.0.6.
+
+### Documentation
+- README: the status line now says releases are on PyPI, and there is an install
+  section. "Planned sources" became "Sources", with a column saying which are checked
+  against the live API (all except ENTSO-E). The Energi Data Service mFRR/aFRR datasets
+  are listed as not covered yet: they were never implemented.
+
 ### Fixed
 - **ENTSO-E:** a document whose area (`area_Domain.mRID`, or `controlArea_Domain.mRID`
   before schema 4.1) differs from the requested zone's EIC now raises. Before, its
@@ -46,7 +57,7 @@ Second audit, against the published 0.1.0a3. No public names are removed or rena
   for every client, splitting a window gives the same records, and every start is on the
   15-minute grid in `[start, end)` with none missing. It also checks reconciliation
   symmetry.
-- Verification: 412 offline tests pass. Live: 8 passed, and the 2 ENTSO-E tests were
+- Verification: 421 offline tests pass. Live: 8 passed, and the 2 ENTSO-E tests were
   skipped (no token).
 
 ### Behaviour changes to note
