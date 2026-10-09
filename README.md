@@ -40,12 +40,16 @@ not published it yet or does not provide it. `resolution` retains the source's
 publication interval; historical hourly values are expanded into four quarters.
 `raw` is a read-only copy of the source record.
 
+Set `FINGRID_API_KEY` to a free key from https://developer-data.fingrid.fi.
+Use `with FingridClient() as fingrid:` after importing it from `nordic_balancing`.
+Call `fingrid.imbalance_prices(start, end)` for FI prices, or `series(dataset_id, start, end)`.
+
 ## Planned sources
 
 | Source | Data | Access |
 |---|---|---|
 | Energinet — Energi Data Service | DK1/DK2 imbalance prices and components (**available**); mFRR/aFRR datasets | free, no key |
-| Fingrid | FI imbalance and mFRR prices and bids | free API key |
+| Fingrid | FI imbalance prices, mFRR price components and 15-minute series (**available**) | free API key |
 | Svenska kraftnät | SE1–SE4 mFRR capacity and activation | free (CC-BY-4.0) |
 | eSett | Imbalance prices, all 12 Nordic zones, from 2021-11-01 (**available**) | free, no key |
 | ENTSO-E Transparency Platform | balancing and imbalance series | free token |
