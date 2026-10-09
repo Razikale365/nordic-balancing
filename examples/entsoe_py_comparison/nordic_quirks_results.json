@@ -1,0 +1,294 @@
+{
+  "generated_at": "2026-10-09T13:10:52.950775+00:00",
+  "source": "eSett EXP14/Prices via nordic_balancing.ESettClient (keyless)",
+  "resolution_switch": {
+    "switch_utc": "2023-05-21T22:00:00+00:00",
+    "zones": {
+      "SE3": {
+        "before": {
+          "1:00:00": 96
+        },
+        "after": {
+          "0:15:00": 96
+        }
+      },
+      "FI": {
+        "before": {
+          "1:00:00": 96
+        },
+        "after": {
+          "0:15:00": 96
+        }
+      }
+    }
+  },
+  "repeated_hourly": {
+    "sample": "first week of every second month, 2023-07 to 2026-09",
+    "boundary_utc": "2025-03-04T00:00:00+00:00",
+    "per_zone": {
+      "DK1": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 110,
+          "all_none_hours": 0,
+          "uniform_share": 0.06840796019900497
+        }
+      },
+      "DK2": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 110,
+          "all_none_hours": 0,
+          "uniform_share": 0.06840796019900497
+        }
+      },
+      "FI": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 102,
+          "all_none_hours": 0,
+          "uniform_share": 0.06343283582089553
+        }
+      },
+      "NO1": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 237,
+          "all_none_hours": 0,
+          "uniform_share": 0.14738805970149255
+        }
+      },
+      "NO2": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 151,
+          "all_none_hours": 0,
+          "uniform_share": 0.09390547263681592
+        }
+      },
+      "NO3": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 153,
+          "all_none_hours": 0,
+          "uniform_share": 0.09514925373134328
+        }
+      },
+      "NO4": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 232,
+          "all_none_hours": 0,
+          "uniform_share": 0.14427860696517414
+        }
+      },
+      "NO5": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 196,
+          "all_none_hours": 0,
+          "uniform_share": 0.12189054726368159
+        }
+      },
+      "SE1": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 105,
+          "all_none_hours": 0,
+          "uniform_share": 0.06529850746268656
+        }
+      },
+      "SE2": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 109,
+          "all_none_hours": 0,
+          "uniform_share": 0.06778606965174129
+        }
+      },
+      "SE3": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 111,
+          "all_none_hours": 0,
+          "uniform_share": 0.06902985074626866
+        }
+      },
+      "SE4": {
+        "before": {
+          "hours": 1752,
+          "uniform_hours": 1752,
+          "all_none_hours": 0,
+          "uniform_share": 1.0
+        },
+        "after": {
+          "hours": 1608,
+          "uniform_hours": 133,
+          "all_none_hours": 0,
+          "uniform_share": 0.08271144278606965
+        }
+      }
+    },
+    "overall": {
+      "before": {
+        "hours": 21024,
+        "uniform_hours": 21024,
+        "all_none_hours": 0,
+        "uniform_share": 1.0
+      },
+      "after": {
+        "hours": 19296,
+        "uniform_hours": 1749,
+        "all_none_hours": 0,
+        "uniform_share": 0.09064054726368159
+      }
+    }
+  },
+  "unpublished": {
+    "window": {
+      "start": "2026-10-09T07:00:00+00:00",
+      "end": "2026-10-09T13:00:00+00:00"
+    },
+    "per_zone": {
+      "DK1": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 0,
+        "missing": 0
+      },
+      "DK2": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 0,
+        "missing": 0
+      },
+      "FI": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 2,
+        "missing": 0
+      },
+      "NO1": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 4,
+        "missing": 0
+      },
+      "NO2": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 4,
+        "missing": 0
+      },
+      "NO3": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 4,
+        "missing": 0
+      },
+      "NO4": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 4,
+        "missing": 0
+      },
+      "NO5": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 4,
+        "missing": 0
+      },
+      "SE1": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 1,
+        "missing": 0
+      },
+      "SE2": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 1,
+        "missing": 0
+      },
+      "SE3": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 1,
+        "missing": 0
+      },
+      "SE4": {
+        "rows": 24,
+        "expected": 24,
+        "price_none": 1,
+        "missing": 0
+      }
+    }
+  },
+  "requests_made": 25
+}
