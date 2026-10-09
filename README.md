@@ -16,11 +16,30 @@ series can change resolution mid-history.
 `nordic-balancing` aims to give one typed interface over these sources, with every series
 in UTC on 15-minute intervals and a dated record of resolution and price-formula changes.
 
+## Usage
+
+```python
+from datetime import UTC, datetime, timedelta
+
+from nordic_balancing import BiddingZone, EnergiDataServiceClient
+
+start = datetime(2026, 1, 15, tzinfo=UTC)
+with EnergiDataServiceClient() as eds:
+    prices = eds.imbalance_prices(start, start + timedelta(hours=1), [BiddingZone.DK1])
+
+for p in prices:
+    print(p.start, p.zone, p.imbalance_price_eur, p.dominating_direction)
+```
+
+Every query takes timezone-aware datetimes and returns intervals starting in
+`[start, end)`, keyed by their UTC start. A price of `None` means the source has
+not published it yet.
+
 ## Planned sources
 
 | Source | Data | Access |
 |---|---|---|
-| Energinet — Energi Data Service | DK1/DK2 imbalance prices, mFRR/aFRR | free, no key |
+| Energinet — Energi Data Service | DK1/DK2 imbalance prices and components (**available**); mFRR/aFRR datasets | free, no key |
 | Fingrid | FI imbalance and mFRR prices and bids | free API key |
 | Svenska kraftnät | SE1–SE4 mFRR capacity and activation | free (CC-BY-4.0) |
 | eSett | Nordic imbalance settlement | free |
@@ -37,6 +56,7 @@ uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy
+uv run pytest -m live      # calls the real APIs; not run by default
 ```
 
 ## Licence

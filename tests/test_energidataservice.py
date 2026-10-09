@@ -1,0 +1,199 @@
+import json
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
+
+import httpx
+import pytest
+
+from nordic_balancing import (
+    BiddingZone,
+    Direction,
+    EnergiDataServiceClient,
+    RateLimitError,
+    SourceError,
+)
+
+# Shaped like real ImbalancePrice records (fetched 2026-10-09).
+PUBLISHED: dict[str, Any] = {
+    "TimeUTC": "2026-10-09T02:30:00",
+    "PriceArea": "DK2",
+    "ImbalancePriceEUR": 79.27,
+    "ImbalancePriceDKK": 592.46,
+    "SpotPriceEUR": 79.27,
+    "DominatingDirection": 0,
+    "SatisfiedDemand": 0.0,
+    "aFRRVWAUpEUR": 0.0,
+    "aFRRVWADownEUR": -3.53,
+    "mFRRMarginalPriceUpEUR": 79.27,
+    "mFRRMarginalPriceDownEUR": 40.14,
+}
+NOT_YET_PUBLISHED: dict[str, Any] = {
+    **PUBLISHED,
+    "TimeUTC": "2026-10-09T02:45:00",
+    "PriceArea": "DK1",
+    "ImbalancePriceEUR": None,
+    "ImbalancePriceDKK": None,
+    "DominatingDirection": -1,
+    "SatisfiedDemand": -95.0,
+    "mFRRMarginalPriceUpEUR": None,
+    "mFRRMarginalPriceDownEUR": None,
+}
+
+START = datetime(2026, 10, 9, 2, 30, tzinfo=UTC)
+END = START + timedelta(minutes=30)
+
+Handler = Callable[[httpx.Request], httpx.Response]
+
+
+def page(records: list[dict[str, Any]], total: int | None = None) -> httpx.Response:
+    body = {"total": len(records) if total is None else total, "records": records}
+    return httpx.Response(200, json=body)
+
+
+def client(handler: Handler, sleeps: list[float] | None = None) -> EnergiDataServiceClient:
+    recorded = sleeps if sleeps is not None else []
+    return EnergiDataServiceClient(
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        sleep=recorded.append,
+    )
+
+
+def test_parses_published_and_unpublished_intervals() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return page([NOT_YET_PUBLISHED, PUBLISHED])
+
+    prices = client(handler).imbalance_prices(START, END)
+
+    assert [(p.start, p.zone) for p in prices] == [
+        (START, BiddingZone.DK2),
+        (START + timedelta(minutes=15), BiddingZone.DK1),
+    ]
+    published, pending = prices
+    assert published.imbalance_price_eur == 79.27
+    assert published.dominating_direction is Direction.NONE
+    assert published.end == START + timedelta(minutes=15)
+    assert published.source == "energidataservice"
+    assert pending.imbalance_price_eur is None
+    assert pending.dominating_direction is Direction.DOWN
+
+
+def test_sends_utc_window_and_zone_filter() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return page([])
+
+    copenhagen = timezone(timedelta(hours=2))
+    client(handler).imbalance_prices(
+        START.astimezone(copenhagen), END.astimezone(copenhagen), [BiddingZone.DK1]
+    )
+
+    params = seen[0].url.params
+    assert seen[0].url.path == "/dataset/ImbalancePrice"
+    assert params["start"] == "2026-10-09T02:30"
+    assert params["end"] == "2026-10-09T03:00"
+    assert params["timezone"] == "UTC"
+    assert json.loads(params["filter"]) == {"PriceArea": ["DK1"]}
+
+
+def test_pages_until_total_is_reached() -> None:
+    offsets: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = request.url.params["offset"]
+        offsets.append(offset)
+        return page([PUBLISHED] if offset == "0" else [NOT_YET_PUBLISHED], total=2)
+
+    prices = client(handler).imbalance_prices(START, END)
+
+    assert offsets == ["0", "1"]
+    assert len(prices) == 2
+
+
+def test_retries_rate_limit_honouring_retry_after() -> None:
+    responses = iter(
+        [
+            httpx.Response(429, headers={"Retry-After": "7"}),
+            httpx.Response(429),
+            page([PUBLISHED]),
+        ]
+    )
+    sleeps: list[float] = []
+
+    prices = client(lambda _: next(responses), sleeps).imbalance_prices(START, END)
+
+    assert sleeps == [7.0, 10.0]
+    assert len(prices) == 1
+
+
+def test_gives_up_after_max_retries() -> None:
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"Retry-After": "3"})
+
+    with pytest.raises(RateLimitError, match="retry after 3 s"):
+        client(handler, sleeps).imbalance_prices(START, END)
+    assert sleeps == [3.0, 3.0, 3.0]
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"TimeUTC": "2026-10-09T02:40:00"}, "15-minute boundary"),
+        ({"TimeUTC": None}, "TimeUTC is missing"),
+        ({"PriceArea": "SE3"}, "unknown PriceArea"),
+        ({"ImbalancePriceEUR": "79.27"}, "not a number"),
+        ({"DominatingDirection": 2}, "unknown DominatingDirection"),
+    ],
+)
+def test_rejects_malformed_records(override: dict[str, Any], message: str) -> None:
+    record = {**PUBLISHED, **override}
+
+    with pytest.raises(SourceError, match=message):
+        client(lambda _: page([record])).imbalance_prices(START, END)
+
+
+def test_http_error_is_a_source_error() -> None:
+    with pytest.raises(SourceError, match="HTTP 400"):
+        client(lambda _: httpx.Response(400, text="bad filter")).imbalance_prices(START, END)
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "zones", "message"),
+    [
+        (START.replace(tzinfo=None), END, None, "timezone-aware"),
+        (END, START, None, "end must be after start"),
+        (START, END, [], "zones must not be empty"),
+    ],
+)
+def test_rejects_bad_arguments(
+    start: datetime, end: datetime, zones: list[BiddingZone] | None, message: str
+) -> None:
+    c = client(lambda _: page([]))
+    with pytest.raises(ValueError, match=message):
+        if zones is None:
+            c.imbalance_prices(start, end)
+        else:
+            c.imbalance_prices(start, end, zones)
+
+
+def test_closes_only_its_own_http_client() -> None:
+    http = httpx.Client(transport=httpx.MockTransport(lambda _: page([])))
+    with EnergiDataServiceClient(http):
+        pass
+    assert not http.is_closed
+
+
+@pytest.mark.live
+def test_live_one_hour_of_dk_imbalance_prices() -> None:
+    start = datetime(2026, 1, 15, tzinfo=UTC)
+    with EnergiDataServiceClient() as eds:
+        prices = eds.imbalance_prices(start, start + timedelta(hours=1))
+
+    assert len(prices) == 8  # 4 intervals x DK1, DK2
+    assert prices[0].start == start
+    assert {p.zone for p in prices} == {BiddingZone.DK1, BiddingZone.DK2}
+    assert all(p.imbalance_price_eur is not None for p in prices)
