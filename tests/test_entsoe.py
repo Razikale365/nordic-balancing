@@ -1011,3 +1011,127 @@ def test_rejects_a_price_unit_other_than_mwh(unit: str) -> None:
         client(lambda _: httpx.Response(200, content=body.encode())).imbalance_prices(
             START, START + timedelta(minutes=15), [BiddingZone.SE3]
         )
+
+
+# --- Audit 2026-10-09 (baseline v0.1.0a3) -------------------------------------------
+
+SE3_EIC = "10Y1001A1001A46L"
+FI_EIC = "10YFI-1--------U"
+
+
+def quarter_series(*, resolution: str = "PT15M", head: str = "", amount: float = 21.0) -> str:
+    count = 4 if resolution == "PT15M" else 1
+    return (
+        f"<TimeSeries>{head}<curveType>A01</curveType>"
+        + period(
+            "2026-01-15T00:00Z",
+            "2026-01-15T01:00Z",
+            *(point(index, amount) for index in range(1, count + 1)),
+            resolution=resolution,
+        )
+        + "</TimeSeries>"
+    )
+
+
+def headed(head: str, *series_: str, namespace: str = NS_45) -> str:
+    return (
+        f'<Balancing_MarketDocument xmlns="{namespace}">{head}{"".join(series_)}'
+        "</Balancing_MarketDocument>"
+    )
+
+
+@pytest.mark.parametrize(
+    ("namespace", "element"),
+    [
+        (NS_45, "area_Domain.mRID"),
+        (NS_30, "controlArea_Domain.mRID"),
+        (NS, "controlArea_Domain.mRID"),
+    ],
+)
+def test_rejects_a_document_for_another_area(namespace: str, element: str) -> None:
+    body = headed(
+        f'<{element} codingScheme="A01">{SE3_EIC}</{element}>',
+        quarter_series(),
+        namespace=namespace,
+    )
+    with pytest.raises(SourceError, match="does not match requested"):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.FI]
+        )
+
+
+@pytest.mark.parametrize(
+    ("namespace", "element"),
+    [(NS_45, "area_Domain.mRID"), (NS_30, "controlArea_Domain.mRID")],
+)
+def test_accepts_a_document_for_the_requested_area(namespace: str, element: str) -> None:
+    body = headed(
+        f'<{element} codingScheme="A01">{FI_EIC}</{element}>', quarter_series(), namespace=namespace
+    )
+    prices = client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+        START, END, [BiddingZone.FI]
+    )
+    assert [p.zone for p in prices] == [BiddingZone.FI] * 4
+
+
+def test_rejects_equal_prices_published_at_conflicting_resolutions() -> None:
+    body = headed("", quarter_series(resolution="PT60M"), quarter_series(resolution="PT15M"))
+    with pytest.raises(SourceError, match="conflicting resolutions"):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.FI]
+        )
+
+
+@pytest.mark.parametrize("namespace", [NS_30, NS])
+def test_rejects_a_price_unit_other_than_mwh_in_pre_4_5_documents(namespace: str) -> None:
+    head = "<price_Measure_Unit.name>KWH</price_Measure_Unit.name>"
+    body = headed("", quarter_series(head=head), namespace=namespace)
+    with pytest.raises(SourceError, match=r"unsupported price_Measure_Unit\.name 'KWH'"):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.FI]
+        )
+
+
+def test_accepts_mwh_in_pre_4_5_documents() -> None:
+    head = "<price_Measure_Unit.name>MWH</price_Measure_Unit.name>"
+    body = headed("", quarter_series(head=head), namespace=NS_30)
+    assert (
+        len(
+            client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+                START, END, [BiddingZone.FI]
+            )
+        )
+        == 4
+    )
+
+
+def test_rejects_a_document_type_other_than_a85() -> None:
+    body = headed("<type>A86</type>", quarter_series())
+    with pytest.raises(SourceError, match="document type 'A86'"):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.FI]
+        )
+
+
+def test_rejects_a_period_that_is_not_a_whole_number_of_resolutions() -> None:
+    body = headed(
+        "",
+        "<TimeSeries><curveType>A01</curveType>"
+        + period("2026-01-15T00:00Z", "2026-01-15T00:30Z", point(1), resolution="PT60M")
+        + "</TimeSeries>",
+    )
+    with pytest.raises(SourceError, match="not a whole number of PT60M"):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.FI]
+        )
+
+
+def test_corrupt_zip_member_is_a_source_error() -> None:
+    archive = bytearray(zipped(ONE_HOUR * 20))
+    # Corrupt the deflate stream (the local header and name end at byte 41).
+    for index in range(60, 100):
+        archive[index] ^= 0xFF
+    with pytest.raises(SourceError, match="not a valid ZIP archive"):
+        client(lambda _: httpx.Response(200, content=bytes(archive))).imbalance_prices(
+            START, END, [BiddingZone.FI]
+        )

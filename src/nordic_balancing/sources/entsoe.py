@@ -18,6 +18,7 @@ import math
 import os
 import time
 import zipfile
+import zlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -39,6 +40,12 @@ _LIMIT = 64 * 1024 * 1024
 _NO_DATA = "No matching data found"
 _PASSTHROUGH = frozenset({400})
 _RESOLUTIONS = {"PT15M": INTERVAL, "PT60M": _HOUR}
+# The document-level area element: controlArea_Domain.mRID in schema versions up to
+# 4.0, area_Domain.mRID from 4.1. Both are optional in every version.
+_AREA_ELEMENTS = ("area_Domain.mRID", "controlArea_Domain.mRID")
+# The price unit element: price_Measure_Unit.name up to 4.4, price_Measurement_Unit.name
+# in 4.5. Both are optional.
+_PRICE_UNIT_ELEMENTS = ("price_Measurement_Unit.name", "price_Measure_Unit.name")
 _EIC_CODES = {
     BiddingZone.DK1: "10YDK-1--------W",
     BiddingZone.DK2: "10YDK-2--------M",
@@ -180,7 +187,7 @@ class EntsoeClient:
         except httpx.HTTPError:
             raise SourceError(f"{SOURCE}: request failed") from None
         for member in _members(body):
-            for point in _points(member, chunk_start, chunk_end):
+            for point in _points(member, _EIC_CODES[zone], chunk_start, chunk_end):
                 quarters = 4 if point.resolution == "PT60M" else 1
                 for quarter in range(quarters):
                     interval_start = point.start + quarter * INTERVAL
@@ -221,6 +228,13 @@ class EntsoeClient:
                     if existing is None:
                         collected[key] = price
                         continue
+                    if existing.resolution != price.resolution:
+                        # Equal values at different resolutions are still two
+                        # publications; which one is authoritative is not known.
+                        raise SourceError(
+                            f"{SOURCE}: conflicting resolutions for {zone.value} at "
+                            f"{interval_start.isoformat()}"
+                        )
                     if existing.imbalance_price_eur != price.imbalance_price_eur:
                         found = _category_names(existing.raw["categories"], price.raw["categories"])
                         raise SourceError(
@@ -279,11 +293,11 @@ def _members(body: bytes) -> list[bytes]:
             if sum(info.file_size for info in members) > _LIMIT:
                 raise SourceError(f"{SOURCE}: ZIP members exceed {_LIMIT} bytes uncompressed")
             return [archive.read(info) for info in members]
-    except (zipfile.BadZipFile, RuntimeError) as exc:
+    except (zipfile.BadZipFile, RuntimeError, zlib.error, EOFError, NotImplementedError) as exc:
         raise SourceError(f"{SOURCE}: response is not a valid ZIP archive") from exc
 
 
-def _points(member: bytes, window_start: datetime, window_end: datetime) -> list[_Point]:
+def _points(member: bytes, eic: str, window_start: datetime, window_end: datetime) -> list[_Point]:
     try:
         root = ElementTree.fromstring(member)
     except ElementTree.ParseError as exc:
@@ -297,6 +311,15 @@ def _points(member: bytes, window_start: datetime, window_end: datetime) -> list
     namespace = root.tag[1:].partition("}")[0] if root.tag.startswith("{") else ""
     if "451-6:balancingdocument" not in namespace:
         raise SourceError(f"{SOURCE}: unsupported namespace {namespace!r}")
+    document_type = _code(root, "type")
+    if document_type is not None and document_type != "A85":
+        # Other balancing documents (A86 imbalance volumes, ...) carry no prices;
+        # parsing one would yield only unpublished intervals.
+        raise SourceError(f"{SOURCE}: unexpected document type {document_type!r}")
+    for element in _AREA_ELEMENTS:
+        area = _code(root, element)
+        if area is not None and area != eic:
+            raise SourceError(f"{SOURCE}: {element} {area!r} does not match requested {eic!r}")
     return [
         point
         for series in _children(root, "TimeSeries")
@@ -329,11 +352,10 @@ def _series_points(
         raise SourceError(
             f"{SOURCE}: unsupported currency_Unit.name {(currency.text or '').strip()!r}"
         )
-    unit = _child(series, "price_Measurement_Unit.name")
-    if unit is not None and (unit.text or "").strip() != "MWH":
-        raise SourceError(
-            f"{SOURCE}: unsupported price_Measurement_Unit.name {(unit.text or '').strip()!r}"
-        )
+    for element in _PRICE_UNIT_ELEMENTS:
+        unit = _child(series, element)
+        if unit is not None and (unit.text or "").strip() != "MWH":
+            raise SourceError(f"{SOURCE}: unsupported {element} {(unit.text or '').strip()!r}")
     curve_type = _text(series, "curveType")
     # A02, A04 and A05 have different semantics (instants or variable-size
     # blocks, not a fixed-resolution series) and must not be guessed.
@@ -364,7 +386,10 @@ def _period_points(
     if period_end <= period_start:
         raise SourceError(f"{SOURCE}: Period end is not after its start")
     step = _RESOLUTIONS[resolution]
-    count = math.ceil((period_end - period_start) / step)
+    if (period_end - period_start) % step:
+        # A partial last step would be expanded past the Period end.
+        raise SourceError(f"{SOURCE}: Period is not a whole number of {resolution}")
+    count = (period_end - period_start) // step
     explicit: dict[int, _Point] = {}
     for element in _children(period, "Point"):
         position = _position(_text(element, "position"))

@@ -468,6 +468,6 @@ def test_transport_error_becomes_source_error() -> None:
         raise httpx.RemoteProtocolError("Server disconnected", request=request)
 
     with pytest.raises(SourceError, match="request failed"):
-        ESettClient(httpx.Client(transport=httpx.MockTransport(handler))).imbalance_prices(
-            START, END
-        )
+        ESettClient(
+            httpx.Client(transport=httpx.MockTransport(handler)), sleep=lambda _: None
+        ).imbalance_prices(START, END)

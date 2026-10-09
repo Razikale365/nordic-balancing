@@ -89,6 +89,15 @@ Observed 2026-10-09 unless noted; file references are under
   `raw` but not interpreted. Equal dual-category prices collapse to one value; different
   ones raise. Acknowledgement documents, ZIP and plain XML bodies are handled, with a
   64 MiB cap.
+- Checks added in the second audit, also taken from the XSDs:
+  - The document-level area is `controlArea_Domain.mRID` in v3.0–v4.0 and
+    `area_Domain.mRID` from v4.1. It is optional in all versions, and when present it
+    must equal the requested EIC.
+  - The price unit is `price_Measure_Unit.name` up to v4.4 and
+    `price_Measurement_Unit.name` in v4.5. Both are checked.
+  - `type`, which is mandatory, must be A85 when present.
+  - A Period must be a whole number of resolution steps.
+  - An interval published at two resolutions raises, even with equal prices.
 - The two live tests skip without `ENTSOE_API_KEY`.
 
 ## Data contracts
@@ -140,11 +149,28 @@ Not duplicated here.
   the single price (never observed in ~107k records sampled 2021-11 to 2026-10).
 - Energi Data Service: `DominatingDirection` must be exactly -1, 0 or 1 (observed
   values in ~16.8k records: only those and null).
+- ENTSO-E risks that need a token to settle. Each one fails loudly rather than
+  silently:
+  - A point outside the requested window raises. entsoe-py truncates its A85 results
+    to the window, which suggests the API may return extra points.
+  - A TimeSeries without `curveType` raises, although the element is optional in the
+    XSD.
+  - The area check assumes the response area equals the bidding-zone EIC sent as
+    `controlArea_Domain`.
+- ENTSO-E: the token is a query parameter, as the API requires. If you enable INFO
+  logging for the `httpx` logger, request URLs are logged, and with them the token.
+- SvK: the client asks for on-the-hour starts and expands each record to four
+  quarters. Every record observed so far is hourly (latest checked:
+  2026-10-09T21:00Z), and the dataset has no duration column. If SvK moves to
+  15-minute capacity records, the change would not be detected.
 
 ## Test coverage
 
-- Offline suite (default; `addopts` deselects `live`): **370 tests**, all
-  passing on 2026-10-09.
+- Offline suite (default; `addopts` deselects `live`): **412 tests**, all
+  passing on 2026-10-09 (after the second audit). `tests/test_properties.py` holds
+  Hypothesis property tests: for every client, splitting the window gives the same
+  records, and every start is on the 15-minute grid in `[start, end)` with none
+  missing. It also checks reconciliation symmetry.
 - Live suite (`uv run pytest -m live`): **10 tests**. Verified 2026-10-09:
   8 passed (EDS 1, eSett 2, Fingrid 3, SvK 2); the 2 ENTSO-E tests skipped —
   no `ENTSOE_API_KEY`. The Fingrid tests skip without `FINGRID_API_KEY`.
@@ -152,19 +178,20 @@ Not duplicated here.
 | File | Offline | Live |
 |---|---:|---:|
 | `tests/test_changes.py` | 7 | — |
-| `tests/test_energidataservice.py` | 44 | 1 |
-| `tests/test_entsoe.py` | 77 | 2 |
+| `tests/test_energidataservice.py` | 63 | 1 |
+| `tests/test_entsoe.py` | 89 | 2 |
 | `tests/test_esett.py` | 59 | 2 |
-| `tests/test_fingrid.py` | 90 | 3 |
+| `tests/test_fingrid.py` | 94 | 3 |
 | `tests/test_models.py` | 5 | — |
 | `tests/test_package.py` | 1 | — |
+| `tests/test_properties.py` | 7 | — |
 | `tests/test_reconcile.py` | 27 | — |
 | `tests/test_svk.py` | 60 | 2 |
 
 `uv run pytest --co -q | tail -1`:
 
 ```
-370/380 tests collected (10 deselected)
+412/422 tests collected (10 deselected)
 ```
 
 Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in

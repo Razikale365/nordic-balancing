@@ -649,3 +649,35 @@ def test_other_datasets_keep_15_minute_records() -> None:
 def test_imbalance_datasets_keep_their_hourly_policy(dataset: int) -> None:
     values = client(lambda _: page([hour(dataset, 0, -1)])).series(dataset, START, END)
     assert values == [(START + q * INTERVAL, -1.0) for q in range(4)]
+
+
+# --- Audit 2026-10-09 (baseline v0.1.0a3) -------------------------------------------
+
+
+@pytest.mark.parametrize("minute", [15, 30, 45])
+def test_rejects_hourly_records_not_on_the_hour(minute: int) -> None:
+    start = START + timedelta(minutes=minute)
+    record = {
+        "datasetId": 319,
+        "startTime": start.isoformat(),
+        "endTime": (start + timedelta(hours=1)).isoformat(),
+        "value": 2,
+    }
+    with pytest.raises(SourceError, match="60-minute record is not on the hour"):
+        client(lambda _: page([hour(value=1), record])).series(319, START, END + timedelta(hours=1))
+
+
+def test_api_key_is_not_sent_to_a_redirect_target() -> None:
+    hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(request.url.host)
+        if request.url.host == "data.fingrid.fi":
+            return httpx.Response(302, headers={"Location": "https://elsewhere.example/steal"})
+        return page([PUBLISHED])
+
+    http = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    fingrid = FingridClient(KEY, http, sleep=lambda _: None, clock=lambda: 0.0)
+    with pytest.raises(SourceError):
+        fingrid.series(319, START, END)
+    assert hosts == ["data.fingrid.fi"]

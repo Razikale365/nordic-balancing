@@ -65,6 +65,8 @@ class EnergiDataServiceClient:
         max_retries: int = 3,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
+            raise ValueError("max_retries must be a non-negative integer")
         self._owns_http = http is None
         self._http = http if http is not None else httpx.Client(timeout=30.0)
         self._base_url = base_url.rstrip("/")
@@ -201,8 +203,8 @@ def _parse_time(value: object) -> datetime:
     if parsed.tzinfo is not None:
         parsed = parsed.astimezone(UTC).replace(tzinfo=None)
     parsed = parsed.replace(tzinfo=UTC)
-    epoch_seconds = int(parsed.timestamp())
-    if epoch_seconds % int(INTERVAL.total_seconds()):
+    # Check every field: int(timestamp()) would drop fractional seconds (00:00:00.5).
+    if parsed.minute % 15 or parsed.second or parsed.microsecond:
         raise SourceError(f"{SOURCE}: TimeUTC {value!r} is not on a 15-minute boundary")
     return parsed
 

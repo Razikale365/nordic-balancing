@@ -312,7 +312,7 @@ def test_transport_error_becomes_source_error() -> None:
 
     with pytest.raises(SourceError, match="request failed"):
         EnergiDataServiceClient(
-            httpx.Client(transport=httpx.MockTransport(handler))
+            httpx.Client(transport=httpx.MockTransport(handler)), sleep=lambda _: None
         ).imbalance_prices(START, END)
 
 
@@ -331,3 +331,102 @@ def test_accepts_exact_dominating_directions(value: float, expected: Direction) 
     record = {**PUBLISHED, "DominatingDirection": value}
     price = client(lambda _: page([record])).imbalance_prices(START, END)[0]
     assert price.dominating_direction is expected
+
+
+# --- Audit 2026-10-09 (baseline v0.1.0a3) -------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "time_utc",
+    ["2026-10-09T02:30:00.5", "2026-10-09T02:30:00.000001", "2026-10-09T02:30:30"],
+)
+def test_rejects_sub_minute_offsets_from_the_quarter_hour_grid(time_utc: str) -> None:
+    record = {**PUBLISHED, "TimeUTC": time_utc}
+    with pytest.raises(SourceError, match="15-minute boundary"):
+        client(lambda _: page([record])).imbalance_prices(START, END)
+
+
+@pytest.mark.parametrize("retries", [-1, True, 1.5, "3"])
+def test_rejects_bad_retry_budget(retries: Any) -> None:
+    with pytest.raises(ValueError, match="max_retries"):
+        EnergiDataServiceClient(max_retries=retries)
+
+
+@pytest.mark.parametrize("status", [502, 504])
+def test_retries_transient_gateway_errors(status: int) -> None:
+    responses = iter([httpx.Response(status), page([PUBLISHED])])
+    sleeps: list[float] = []
+    prices = client(lambda _: next(responses), sleeps).imbalance_prices(START, END)
+    assert len(prices) == 1
+    assert sleeps == [10.0]
+
+
+@pytest.mark.parametrize("status", [502, 504])
+def test_exhausted_gateway_errors_are_source_errors_not_rate_limits(status: int) -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(status)
+
+    with pytest.raises(SourceError, match=f"HTTP {status}"):
+        client(handler).imbalance_prices(START, END)
+    assert len(calls) == 4
+
+
+def test_retries_transport_errors_then_gives_up_as_source_error() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.ConnectTimeout("timed out", request=request)
+
+    sleeps: list[float] = []
+    with pytest.raises(SourceError, match="request failed"):
+        client(handler, sleeps).imbalance_prices(START, END)
+    assert len(calls) == 4
+    assert sleeps == [10.0] * 3
+
+
+def test_transport_error_then_success() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if len(calls) == 1:
+            raise httpx.ReadError("reset", request=request)
+        return page([PUBLISHED])
+
+    assert len(client(handler).imbalance_prices(START, END)) == 1
+
+
+@pytest.mark.parametrize("header", ["inf", "nan", "-inf", "1e400"])
+def test_non_finite_retry_after_uses_the_default_delay(header: str) -> None:
+    responses = iter([httpx.Response(429, headers={"Retry-After": header}), page([PUBLISHED])])
+    sleeps: list[float] = []
+    client(lambda _: next(responses), sleeps).imbalance_prices(START, END)
+    assert sleeps == [10.0]
+
+
+def test_retry_after_beyond_the_cap_raises_without_sleeping() -> None:
+    sleeps: list[float] = []
+    with pytest.raises(RateLimitError) as caught:
+        client(
+            lambda _: httpx.Response(429, headers={"Retry-After": "3600"}), sleeps
+        ).imbalance_prices(START, END)
+    assert caught.value.retry_after == 3600.0
+    assert sleeps == []
+
+
+def test_deterministic_transport_errors_are_not_retried() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.UnsupportedProtocol("bad scheme", request=request)
+
+    sleeps: list[float] = []
+    with pytest.raises(SourceError, match="request failed"):
+        client(handler, sleeps).imbalance_prices(START, END)
+    assert len(calls) == 1
+    assert sleeps == []

@@ -61,7 +61,10 @@ Every client enforces the same contracts; a violation raises `SourceError`.
   or a mismatch is an error.
 - **C3 Duplicates.** Two source records for the same series key (zone and
   interval start, plus product and direction for SvK) are an error, even when
-  the values are equal.
+  the values are equal. ENTSO-E is the exception: an interval published under
+  several price categories with one equal price collapses to that price, with
+  every category kept in `raw`; unequal prices, or equal prices at different
+  resolutions, raise.
 - **C4 Missing vs unpublished.** An interval the source did not return is absent
   from the result; a record returned with a null value has that field set to
   `None`. Clients never fill gaps.
@@ -71,7 +74,10 @@ Every client enforces the same contracts; a violation raises `SourceError`.
 - **C7 Resolution.** `resolution` is the source's publication interval; hourly
   records are repeated across four quarters.
 - **C8 Transport.** Network and protocol failures surface as `SourceError`, never as
-  raw `httpx` exceptions (after the bounded retries for HTTP 429/503).
+  raw `httpx` exceptions. HTTP 429/503 are retried, then raise `RateLimitError`, which
+  is raised at once when `Retry-After` exceeds 300 s. HTTP 502/504, timeouts and
+  dropped connections are retried within the same `max_retries` budget, then raise
+  `SourceError`.
 
 `reconcile_imbalance_prices` reports differences between two sources; it never merges
 series or picks a source. Zones present in only one input are listed in

@@ -43,7 +43,10 @@ class _AuthenticatedTransport(httpx.BaseTransport):
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         self._before_request()
-        response = self._http.get(request.url, headers={"x-api-key": self._api_key})
+        # Never follow a redirect: the key header would be sent to the new host.
+        response = self._http.get(
+            request.url, headers={"x-api-key": self._api_key}, follow_redirects=False
+        )
         return httpx.Response(
             response.status_code,
             headers={
@@ -327,6 +330,10 @@ def _parse_record(record: object, dataset_id: int) -> _Record:
     duration = end - start
     if duration not in (INTERVAL, _HOUR):
         raise SourceError(f"{SOURCE}: record duration must be 15 or 60 minutes")
+    if duration == _HOUR and start.minute:
+        # Off-hour hourly records could overlap each other, and expansion would
+        # then pick one silently.
+        raise SourceError(f"{SOURCE}: 60-minute record is not on the hour")
     if "value" not in record:
         raise SourceError(f"{SOURCE}: value is missing")
     number = finite_number(record["value"], source=SOURCE, column="value")

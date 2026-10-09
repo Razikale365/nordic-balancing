@@ -1,5 +1,6 @@
 """Shared bounded retries so sources handle throttling consistently."""
 
+import math
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -7,8 +8,14 @@ import httpx
 
 from nordic_balancing.errors import RateLimitError, SourceError
 
-_RETRY_STATUSES = frozenset({429, 503})
+# Throttling: exhausting the retries raises RateLimitError.
+_RATE_LIMIT_STATUSES = frozenset({429, 503})
+# Transient gateway failures: retried, then reported as an ordinary HTTP error.
+_TRANSIENT_STATUSES = frozenset({502, 504})
+_TRANSIENT_ERRORS = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
 _DEFAULT_RETRY_AFTER = 10.0
+# A longer requested wait is not slept through: RateLimitError reports it instead.
+_MAX_RETRY_AFTER = 300.0
 
 
 def get_json(
@@ -74,13 +81,24 @@ def _request(
 ) -> httpx.Response:
     query_params = params if isinstance(params, Mapping) else tuple(params)
     for attempt in range(max_retries + 1):
-        response = http.get(f"{base_url}{path}", params=query_params)
-        if response.status_code not in _RETRY_STATUSES:
+        last = attempt == max_retries
+        try:
+            response = http.get(f"{base_url}{path}", params=query_params)
+        except _TRANSIENT_ERRORS:
+            # Timeouts and dropped connections are retried; callers wrap the last one.
+            if last:
+                raise
+            sleep(_DEFAULT_RETRY_AFTER)
+            continue
+        if response.status_code in _RATE_LIMIT_STATUSES:
+            retry_after = _retry_after(response)
+            if last or (retry_after is not None and retry_after > _MAX_RETRY_AFTER):
+                raise RateLimitError(source, retry_after)
+            sleep(retry_after if retry_after is not None else _DEFAULT_RETRY_AFTER)
+        elif response.status_code in _TRANSIENT_STATUSES and not last:
+            sleep(_DEFAULT_RETRY_AFTER)
+        else:
             break
-        retry_after = _retry_after(response)
-        if attempt == max_retries:
-            raise RateLimitError(source, retry_after)
-        sleep(retry_after if retry_after is not None else _DEFAULT_RETRY_AFTER)
     if response.is_error and response.status_code not in passthrough_statuses:
         raise SourceError(
             f"{source}: HTTP {response.status_code} for {path}: {response.text[:200]}"
@@ -93,6 +111,8 @@ def _retry_after(response: httpx.Response) -> float | None:
     if header is None:
         return None
     try:
-        return max(float(header), 0.0)
+        seconds = float(header)
     except ValueError:
         return None
+    # "inf" and "nan" parse as floats but are not usable delays.
+    return max(seconds, 0.0) if math.isfinite(seconds) else None

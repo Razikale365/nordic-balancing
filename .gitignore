@@ -14,3 +14,4 @@ wheels/
 
 # jpcp worker scratch
 .jpcp/
+.hypothesis/
