@@ -2,6 +2,8 @@
 
 import math
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -106,13 +108,28 @@ def _request(
     return response
 
 
-def _retry_after(response: httpx.Response) -> float | None:
+def _retry_after(
+    response: httpx.Response, now: Callable[[], datetime] = lambda: datetime.now(UTC)
+) -> float | None:
+    """Seconds to wait from ``Retry-After``: delay-seconds or an HTTP-date (RFC 9110)."""
     header = response.headers.get("Retry-After")
     if header is None:
         return None
     try:
         seconds = float(header)
     except ValueError:
-        return None
+        return _seconds_until(header, now())
     # "inf" and "nan" parse as floats but are not usable delays.
     return max(seconds, 0.0) if math.isfinite(seconds) else None
+
+
+def _seconds_until(header: str, now: datetime) -> float | None:
+    try:
+        when = parsedate_to_datetime(header)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        # parsedate_to_datetime leaves "-0000" naive; HTTP-dates are always GMT.
+        when = when.replace(tzinfo=UTC)
+    # A date already past means retry now.
+    return max((when - now).total_seconds(), 0.0)

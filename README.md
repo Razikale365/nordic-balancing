@@ -82,10 +82,15 @@ Every client enforces the same contracts; a violation raises `SourceError`.
   or a mismatch is an error.
 - **C3 Duplicates.** Two source records for the same series key (zone and
   interval start, plus product and direction for SvK) are an error, even when
-  the values are equal. ENTSO-E is the exception: an interval published under
-  several price categories with one equal price collapses to that price, with
-  every category kept in `raw`; unequal prices, or equal prices at different
-  resolutions, raise.
+  the values are equal. Two exceptions:
+  - ENTSO-E: an interval published under distinct price categories (A04 and
+    A05) with one equal price collapses to that price, with every category kept
+    in `raw`. The same category twice (or two records without one), unequal
+    prices, or equal prices at different resolutions raise.
+  - Fingrid: around its 2025-03 switch an hourly and a 15-minute record can cover
+    the same quarter. The hourly value is kept before 2025-03-18T23:00Z and the
+    15-minute value from then on; the other stays in `raw["<dataset>_superseded"]`.
+    Two records with the same start and resolution raise.
 - **C4 Missing vs unpublished.** An interval the source did not return is absent
   from the result; a record returned with a null value has that field set to
   `None`. Clients never fill gaps.
@@ -104,7 +109,10 @@ Every client enforces the same contracts; a violation raises `SourceError`.
   `SourceError`.
 
 `reconcile_imbalance_prices` reports differences between two sources; it never merges
-series or picks a source. Zones present in only one input are listed in
+series or picks a source. `identical` counts intervals present in both with the same
+resolution, exactly equal prices (a difference within the tolerance is a ROUNDING
+divergence) and, when both sides have one, the same dominating direction; other fields
+are not compared. Zones present in only one input are listed in
 `primary_only_zones` / `reference_only_zones` rather than dropped silently.
 
 See [docs/RELEASE_EVIDENCE.md](docs/RELEASE_EVIDENCE.md) for provider verification
@@ -118,7 +126,7 @@ status, observed API behaviour and known limitations.
 | Fingrid | `FingridClient` | FI imbalance prices, mFRR up/down prices, dominating direction; any 15-minute dataset via `series()` | free API key | yes |
 | Svenska kraftnät | `SvKClient` | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) | free (CC-BY-4.0) | yes |
 | eSett | `ESettClient` | Imbalance prices, all 12 Nordic zones, from 2021-10-31T23:00Z | free, no key | yes |
-| ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones, from 2021-10-31T23:00Z | free token (`ENTSOE_API_KEY`) | yes |
+| ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones, from 2021-10-31T23:00Z (FI 22:00Z) | free token (`ENTSOE_API_KEY`) | yes |
 
 Not covered yet: Energi Data Service mFRR/aFRR datasets, and activated balancing energy
 volumes. Out of scope: generic day-ahead price clients and mFRR bid submission — other

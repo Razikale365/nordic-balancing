@@ -1,7 +1,9 @@
 # Release evidence
 
-Compiled 2026-10-09, before the first PyPI release. Every claim cites a file,
-a test, a command or a URL.
+Originally compiled 2026-10-09, before the first PyPI release; updated 2026-10-12
+for the 0.1.0 ENTSO-E live verification and again after it for the committed
+ENTSO-E validation script. Each live result carries the date it was observed. Every
+claim cites a file, a test, a command or a URL.
 
 ## Status
 
@@ -74,12 +76,15 @@ Observed 2026-10-09 unless noted; file references are under
 
 ### ENTSO-E Transparency Platform
 
-- Live-verified 2026-10-12 against eSett on 60 zone-days: all 12 zones on 2022-01-15,
-  2023-05-21T12:00Z+24h (the 60 → 15 min settlement switch), 2025-03-18T12:00Z+24h,
-  the DST day 2025-10-26 and 2026-10-10..11. Every interval was present in both
-  sources and no price was `None`. Prices matched exactly in 10 zones; DK1/DK2 differed
-  by 0.01 EUR in at most 5 intervals per sampled window (rounding, the same size as the EDS
-  vs eSett differences in `examples/reconciliation/README.md`). SE3 and FI on
+- Live-verified 2026-10-12 against eSett on 60 zone-windows (5 UTC windows × 12
+  zones, 72 zone-days, 6,912 intervals): 2022-01-15, 2023-05-21T12:00Z+24h (the
+  60 → 15 min settlement switch), 2025-03-18T12:00Z+24h, 2025-10-25T22:00Z+24h (DST
+  end) and 2026-10-10..11. Every interval was present in both sources and no price was
+  `None`. Prices matched exactly in 10 zones; DK1/DK2 differed by 0.01 EUR in 16
+  intervals, at most 5 per zone and window (rounding, the same size as the EDS vs eSett
+  differences in `examples/reconciliation/README.md`). Rerun with
+  `examples/entsoe_validation/validate.py samples --live`: same result
+  (`results_samples.json`). SE3 and FI on
   2026-01-15 also match entsoe-py 0.8.1 exactly
   (`examples/entsoe_py_comparison/live_side_by_side.py`).
 - Observed documents: every A85 response was a ZIP (`application/zip`) with one
@@ -93,18 +98,30 @@ Observed 2026-10-09 unless noted; file references are under
   Neither date marks genuine quarter-hour prices (2025-03-18T23:00Z). Between those
   dates `reconcile_imbalance_prices` reports RESOLUTION divergences for ENTSO-E vs eSett
   (`test_live_matches_esett_prices_but_not_its_resolution_label` pins the SE3 boundary).
-- Requests are slow, and the time does not depend on the window length: 2–42 s for one
+- History start: FI's first interval is 2021-10-31T22:00Z (local midnight, UTC+2),
+  every other zone's 2021-10-31T23:00Z (checked live 2026-10-12 for FI and SE3 over
+  2021-10-31T20:00Z–2021-11-01T02:00Z: 16 and 12 intervals).
+- Observed request latency did not depend on the window length: 2–42 s for one
   hour, 4–21 s for 31 to 367 days (one zone, observed 2026-10-12; a 367-day window was
   accepted). The client therefore asks for up to 366 days per request and runs up to
   `max_workers` (default 12) requests in parallel. 12 zones × 2025 took 90 s, against
   358 s one request at a time; with the earlier 7-day chunks it would have been 624
   requests.
-- Gaps in ENTSO-E's own data, full year 2025 vs eSett (420,480 intervals): ENTSO-E
-  lacks 7,361. DK1/DK2 lack 2025-01-05T23:00Z–2025-01-30T08:45Z and about 1,200 scattered
-  quarters (most in April–May); every other zone lacks 12–20 quarters, mainly
-  2025-01-06T16:00–17:45Z and the hour from 2025-01-22T23:00Z. 86 DK quarters (mostly
-  2025-04-01/02) read 0.0 where eSett has a price, and 3 non-DK quarters differ by more
-  than 0.01 (FI 2025-04-29T02:30Z, NO3/NO4 2025-04-24T18:45Z). entsoe-py 0.8.1 shows the
+- Gaps in ENTSO-E's own data, full year 2025 vs eSett (420,480 intervals, each in
+  exactly one category; `examples/entsoe_validation/validate.py year-2025 --live`,
+  rerun 2026-10-12 with the same counts as the first, uncommitted probe; per-zone
+  counts and every differing interval in `results_year-2025.json`):
+  - 7,361 missing in ENTSO-E. DK1/DK2 lack 2025-01-05T23:00Z–2025-01-30T08:45Z and
+    about 1,200 scattered quarters (most in April–May); NO1–NO5 and SE1–SE4 lack
+    12–20 quarters each, mainly 2025-01-06T16:00–17:45Z and the hour from
+    2025-01-22T23:00Z; FI lacks none. Nothing is missing in eSett, and no price is
+    `None` on either side.
+  - 411,972 exact; 1,057 differ by at most 0.01 EUR (rounding, all DK1/DK2).
+  - 86 DK quarters (43 per zone, mostly 2025-04-01/02) read 0.0 where eSett has a
+    price.
+  - 4 differ by more than 0.01 otherwise: DK1 2025-06-29T17:45Z (2141.93 vs 59.70),
+    FI 2025-04-29T02:30Z, NO3/NO4 2025-04-24T18:45Z. The 0.1.0 text listed only the
+    3 outside DK. entsoe-py 0.8.1 shows the
   same 36 missing quarters and 37 zero rows for DK1 on 2025-04-02/03, so these are in
   the published documents; the client reports them as they are (contract C4) and
   `reconcile_imbalance_prices` against eSett finds them.
@@ -167,7 +184,7 @@ Not duplicated here.
   (`models.py` docstrings; same REPORT section).
 - `EntsoeClient`'s strict parser raises `SourceError` on differing dual-category prices
   and on curve types A02/A04/A05, which entsoe-py may tolerate. None of these occurred
-  in the 60 live zone-days checked.
+  in the 60 live zone-windows checked.
 - A possible FI imbalance-price formula change around 2026-06-01 is UNVERIFIED
   (no primary source found): it has no entry in `CHANGES` and no test coverage.
 - No async client; all clients are synchronous over `httpx.Client`.
@@ -185,7 +202,7 @@ Not duplicated here.
   the single price (never observed in ~107k records sampled 2021-11 to 2026-10).
 - Energi Data Service: `DominatingDirection` must be exactly -1, 0 or 1 (observed
   values in ~16.8k records: only those and null).
-- ENTSO-E checks that never triggered on live data (60 zone-days and all 12 zones for
+- ENTSO-E checks that never triggered on live data (60 zone-windows and all 12 zones for
   2025, 2026-10-12) but stay strict, so they fail loudly if the API changes:
   - A point outside the requested window raises. entsoe-py truncates its A85 results
     to the window; no extra points were observed.
@@ -202,8 +219,8 @@ Not duplicated here.
 
 ## Test coverage
 
-- Offline suite (default; `addopts` deselects `live`): **427 tests**, all
-  passing on 2026-10-09 (after the second audit). `tests/test_properties.py` holds
+- Offline suite (default; `addopts` deselects `live`): **463 tests**, all
+  passing on 2026-10-12 (427 at the 0.1.0 tag). `tests/test_properties.py` holds
   Hypothesis property tests: for every client, splitting the window gives the same
   records, and every start is on the 15-minute grid in `[start, end)` with none
   missing. It also checks reconciliation symmetry.
@@ -215,10 +232,12 @@ Not duplicated here.
 |---|---:|---:|
 | `tests/test_changes.py` | 7 | — |
 | `tests/test_energidataservice.py` | 63 | 1 |
-| `tests/test_entsoe.py` | 95 | 3 |
+| `tests/test_entsoe.py` | 102 | 3 |
+| `tests/test_entsoe_validation.py` | 13 | — |
 | `tests/test_esett.py` | 59 | 2 |
 | `tests/test_fingrid.py` | 94 | 3 |
 | `tests/test_frame.py` | 9 | — |
+| `tests/test_http.py` | 16 | — |
 | `tests/test_models.py` | 5 | — |
 | `tests/test_package.py` | 1 | — |
 | `tests/test_properties.py` | 7 | — |
@@ -228,7 +247,7 @@ Not duplicated here.
 `uv run pytest --co -q | tail -1`:
 
 ```
-427/438 tests collected (11 deselected)
+463/474 tests collected (11 deselected)
 ```
 
 Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in
@@ -243,6 +262,7 @@ loads it). No coverage tool is configured.
 | `examples/mfrr_transition/analysis.py` | `uv run --with matplotlib python examples/mfrr_transition/analysis.py` | When quarter-hourly prices became real (2025-03-18T23:00Z); caches eSett data in `cache.json` |
 | `examples/entsoe_py_comparison/nordic_quirks.py` | `uv run python examples/entsoe_py_comparison/nordic_quirks.py` | Live eSett: the 2023-05 resolution switch, repeated hourly prices, unpublished intervals |
 | `examples/entsoe_py_comparison/repro_issue_529.py` | `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/repro_issue_529.py` | Offline repro of entsoe-py bug #529 (35,519 vs 35,520 rows); upstream fix PR #539 open |
+| `examples/entsoe_validation/validate.py` | `uv run python examples/entsoe_validation/validate.py samples --live` (or `year-2025 --live`) | ENTSO-E vs eSett, all 12 zones, every interval in one category; writes `results_<mode>.json`. Needs `ENTSOE_API_KEY`; does nothing without `--live` |
 | `examples/entsoe_py_comparison/live_side_by_side.py` | `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/live_side_by_side.py` | Three-way diff nordic-balancing vs entsoe-py vs eSett (SE3, FI, 2026-01-15): 96/96 rows, 0 differences on 2026-10-12; exits early without `ENTSOE_API_KEY` |
 
 Each script's documented output is in the README/REPORT next to it.

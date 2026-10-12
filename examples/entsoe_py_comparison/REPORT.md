@@ -119,9 +119,10 @@ Caller-visible behavior, read from entsoe-py 0.8.1 source:
   `EntsoeClient` and eSett agree on all 96 rows per zone, 0 differing values.
   Command:
   `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/live_side_by_side.py`
-- `EntsoeClient` vs eSett on 60 zone-days (all 12 zones; 2022-01-15, the 2023-05-21
-  switch, 2025-03-18, DST 2025-10-26, 2026-10-10..11): every interval present in both,
-  exact price match outside DK, DK1/DK2 0.01 EUR rounding differences only.
+- `EntsoeClient` vs eSett on 60 zone-windows (all 12 zones, 72 zone-days;
+  2022-01-15, the 2023-05-21 switch, 2025-03-18, DST 2025-10-26, 2026-10-10..11):
+  every interval present in both, exact price match outside DK, DK1/DK2 0.01 EUR
+  rounding differences only (`examples/entsoe_validation/`).
 - Every A85 response was a ZIP holding one schema-4.4 document with `curveType` A03
   and categories A04 + A05 at equal prices.
 - #529 reproduces live for FI (section 1).

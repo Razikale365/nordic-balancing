@@ -3,6 +3,39 @@
 All notable changes to this project. Versions follow [PEP 440](https://peps.python.org/pep-0440/);
 the project is alpha and the API may change between 0.x versions.
 
+## Unreleased
+
+### Fixed
+- **ENTSO-E:** the same price category published twice for one interval (or two
+  records without a category) now raises `SourceError`, as contract C3 requires for
+  every other duplicate. Before, an equal price collapsed silently and `raw["categories"]`
+  listed the category twice. Equal prices under distinct categories (A04 and A05)
+  still collapse.
+- **Retry-After (all clients):** an HTTP-date (RFC 9110) is now honoured as the time
+  to wait, and a past date retries at once. Before, it was ignored: the client waited
+  the 10 s default, and a date more than 300 s away did not raise `RateLimitError`. Delay-seconds handling is unchanged.
+
+### Added
+- `examples/entsoe_validation/validate.py`: an opt-in (`--live`) comparison of
+  ENTSO-E with eSett over the fixed sample windows and the full year 2025. Every
+  interval lands in one category (missing, unpublished, exact, rounding, zero price,
+  material difference); results are written as JSON. Its classification is tested
+  offline in `tests/test_entsoe_validation.py`.
+
+### Documentation
+- README C3 states both exceptions precisely: distinct ENTSO-E categories, and the
+  Fingrid hourly/15-minute overlap rule. The ENTSO-E row gives the FI start
+  (2021-10-31T22:00Z). `ReconciliationReport.identical` lists what it compares.
+- Request timings are described as observed latency, not server time.
+- `docs/RELEASE_EVIDENCE.md`: dated header; the sample is 60 zone-windows (72
+  zone-days), not 60 zone-days; the full-year 2025 comparison is restated from a rerun
+  of the committed script, including 1 DK1 material difference the 0.1.0 text left
+  out.
+
+### Behaviour changes to note
+- An ENTSO-E response that repeats a price category for one interval now raises. No
+  observed live document did.
+
 ## 0.1.0 — 2026-10-12
 
 First release that is not a pre-release: `pip install nordic-balancing` no longer needs
@@ -13,9 +46,9 @@ Also contains the second audit, against the published 0.1.0a3. No public names a
 removed or renamed.
 
 ### Changed
-- **ENTSO-E is faster.** Each request costs 2–40 s of server time however long its
-  window, so `EntsoeClient` now asks for up to 366 days per request (was 7) and runs up
-  to `max_workers` requests in parallel (new keyword, default 12; `max_workers=1` runs
+- **ENTSO-E is faster.** Observed request latency (2–42 s on 2026-10-12) did not
+  grow with the window, so `EntsoeClient` now asks for up to 366 days per request
+  (was 7) and runs up to `max_workers` requests in parallel (new keyword, default 12; `max_workers=1` runs
   them in turn). A year of all 12 zones takes about 90 s instead of 624 requests. The
   default HTTP timeout rises from 30 s to 120 s, since single requests took up to 42 s.
 
@@ -69,8 +102,9 @@ removed or renamed.
   for every client, splitting a window gives the same records, and every start is on the
   15-minute grid in `[start, end)` with none missing. It also checks reconciliation
   symmetry.
-- Verification: 421 offline tests pass. Live: 8 passed, and the 2 ENTSO-E tests were
-  skipped (no token).
+- Verification at the end of the second audit, before ENTSO-E was live-verified:
+  421 offline tests pass. Live: 8 passed, and the 2 ENTSO-E tests were skipped (no
+  token). The final 0.1.0 counts are below.
 - **ENTSO-E is now live-verified** (2026-10-12). The 2 live tests pass, and a third,
   `test_live_matches_esett_prices_but_not_its_resolution_label`, pins equal SE3 prices
   with differing resolution labels against eSett. A probe of all 12 zones over 60

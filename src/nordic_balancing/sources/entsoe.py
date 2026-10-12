@@ -35,8 +35,8 @@ from nordic_balancing.models import INTERVAL, BiddingZone, ImbalancePrice, to_ut
 
 SOURCE = "entsoe"
 BASE_URL = "https://web-api.tp.entsoe.eu/api"
-# Each request costs seconds of server time regardless of its length (observed 2026-10-12:
-# 1 hour and 366 days both took 4-40 s), so ask for a whole (leap) year at a time.
+# Observed request latency did not grow with the window (2026-10-12: 2-42 s for one hour,
+# 4-21 s for 31 to 367 days), so ask for a whole (leap) year at a time.
 _CHUNK = timedelta(days=366)
 _HOUR = timedelta(hours=1)
 _LIMIT = 64 * 1024 * 1024
@@ -82,7 +82,7 @@ class EntsoeClient:
 
     ``api_key`` defaults to ``ENTSOE_API_KEY``. Pass your own ``httpx.Client``
     to control proxies, timeouts or transports; otherwise this instance owns it.
-    Each request takes seconds of server time, so up to ``max_workers`` requests
+    A request can take tens of seconds, so up to ``max_workers`` requests
     (one per zone and chunk) run in parallel; ``max_workers=1`` runs them in turn.
     """
 
@@ -105,7 +105,7 @@ class EntsoeClient:
             raise ValueError("max_workers must be a positive integer")
         self._api_key = key
         self._owns_http = http is None
-        # Observed server time reaches 42 s for a single request.
+        # Observed latency reached 42 s for a single request.
         self._http = http if http is not None else httpx.Client(timeout=120.0)
         self._base_url = base_url.rstrip("/")
         self._max_retries = max_retries
@@ -269,6 +269,7 @@ class EntsoeClient:
                             f"{SOURCE}: dual imbalance prices are not supported "
                             f"(categories: {found})"
                         )
+                    _reject_repeated_categories(existing.raw["categories"], price.raw["categories"])
                     merged: dict[str, Any] = dict(existing.raw)
                     merged["categories"] = [
                         *existing.raw["categories"],
@@ -457,6 +458,7 @@ def _period_points(
                 f"{SOURCE}: dual imbalance prices are not supported "
                 f"(categories: {_category_names(existing.categories, record.categories)})"
             )
+        _reject_repeated_categories(existing.categories, record.categories)
         explicit[position] = replace(
             existing,
             categories=existing.categories + record.categories,
@@ -504,6 +506,17 @@ def _category_names(*groups: Iterable[dict[str, Any]]) -> str:
         {entry["category"] for group in groups for entry in group if entry["category"] is not None}
     )
     return ", ".join(found) if found else "none"
+
+
+def _reject_repeated_categories(
+    existing: Iterable[dict[str, Any]], incoming: Iterable[dict[str, Any]]
+) -> None:
+    # Equal prices merge only across distinct categories (A04 and A05); the same
+    # category twice, or two points without one, is a duplicate record (contract C3).
+    repeated = {entry["category"] for entry in existing} & {entry["category"] for entry in incoming}
+    if repeated:
+        names = ", ".join(sorted(name or "none" for name in repeated))
+        raise SourceError(f"{SOURCE}: duplicate price for category {names}")
 
 
 def _position(text: str) -> int:

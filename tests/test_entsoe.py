@@ -424,14 +424,57 @@ def test_accepts_any_balancing_document_namespace(namespace: str) -> None:
     assert [p.imbalance_price_eur for p in prices] == [21.0]
 
 
-def test_collapses_identical_duplicates() -> None:
-    quarter = period("2026-01-15T00:00Z", "2026-01-15T00:15Z", point(1, 21.0))
-    body = document(series(quarter), series(quarter))
-    prices = client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
-        START, END, [BiddingZone.SE3]
+def quarter_in(category: str | None, amount: float = 21.0, resolution: str = "PT15M") -> str:
+    end = "2026-01-15T01:00Z" if resolution == "PT60M" else "2026-01-15T00:15Z"
+    return series(
+        period("2026-01-15T00:00Z", end, point(1, amount, category), resolution=resolution)
     )
-    assert len(prices) == 1
-    assert prices[0].imbalance_price_eur == 21.0
+
+
+def test_equal_prices_in_distinct_categories_collapse_keeping_both() -> None:
+    body = document(quarter_in("A04"), quarter_in("A05"))
+    prices = client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+        START, START + INTERVAL, [BiddingZone.SE3]
+    )
+    assert [p.imbalance_price_eur for p in prices] == [21.0]
+    assert [c["category"] for c in prices[0].raw["categories"]] == ["A04", "A05"]
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        # The same category twice is a duplicate record even with an equal price (C3).
+        (document(quarter_in("A04"), quarter_in("A04")), "duplicate price for category A04"),
+        (document(quarter_in(None), quarter_in(None)), "duplicate price for category none"),
+        # The same document twice in one ZIP repeats every category.
+        (zipped(document(quarter_in("A04")), document(quarter_in("A04"))), "category A04"),
+        # A repeated position inside one Period goes through the same check.
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:15Z",
+                        point(1, 21.0, "A05"),
+                        point(1, 21.0, "A05"),
+                    )
+                )
+            ),
+            "duplicate price for category A05",
+        ),
+        (document(quarter_in("A04"), quarter_in("A05", 22.0)), "dual imbalance prices"),
+        (document(quarter_in("A04"), quarter_in("A04", 22.0)), "dual imbalance prices"),
+        (
+            document(quarter_in("A04", resolution="PT60M"), quarter_in("A05")),
+            "conflicting resolutions",
+        ),
+    ],
+)
+def test_rejects_duplicate_or_conflicting_publications(body: str | bytes, message: str) -> None:
+    with pytest.raises(SourceError, match=message):
+        client(lambda _: httpx.Response(200, content=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
 
 
 def test_rejects_dual_prices_for_the_same_interval() -> None:

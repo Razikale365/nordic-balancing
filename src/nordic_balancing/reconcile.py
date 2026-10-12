@@ -50,7 +50,11 @@ class ReconciliationReport:
 
     ``zones`` are the zones present in both inputs; ``compared`` is the number
     of (zone, start) keys in the union of both inputs over those zones, and
-    ``identical`` is how many of them produced no divergence. Sources are
+    ``identical`` is how many of them produced no divergence: present in both,
+    same ``resolution``, exactly equal prices or both ``None`` (a difference
+    within the tolerance is a ROUNDING divergence), and no conflicting
+    ``dominating_direction`` when both sides have one. Other fields (component
+    prices, ``raw``) are not compared. Sources are
     empty strings when an input was empty. Zones present in only one input are
     not compared; they are listed in ``primary_only_zones`` and
     ``reference_only_zones`` so a coverage gap is never silent.
