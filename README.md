@@ -92,7 +92,10 @@ Every client enforces the same contracts; a violation raises `SourceError`.
   convertible to `float`.
 - **C6 Outside window.** Records outside the requested query window are an error.
 - **C7 Resolution.** `resolution` is the source's publication interval; hourly
-  records are repeated across four quarters.
+  records are repeated across four quarters. Sources can label the same price
+  differently: ENTSO-E kept `PT60M` for SE and NO until 2025-03-18T00:00Z, eSett
+  switched to 15 minutes on 2023-05-21T22:00Z (see
+  [docs/RELEASE_EVIDENCE.md](docs/RELEASE_EVIDENCE.md)).
 - **C8 Transport.** Network and protocol failures surface as `SourceError`, never as
   raw `httpx` exceptions. HTTP 429/503 are retried, then raise `RateLimitError`, which
   is raised at once when `Retry-After` exceeds 300 s. HTTP 502/504, timeouts and
@@ -114,7 +117,7 @@ status, observed API behaviour and known limitations.
 | Fingrid | `FingridClient` | FI imbalance prices, mFRR up/down prices, dominating direction; any 15-minute dataset via `series()` | free API key | yes |
 | Svenska kraftnät | `SvKClient` | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) | free (CC-BY-4.0) | yes |
 | eSett | `ESettClient` | Imbalance prices, all 12 Nordic zones, from 2021-10-31T23:00Z | free, no key | yes |
-| ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones | free token (`ENTSOE_API_KEY`) | **no** — checked against the official XSDs only |
+| ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones, from 2021-10-31T23:00Z | free token (`ENTSOE_API_KEY`) | yes |
 
 Not covered yet: Energi Data Service mFRR/aFRR datasets, and activated balancing energy
 volumes. Out of scope: generic day-ahead price clients and mFRR bid submission — other

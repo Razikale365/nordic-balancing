@@ -15,7 +15,7 @@ Second audit, against the published 0.1.0a3. No public names are removed or rena
 ### Documentation
 - README: the status line now says releases are on PyPI, and there is an install
   section. "Planned sources" became "Sources", with a column saying which are checked
-  against the live API (all except ENTSO-E). The Energi Data Service mFRR/aFRR datasets
+  against the live API (now all five). The Energi Data Service mFRR/aFRR datasets
   are listed as not covered yet: they were never implemented.
 
 ### Fixed
@@ -59,6 +59,12 @@ Second audit, against the published 0.1.0a3. No public names are removed or rena
   symmetry.
 - Verification: 421 offline tests pass. Live: 8 passed, and the 2 ENTSO-E tests were
   skipped (no token).
+- **ENTSO-E is now live-verified** (2026-10-12). The 2 live tests pass, and a third,
+  `test_live_matches_esett_prices_but_not_its_resolution_label`, pins equal SE3 prices
+  with differing resolution labels against eSett. A probe of all 12 zones over 60
+  zone-days matched eSett on every interval (DK1/DK2: a few 0.01 EUR rounding
+  differences), and SE3/FI matched entsoe-py 0.8.1 exactly. No parser check fired.
+  Details and the per-zone `PT15M` dates are in `docs/RELEASE_EVIDENCE.md`.
 
 ### Behaviour changes to note
 - Some ENTSO-E responses that were accepted before now raise: a mismatched area, a

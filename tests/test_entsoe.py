@@ -14,6 +14,7 @@ from nordic_balancing import (
     INTERVAL,
     BiddingZone,
     EntsoeClient,
+    ESettClient,
     RateLimitError,
     SourceError,
 )
@@ -997,6 +998,21 @@ def test_live_one_day_of_dk1() -> None:
         prices = entsoe.imbalance_prices(START, START + timedelta(days=1), [BiddingZone.DK1])
     assert prices
     assert all(p.zone is BiddingZone.DK1 for p in prices)
+
+
+@pytest.mark.live
+def test_live_matches_esett_prices_but_not_its_resolution_label() -> None:
+    if not os.environ.get("ENTSOE_API_KEY"):
+        pytest.skip("ENTSOE_API_KEY not set")
+    start = datetime(2025, 3, 17, 23, tzinfo=UTC)
+    end = start + timedelta(hours=2)
+    with EntsoeClient() as entsoe, ESettClient() as esett:
+        prices = entsoe.imbalance_prices(start, end, [BiddingZone.SE3])
+        reference = esett.imbalance_prices(start, end, [BiddingZone.SE3])
+    assert [p.start for p in prices] == [p.start for p in reference]
+    assert [p.imbalance_price_eur for p in prices] == [p.imbalance_price_eur for p in reference]
+    assert [p.resolution for p in prices] == [timedelta(hours=1)] * 4 + [INTERVAL] * 4
+    assert all(p.resolution == INTERVAL for p in reference)
 
 
 @pytest.mark.parametrize("unit", ["KWH", "MW", ""])

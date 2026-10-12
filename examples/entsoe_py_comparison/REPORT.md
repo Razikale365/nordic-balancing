@@ -1,8 +1,9 @@
 # nordic-balancing vs entsoe-py: evidence comparison
 
 Date: 2026-10-09. Compared: `nordic-balancing` 0.1.0.dev0 (this repo) vs
-`entsoe-py` 0.8.1 (PyPI, EnergieID/entsoe-py). No ENTSO-E token is available
-yet, so all entsoe-py evidence is offline-reproduced or read from its source.
+`entsoe-py` 0.8.1 (PyPI, EnergieID/entsoe-py). No ENTSO-E token was available
+then, so sections 1–4 are offline-reproduced or read from its source. Live checks
+made with a token on 2026-10-12 are in "Live results" below.
 
 ## What was compared
 
@@ -31,6 +32,11 @@ EntsoeClient` (7-day chunks, httpx.MockTransport): **35,520 rows, 0 missing**.
 A fix is already proposed upstream: [PR #539](https://github.com/EnergieID/entsoe-py/pull/539)
 (open as of 2026-10-09) changes this mask and adds a regression test. This
 reproduction only confirms the bug on the released 0.8.1; it adds nothing to that fix.
+
+Live (2026-10-12): the same query for FI, 2023-12-30 → 2025-01-03 Europe/Helsinki,
+returned 35,519 of 35,520 rows; the missing one is `2024-12-30T00:00:00+02:00`, the
+first point of block 2. For SE_3 the same range returns all 8,856 rows, because
+ENTSO-E published SE3 as `PT60M` until 2025-03-18 and the hourly series loses nothing.
 
 ### 2. Resolution switch 2023-05-21T22:00Z (nordic_quirks.py, live eSett)
 
@@ -98,20 +104,28 @@ Caller-visible behavior, read from entsoe-py 0.8.1 source:
   four quarters of an hour carry identical values (before 2025-03-19 the
   values were effectively hourly). The label records publication cadence, not information
   content — a caller cannot distinguish "real" 15-min pricing.
-- `EntsoeClient` is mock-tested only; its A85 assumptions (single price, EUR,
-  A01/A03, strict positions) may raise `SourceError` on real documents entsoe-py
-  tolerates, e.g. dual-price TimeSeries.
-- eSett history only starts 2021-10-31T23:00Z.
+- `EntsoeClient`'s strict A85 assumptions (equal dual-category prices, EUR/MWH,
+  A01/A03, positions inside the window) may raise `SourceError` where entsoe-py
+  tolerates a document. None of them fired on live data (see below).
+- Sources disagree on `resolution` for the same prices: ENTSO-E keeps `PT60M` for
+  SE/NO until 2025-03-18T00:00Z and DK until 2025-03-03T00:00Z, eSett switches on
+  2023-05-21T22:00Z.
+- eSett and ENTSO-E history both start 2021-10-31T23:00Z (FI on ENTSO-E 22:00Z).
 - `None` conflates "not yet published" and "not provided by this source".
 
-## What still needs the ENTSO-E token
+## Live results (2026-10-12, with a token)
 
-- Any live entsoe-py call (every query needs a token) — including a live
-  verification of #529 and whether ENTSO-E actually returns ZIP for A85.
-- Live verification of `nordic_balancing.EntsoeClient`'s parser assumptions.
-- `live_side_by_side.py` is ready: SE3 + FI, 2026-01-15, three-way diff. It
-  exits with "ENTSOE_API_KEY not set" today. Command:
+- `live_side_by_side.py` (SE3 + FI, 2026-01-15): entsoe-py, nordic-balancing
+  `EntsoeClient` and eSett agree on all 96 rows per zone, 0 differing values.
+  Command:
   `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/live_side_by_side.py`
+- `EntsoeClient` vs eSett on 60 zone-days (all 12 zones; 2022-01-15, the 2023-05-21
+  switch, 2025-03-18, DST 2025-10-26, 2026-10-10..11): every interval present in both,
+  exact price match outside DK, DK1/DK2 0.01 EUR rounding differences only.
+- Every A85 response was a ZIP holding one schema-4.4 document with `curveType` A03
+  and categories A04 + A05 at equal prices.
+- #529 reproduces live for FI (section 1).
+- Full detail: `docs/RELEASE_EVIDENCE.md`, ENTSO-E section.
 
 Notes: entsoe-py issues #435/#523 concern `query_procured_balancing_capacity`
 (Slovakia) — a reliability signal for capacity queries, not imbalance prices.

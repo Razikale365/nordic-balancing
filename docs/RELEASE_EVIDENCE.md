@@ -20,7 +20,7 @@ a test, a command or a URL.
 | Fingrid | FI imbalance prices, mFRR up/down components, dominating direction (datasets 319, 244, 106, 369); generic `series(dataset_id)` | free key (`FINGRID_API_KEY`) | live-verified: `test_live_one_hour_of_fi_imbalance_prices`, `test_live_hourly_imbalance_prices_expand_to_quarters`, `test_live_overlap_hour_uses_the_hourly_value_settled_by_esett` | hourly publication until 2025-03-18; 15-minute records from 2025-03-14T23:15Z |
 | Svenska kraftnät | SE1–SE4 mFRR/aFRR capacity market prices and volumes | free (CC-BY-4.0), no key | live-verified: `test_live_mfrr_one_hour_all_zones`, `test_live_afrr_one_hour` | hourly records; earliest hour UNVERIFIED |
 | eSett | Imbalance prices, all 12 zones | free, no key | live-verified: `test_live_one_hour_of_se3_and_fi`, `test_live_hourly_to_quarter_hour_transition` | 2021-10-31T23:00Z |
-| ENTSO-E Transparency Platform | Imbalance prices (document type A85), all 12 zones | free token (`ENTSOE_API_KEY`) | **schema-checked, not live** — `test_live_one_hour_of_se3_and_fi`, `test_live_one_day_of_dk1` skip without a token | UNVERIFIED |
+| ENTSO-E Transparency Platform | Imbalance prices (document type A85), all 12 zones | free token (`ENTSOE_API_KEY`) | live-verified (2026-10-12): `test_live_one_hour_of_se3_and_fi`, `test_live_one_day_of_dk1`, `test_live_matches_esett_prices_but_not_its_resolution_label` | 2021-10-31T23:00Z (FI 2021-10-31T22:00Z) |
 
 ## Observed API behaviour
 
@@ -73,7 +73,27 @@ Observed 2026-10-09 unless noted; file references are under
 
 ### ENTSO-E Transparency Platform
 
-- Not live-verified (no token yet). The parser follows the official IEC 62325-451-6
+- Live-verified 2026-10-12 against eSett on 60 zone-days: all 12 zones on 2022-01-15,
+  2023-05-21T12:00Z+24h (the 60 → 15 min settlement switch), 2025-03-18T12:00Z+24h,
+  the DST day 2025-10-26 and 2026-10-10..11. Every interval was present in both
+  sources and no price was `None`. Prices matched exactly in 10 zones; DK1/DK2 differed
+  by 0.01 EUR in at most 5 intervals per sampled window (rounding, the same size as the EDS
+  vs eSett differences in `examples/reconciliation/README.md`). SE3 and FI on
+  2026-01-15 also match entsoe-py 0.8.1 exactly
+  (`examples/entsoe_py_comparison/live_side_by_side.py`).
+- Observed documents: every A85 response was a ZIP (`application/zip`) with one
+  schema-4.4 document, `area_Domain.mRID` equal to the requested EIC, `curveType` A03,
+  two TimeSeries per Period (categories A04 and A05) with equal prices, and no
+  `flowDirection.direction`. No point fell outside the requested window. Windows before
+  the history start return no records.
+- `resolution` labels differ from eSett although the prices agree. ENTSO-E publishes
+  `PT15M` from 2023-05-21T00:00Z in FI, from 2025-03-03T00:00Z in DK1/DK2 and from
+  2025-03-18T00:00Z in NO1–NO5 and SE1–SE4; eSett from 2023-05-21T22:00Z everywhere.
+  Neither date marks genuine quarter-hour prices (2025-03-18T23:00Z). Between those
+  dates `reconcile_imbalance_prices` reports RESOLUTION divergences for ENTSO-E vs eSett
+  (`test_live_matches_esett_prices_but_not_its_resolution_label` pins the SE3 boundary).
+- Requests are slow: 2–12 s each for a one-hour, one-zone query (observed 2026-10-12).
+- The parser follows the official IEC 62325-451-6
   balancing document schema: element names, optional fields and code lists were
   checked against ENTSO-E's `CIM_xsd_package_v2026` (balancing v3.0 to v4.5). The
   test fixtures in `tests/fixtures/entsoe/` validate against those XSDs (balancing
@@ -99,7 +119,7 @@ Observed 2026-10-09 unless noted; file references are under
   - `type`, which is mandatory, must be A85 when present.
   - A Period must be a whole number of resolution steps.
   - An interval published at two resolutions raises, even with equal prices.
-- The two live tests skip without `ENTSOE_API_KEY`.
+- The three live tests skip without `ENTSOE_API_KEY`.
 
 ## Data contracts
 
@@ -130,9 +150,9 @@ Not duplicated here.
   `examples/entsoe_py_comparison/REPORT.md`, "Gaps found").
 - `None` conflates "not yet published" with "not provided by this source"
   (`models.py` docstrings; same REPORT section).
-- `EntsoeClient` is schema-checked but not live-verified. Its strict parser raises
-  `SourceError` on dual-price TimeSeries and on curve types A02/A04/A05, which
-  entsoe-py may tolerate.
+- `EntsoeClient`'s strict parser raises `SourceError` on differing dual-category prices
+  and on curve types A02/A04/A05, which entsoe-py may tolerate. None of these occurred
+  in the 60 live zone-days checked.
 - A possible FI imbalance-price formula change around 2026-06-01 is UNVERIFIED
   (no primary source found): it has no entry in `CHANGES` and no test coverage.
 - No async client; all clients are synchronous over `httpx.Client`.
@@ -150,14 +170,14 @@ Not duplicated here.
   the single price (never observed in ~107k records sampled 2021-11 to 2026-10).
 - Energi Data Service: `DominatingDirection` must be exactly -1, 0 or 1 (observed
   values in ~16.8k records: only those and null).
-- ENTSO-E risks that need a token to settle. Each one fails loudly rather than
-  silently:
+- ENTSO-E checks that never triggered on live data (60 zone-days, 2026-10-12) but
+  stay strict, so they fail loudly if the API changes:
   - A point outside the requested window raises. entsoe-py truncates its A85 results
-    to the window, which suggests the API may return extra points.
+    to the window; no extra points were observed.
   - A TimeSeries without `curveType` raises, although the element is optional in the
-    XSD.
-  - The area check assumes the response area equals the bidding-zone EIC sent as
-    `controlArea_Domain`.
+    XSD; every observed TimeSeries had A03.
+  - The response area must equal the bidding-zone EIC sent as `controlArea_Domain`;
+    it did in every observed document.
 - ENTSO-E: the token is a query parameter, as the API requires. If you enable INFO
   logging for the `httpx` logger, request URLs are logged, and with them the token.
 - SvK: the client asks for on-the-hour starts and expands each record to four
@@ -172,15 +192,16 @@ Not duplicated here.
   Hypothesis property tests: for every client, splitting the window gives the same
   records, and every start is on the 15-minute grid in `[start, end)` with none
   missing. It also checks reconciliation symmetry.
-- Live suite (`uv run pytest -m live`): **10 tests**. Verified 2026-10-09:
-  8 passed (EDS 1, eSett 2, Fingrid 3, SvK 2); the 2 ENTSO-E tests skipped —
-  no `ENTSOE_API_KEY`. The Fingrid tests skip without `FINGRID_API_KEY`.
+- Live suite (`uv run pytest -m live`): **11 tests**. Verified 2026-10-09:
+  8 passed (EDS 1, eSett 2, Fingrid 3, SvK 2). The 3 ENTSO-E tests passed on
+  2026-10-12. The Fingrid tests skip without `FINGRID_API_KEY`, the ENTSO-E tests
+  without `ENTSOE_API_KEY`.
 
 | File | Offline | Live |
 |---|---:|---:|
 | `tests/test_changes.py` | 7 | — |
 | `tests/test_energidataservice.py` | 63 | 1 |
-| `tests/test_entsoe.py` | 89 | 2 |
+| `tests/test_entsoe.py` | 89 | 3 |
 | `tests/test_esett.py` | 59 | 2 |
 | `tests/test_fingrid.py` | 94 | 3 |
 | `tests/test_frame.py` | 9 | — |
@@ -193,7 +214,7 @@ Not duplicated here.
 `uv run pytest --co -q | tail -1`:
 
 ```
-421/431 tests collected (10 deselected)
+421/432 tests collected (11 deselected)
 ```
 
 Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in
@@ -208,6 +229,6 @@ loads it). No coverage tool is configured.
 | `examples/mfrr_transition/analysis.py` | `uv run --with matplotlib python examples/mfrr_transition/analysis.py` | When quarter-hourly prices became real (2025-03-18T23:00Z); caches eSett data in `cache.json` |
 | `examples/entsoe_py_comparison/nordic_quirks.py` | `uv run python examples/entsoe_py_comparison/nordic_quirks.py` | Live eSett: the 2023-05 resolution switch, repeated hourly prices, unpublished intervals |
 | `examples/entsoe_py_comparison/repro_issue_529.py` | `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/repro_issue_529.py` | Offline repro of entsoe-py bug #529 (35,519 vs 35,520 rows); upstream fix PR #539 open |
-| `examples/entsoe_py_comparison/live_side_by_side.py` | `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/live_side_by_side.py` | Three-way diff nordic-balancing vs entsoe-py vs eSett; exits early without `ENTSOE_API_KEY` |
+| `examples/entsoe_py_comparison/live_side_by_side.py` | `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/live_side_by_side.py` | Three-way diff nordic-balancing vs entsoe-py vs eSett (SE3, FI, 2026-01-15): 96/96 rows, 0 differences on 2026-10-12; exits early without `ENTSOE_API_KEY` |
 
 Each script's documented output is in the README/REPORT next to it.
