@@ -3,7 +3,10 @@
 All notable changes to this project. Versions follow [PEP 440](https://peps.python.org/pep-0440/);
 the project is alpha and the API may change between 0.x versions.
 
-## Unreleased
+## 0.1.1 — 2026-10-12
+
+Corrections from an independent audit of 0.1.0. No public names are added, removed or
+renamed.
 
 ### Fixed
 - **ENTSO-E:** the same price category published twice for one interval (or two
@@ -30,7 +33,11 @@ the project is alpha and the API may change between 0.x versions.
 - `docs/RELEASE_EVIDENCE.md`: dated header; the sample is 60 zone-windows (72
   zone-days), not 60 zone-days; the full-year 2025 comparison is restated from a rerun
   of the committed script, including 1 DK1 material difference the 0.1.0 text left
-  out.
+  out. That DK1 value (2141.93 vs eSett 59.70) is also Energi Data Service's imbalance
+  price and equals the aFRR up price; the providers disagree, the client does not
+  misparse it.
+- The 0.1.0 entry now says 60 zone-windows and mentions the 4 larger full-year
+  differences.
 
 ### Behaviour changes to note
 - An ENTSO-E response that repeats a price category for one interval now raises. No
@@ -108,12 +115,12 @@ removed or renamed.
 - **ENTSO-E is now live-verified** (2026-10-12). The 2 live tests pass, and a third,
   `test_live_matches_esett_prices_but_not_its_resolution_label`, pins equal SE3 prices
   with differing resolution labels against eSett. A probe of all 12 zones over 60
-  zone-days matched eSett on every interval (DK1/DK2: a few 0.01 EUR rounding
-  differences), and SE3/FI matched entsoe-py 0.8.1 exactly. No parser check fired.
+  zone-windows (72 zone-days) matched eSett on every interval (DK1/DK2: a few 0.01 EUR
+  rounding differences), and SE3/FI matched entsoe-py 0.8.1 exactly. No parser check fired.
   Details and the per-zone `PT15M` dates are in `docs/RELEASE_EVIDENCE.md`.
 - A full year (2025, all 12 zones) against eSett found gaps and zero prices in ENTSO-E's
-  own documents (mostly DK, January and April 2025), confirmed with entsoe-py; they are
-  listed in `docs/RELEASE_EVIDENCE.md`. Final count: 427 offline tests and 11 live tests
+  own documents (mostly DK, January and April 2025), confirmed with entsoe-py, and 4
+  larger price differences; they are listed in `docs/RELEASE_EVIDENCE.md`. Final count: 427 offline tests and 11 live tests
   pass.
 
 ### Behaviour changes to note

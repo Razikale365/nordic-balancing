@@ -7,9 +7,9 @@ claim cites a file, a test, a command or a URL.
 
 ## Status
 
-- Version `0.1.0` (`pyproject.toml`), the first non-pre-release; **alpha** — the API may
-  change between 0.x versions (classifier `Development Status :: 3 - Alpha`). Earlier
-  versions 0.1.0a1–a3 were PyPI pre-releases.
+- Version `0.1.1` (`pyproject.toml`); **alpha** — the API may change between 0.x
+  versions (classifier `Development Status :: 3 - Alpha`). 0.1.0 was the first
+  non-pre-release; 0.1.0a1–a3 were PyPI pre-releases.
 - Python `>=3.12` (`requires-python`); classifiers list 3.12 and 3.13.
 - Licence: MIT (`LICENSE`). Retrieved data remains under each source's own terms.
 - Runtime dependency: `httpx>=0.27,<1` only. Optional extra `pandas` (`pandas>=2.1`), used
@@ -107,7 +107,7 @@ Observed 2026-10-09 unless noted; file references are under
   `max_workers` (default 12) requests in parallel. 12 zones × 2025 took 90 s, against
   358 s one request at a time; with the earlier 7-day chunks it would have been 624
   requests.
-- Gaps in ENTSO-E's own data, full year 2025 vs eSett (420,480 intervals, each in
+- Full year 2025 vs eSett (420,480 intervals, each in
   exactly one category; `examples/entsoe_validation/validate.py year-2025 --live`,
   rerun 2026-10-12 with the same counts as the first, uncommitted probe; per-zone
   counts and every differing interval in `results_year-2025.json`):
@@ -121,10 +121,17 @@ Observed 2026-10-09 unless noted; file references are under
     price.
   - 4 differ by more than 0.01 otherwise: DK1 2025-06-29T17:45Z (2141.93 vs 59.70),
     FI 2025-04-29T02:30Z, NO3/NO4 2025-04-24T18:45Z. The 0.1.0 text listed only the
-    3 outside DK. entsoe-py 0.8.1 shows the
-  same 36 missing quarters and 37 zero rows for DK1 on 2025-04-02/03, so these are in
-  the published documents; the client reports them as they are (contract C4) and
-  `reconcile_imbalance_prices` against eSett finds them.
+    3 outside DK.
+  - The DK1 2025-06-29T17:45Z value is not a parsing error (checked live 2026-10-12).
+    Energi Data Service also publishes `ImbalancePriceEUR` 2141.93, which equals that
+    quarter's aFRR up price (EDS `aFRRVWAUpEUR`, eSett `upRegPriceFrrA`). eSett's
+    imbalance price, 59.70, equals its mFRR up price and the spot price. The sources
+    disagree on which price sets the imbalance price for that quarter; which one is
+    authoritative is not established here.
+  - entsoe-py 0.8.1 shows the same 36 missing quarters and 37 zero rows for DK1 on
+    2025-04-02/03, so these are in the published documents. The client reports every
+    case above as published (contract C4), and `reconcile_imbalance_prices` against
+    eSett finds them.
 - The parser follows the official IEC 62325-451-6
   balancing document schema: element names, optional fields and code lists were
   checked against ENTSO-E's `CIM_xsd_package_v2026` (balancing v3.0 to v4.5). The
