@@ -5,8 +5,9 @@ a test, a command or a URL.
 
 ## Status
 
-- Version `0.1.0a3` (`pyproject.toml`), a pre-release; **pre-alpha** — the API will change
-  (classifier `Development Status :: 2 - Pre-Alpha`). Published on PyPI as pre-releases.
+- Version `0.1.0` (`pyproject.toml`), the first non-pre-release; **alpha** — the API may
+  change between 0.x versions (classifier `Development Status :: 3 - Alpha`). Earlier
+  versions 0.1.0a1–a3 were PyPI pre-releases.
 - Python `>=3.12` (`requires-python`); classifiers list 3.12 and 3.13.
 - Licence: MIT (`LICENSE`). Retrieved data remains under each source's own terms.
 - Runtime dependency: `httpx>=0.27,<1` only. Optional extra `pandas` (`pandas>=2.1`), used
@@ -92,7 +93,21 @@ Observed 2026-10-09 unless noted; file references are under
   Neither date marks genuine quarter-hour prices (2025-03-18T23:00Z). Between those
   dates `reconcile_imbalance_prices` reports RESOLUTION divergences for ENTSO-E vs eSett
   (`test_live_matches_esett_prices_but_not_its_resolution_label` pins the SE3 boundary).
-- Requests are slow: 2–12 s each for a one-hour, one-zone query (observed 2026-10-12).
+- Requests are slow, and the time does not depend on the window length: 2–42 s for one
+  hour, 4–21 s for 31 to 367 days (one zone, observed 2026-10-12; a 367-day window was
+  accepted). The client therefore asks for up to 366 days per request and runs up to
+  `max_workers` (default 12) requests in parallel. 12 zones × 2025 took 90 s, against
+  358 s one request at a time; with the earlier 7-day chunks it would have been 624
+  requests.
+- Gaps in ENTSO-E's own data, full year 2025 vs eSett (420,480 intervals): ENTSO-E
+  lacks 7,361. DK1/DK2 lack 2025-01-05T23:00Z–2025-01-30T08:45Z and about 1,200 scattered
+  quarters (most in April–May); every other zone lacks 12–20 quarters, mainly
+  2025-01-06T16:00–17:45Z and the hour from 2025-01-22T23:00Z. 86 DK quarters (mostly
+  2025-04-01/02) read 0.0 where eSett has a price, and 3 non-DK quarters differ by more
+  than 0.01 (FI 2025-04-29T02:30Z, NO3/NO4 2025-04-24T18:45Z). entsoe-py 0.8.1 shows the
+  same 36 missing quarters and 37 zero rows for DK1 on 2025-04-02/03, so these are in
+  the published documents; the client reports them as they are (contract C4) and
+  `reconcile_imbalance_prices` against eSett finds them.
 - The parser follows the official IEC 62325-451-6
   balancing document schema: element names, optional fields and code lists were
   checked against ENTSO-E's `CIM_xsd_package_v2026` (balancing v3.0 to v4.5). The
@@ -102,7 +117,7 @@ Observed 2026-10-09 unless noted; file references are under
   `imbalance_Price.category` and `flowDirection.direction`. entsoe-py's parser
   lowercases tag names, so lowercase names copied from it match no real document.
   An earlier version of this client had that bug.
-- One A85 request per zone per chunk of at most 7 days. Prices must be in EUR per MWH.
+- One A85 request per zone per chunk of at most 366 days, in parallel. Prices must be in EUR per MWH.
   `curveType` A01 and A03 are supported (A03 repeats the previous value for omitted
   positions), and A02, A04 and A05 raise. `PT60M` points are repeated over quarters.
 - A Point without an amount gives `imbalance_price_eur=None`. `Financial_Price`
@@ -170,8 +185,8 @@ Not duplicated here.
   the single price (never observed in ~107k records sampled 2021-11 to 2026-10).
 - Energi Data Service: `DominatingDirection` must be exactly -1, 0 or 1 (observed
   values in ~16.8k records: only those and null).
-- ENTSO-E checks that never triggered on live data (60 zone-days, 2026-10-12) but
-  stay strict, so they fail loudly if the API changes:
+- ENTSO-E checks that never triggered on live data (60 zone-days and all 12 zones for
+  2025, 2026-10-12) but stay strict, so they fail loudly if the API changes:
   - A point outside the requested window raises. entsoe-py truncates its A85 results
     to the window; no extra points were observed.
   - A TimeSeries without `curveType` raises, although the element is optional in the
@@ -187,21 +202,20 @@ Not duplicated here.
 
 ## Test coverage
 
-- Offline suite (default; `addopts` deselects `live`): **421 tests**, all
+- Offline suite (default; `addopts` deselects `live`): **427 tests**, all
   passing on 2026-10-09 (after the second audit). `tests/test_properties.py` holds
   Hypothesis property tests: for every client, splitting the window gives the same
   records, and every start is on the 15-minute grid in `[start, end)` with none
   missing. It also checks reconciliation symmetry.
-- Live suite (`uv run pytest -m live`): **11 tests**. Verified 2026-10-09:
-  8 passed (EDS 1, eSett 2, Fingrid 3, SvK 2). The 3 ENTSO-E tests passed on
-  2026-10-12. The Fingrid tests skip without `FINGRID_API_KEY`, the ENTSO-E tests
+- Live suite (`uv run pytest -m live`): **11 tests**, all passing on 2026-10-12
+  (EDS 1, eSett 2, Fingrid 3, SvK 2, ENTSO-E 3). The Fingrid tests skip without `FINGRID_API_KEY`, the ENTSO-E tests
   without `ENTSOE_API_KEY`.
 
 | File | Offline | Live |
 |---|---:|---:|
 | `tests/test_changes.py` | 7 | — |
 | `tests/test_energidataservice.py` | 63 | 1 |
-| `tests/test_entsoe.py` | 89 | 3 |
+| `tests/test_entsoe.py` | 95 | 3 |
 | `tests/test_esett.py` | 59 | 2 |
 | `tests/test_fingrid.py` | 94 | 3 |
 | `tests/test_frame.py` | 9 | — |
@@ -214,7 +228,7 @@ Not duplicated here.
 `uv run pytest --co -q | tail -1`:
 
 ```
-421/432 tests collected (11 deselected)
+427/438 tests collected (11 deselected)
 ```
 
 Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in

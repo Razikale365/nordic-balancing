@@ -19,6 +19,8 @@ from nordic_balancing import (
     SourceError,
 )
 from nordic_balancing.sources import EntsoeClient as SourceEntsoeClient
+from nordic_balancing.sources import entsoe as entsoe_module
+from nordic_balancing.sources.entsoe import _EIC_CODES
 
 KEY = "test-entsoe-token"
 NS = "urn:iec62325.351:tc57wg16:451-6:balancingdocument:4:0"
@@ -169,9 +171,9 @@ def test_request_params_eic_codes_and_custom_base_url() -> None:
     assert len(seen) == 2
     assert [r.url.host for r in seen] == ["example.test"] * 2
     assert [r.url.path for r in seen] == ["/api"] * 2
-    assert [r.url.params["controlArea_Domain"] for r in seen] == [
-        "10YFI-1--------U",
+    assert sorted(r.url.params["controlArea_Domain"] for r in seen) == [
         "10Y1001A1001A46L",
+        "10YFI-1--------U",
     ]
     for request in seen:
         assert request.url.params["securityToken"] == KEY
@@ -189,35 +191,37 @@ def test_defaults_to_all_twelve_known_eic_codes() -> None:
 
     client(handler).imbalance_prices(START, END)
     assert len(BiddingZone) == 12
-    assert [r.url.params["controlArea_Domain"] for r in seen] == [
-        "10YDK-1--------W",
-        "10YDK-2--------M",
-        "10YFI-1--------U",
-        "10YNO-1--------2",
-        "10YNO-2--------T",
-        "10YNO-3--------J",
-        "10YNO-4--------9",
-        "10Y1001A1001A48H",
-        "10Y1001A1001A44P",
-        "10Y1001A1001A45N",
-        "10Y1001A1001A46L",
-        "10Y1001A1001A47J",
-    ]
+    assert sorted(r.url.params["controlArea_Domain"] for r in seen) == sorted(
+        [
+            "10YDK-1--------W",
+            "10YDK-2--------M",
+            "10YFI-1--------U",
+            "10YNO-1--------2",
+            "10YNO-2--------T",
+            "10YNO-3--------J",
+            "10YNO-4--------9",
+            "10Y1001A1001A48H",
+            "10Y1001A1001A44P",
+            "10Y1001A1001A45N",
+            "10Y1001A1001A46L",
+            "10Y1001A1001A47J",
+        ]
+    )
 
 
-def test_chunks_windows_longer_than_seven_days_per_zone() -> None:
+def test_chunks_windows_longer_than_366_days_per_zone() -> None:
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(200, text=acknowledgement("No matching data found"))
 
-    client(handler).imbalance_prices(START, START + timedelta(days=16), [BiddingZone.SE3])
-    windows = [(r.url.params["periodStart"], r.url.params["periodEnd"]) for r in seen]
+    client(handler).imbalance_prices(START, START + timedelta(days=740), [BiddingZone.SE3])
+    windows = sorted((r.url.params["periodStart"], r.url.params["periodEnd"]) for r in seen)
     assert windows == [
-        ("202601150000", "202601220000"),
-        ("202601220000", "202601290000"),
-        ("202601290000", "202601310000"),
+        ("202601150000", "202701160000"),
+        ("202701160000", "202801170000"),
+        ("202801170000", "202801250000"),
     ]
     assert all(r.url.params["controlArea_Domain"] == "10Y1001A1001A46L" for r in seen)
 
@@ -853,6 +857,47 @@ def test_rejects_non_enum_zones_without_request(zone: Any) -> None:
 def test_rejects_bad_retry_budget(retries: Any) -> None:
     with pytest.raises(ValueError, match="max_retries"):
         EntsoeClient(KEY, max_retries=retries)
+
+
+@pytest.mark.parametrize("workers", [0, -1, True, 1.5])
+def test_rejects_bad_worker_count(workers: Any) -> None:
+    with pytest.raises(ValueError, match="max_workers"):
+        EntsoeClient(KEY, max_workers=workers)
+
+
+def zone_document(request: httpx.Request) -> httpx.Response:
+    eic = request.url.params["controlArea_Domain"]
+    start = request.url.params["periodStart"]
+    value = float(sorted(_EIC_CODES.values()).index(eic)) + int(start[6:8]) / 100
+    begin = f"{start[:4]}-{start[4:6]}-{start[6:8]}T00:00Z"
+    finish = request.url.params["periodEnd"]
+    stop = f"{finish[:4]}-{finish[4:6]}-{finish[6:8]}T00:00Z"
+    return httpx.Response(
+        200, text=document(series(period(begin, stop, point(1, value), resolution="PT60M")))
+    )
+
+
+def test_parallel_requests_give_the_same_records_as_sequential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(entsoe_module, "_CHUNK", timedelta(days=1))
+    end = START + timedelta(days=3)
+    sequential = client(zone_document, max_workers=1).imbalance_prices(START, end)
+    parallel = client(zone_document).imbalance_prices(START, end)
+    assert len(parallel) == 12 * 3 * 96
+    assert parallel == sequential
+
+
+def test_parallel_requests_raise_the_first_failing_job_with_token_redacted() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        zone = request.url.params["controlArea_Domain"]
+        if zone in ("10YDK-2--------M", "10YNO-1--------2"):
+            return httpx.Response(500, text=f"{zone} securityToken {KEY}")
+        return httpx.Response(200, text=acknowledgement("No matching data found"))
+
+    with pytest.raises(SourceError, match="10YDK-2--------M") as caught:
+        client(handler).imbalance_prices(START, END)
+    assert KEY not in str(caught.value)
 
 
 def test_context_manager_closes_only_owned_client_and_exports() -> None:

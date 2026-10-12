@@ -3,17 +3,18 @@
 Python client for Nordic electricity **balancing** and **imbalance** data, normalised to
 15-minute UTC intervals.
 
-> **Status: pre-alpha.** Alpha releases are on [PyPI](https://pypi.org/project/nordic-balancing/);
-> the API may still change between them. See [CHANGELOG.md](CHANGELOG.md).
+> **Status: alpha.** Releases are on [PyPI](https://pypi.org/project/nordic-balancing/).
+> Every source is checked against its live API, but the API of this library may still
+> change between 0.x versions. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 
 ```bash
-pip install --pre nordic-balancing            # httpx is the only dependency
-pip install --pre "nordic-balancing[pandas]"  # adds to_frame()
+pip install nordic-balancing            # httpx is the only dependency
+pip install "nordic-balancing[pandas]"  # adds to_frame()
 ```
 
-Python 3.12 or newer. `--pre` is needed while only alpha releases exist.
+Python 3.12 or newer.
 
 ## Why
 

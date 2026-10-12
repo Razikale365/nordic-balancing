@@ -8,9 +8,9 @@ generated models in entsoe-apy. In that schema a ``Point`` requires only
 ``flowDirection.direction``, ``Financial_Price`` components and ``Reason`` are
 all optional. ``Financial_Price`` components are preserved in ``raw`` but not
 interpreted: what they contribute to the published price is not verified.
-It has NOT been verified against the live API yet, because no API token is
-available. The parser is deliberately strict: any deviation from these
-assumptions raises ``SourceError`` instead of passing silently.
+It was verified against the live API on 2026-10-12 (all 12 zones, compared
+with eSett and entsoe-py). The parser is deliberately strict: any deviation
+from these assumptions raises ``SourceError`` instead of passing silently.
 """
 
 import io
@@ -20,6 +20,7 @@ import time
 import zipfile
 import zlib
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from types import TracebackType
@@ -34,7 +35,9 @@ from nordic_balancing.models import INTERVAL, BiddingZone, ImbalancePrice, to_ut
 
 SOURCE = "entsoe"
 BASE_URL = "https://web-api.tp.entsoe.eu/api"
-_CHUNK = timedelta(days=7)
+# Each request costs seconds of server time regardless of its length (observed 2026-10-12:
+# 1 hour and 366 days both took 4-40 s), so ask for a whole (leap) year at a time.
+_CHUNK = timedelta(days=366)
 _HOUR = timedelta(hours=1)
 _LIMIT = 64 * 1024 * 1024
 _NO_DATA = "No matching data found"
@@ -79,6 +82,8 @@ class EntsoeClient:
 
     ``api_key`` defaults to ``ENTSOE_API_KEY``. Pass your own ``httpx.Client``
     to control proxies, timeouts or transports; otherwise this instance owns it.
+    Each request takes seconds of server time, so up to ``max_workers`` requests
+    (one per zone and chunk) run in parallel; ``max_workers=1`` runs them in turn.
     """
 
     def __init__(
@@ -88,6 +93,7 @@ class EntsoeClient:
         *,
         base_url: str = BASE_URL,
         max_retries: int = 3,
+        max_workers: int = 12,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         key = api_key if api_key is not None else os.environ.get("ENTSOE_API_KEY")
@@ -95,11 +101,15 @@ class EntsoeClient:
             raise ValueError("api_key or ENTSOE_API_KEY must be set")
         if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
             raise ValueError("max_retries must be a non-negative integer")
+        if isinstance(max_workers, bool) or not isinstance(max_workers, int) or max_workers < 1:
+            raise ValueError("max_workers must be a positive integer")
         self._api_key = key
         self._owns_http = http is None
-        self._http = http if http is not None else httpx.Client(timeout=30.0)
+        # Observed server time reaches 42 s for a single request.
+        self._http = http if http is not None else httpx.Client(timeout=120.0)
         self._base_url = base_url.rstrip("/")
         self._max_retries = max_retries
+        self._max_workers = max_workers
         self._sleep = sleep
 
     def __enter__(self) -> Self:
@@ -127,7 +137,7 @@ class EntsoeClient:
         """Return intervals starting in ``[start, end)``, sorted by start and zone.
 
         One document type A85 request is made per zone per chunk of at most
-        seven days. ``PT60M`` points are repeated across four quarters, with
+        366 days. ``PT60M`` points are repeated across four quarters, with
         the published resolution retained.
         """
         start_utc = to_utc(start, "start")
@@ -144,20 +154,38 @@ class EntsoeClient:
         query_end = end_utc.replace(minute=0, second=0, microsecond=0)
         if query_end < end_utc:
             query_end += _HOUR
-        collected: dict[tuple[BiddingZone, datetime], ImbalancePrice] = {}
+        jobs: list[tuple[BiddingZone, datetime, datetime]] = []
+        chunk_start = query_start
+        while chunk_start < query_end:
+            chunk_end = min(chunk_start + _CHUNK, query_end)
+            jobs.extend((zone, chunk_start, chunk_end) for zone in zone_list)
+            chunk_start = chunk_end
+        workers = min(self._max_workers, len(jobs))
         try:
-            chunk_start = query_start
-            while chunk_start < query_end:
-                chunk_end = min(chunk_start + _CHUNK, query_end)
-                for zone in zone_list:
-                    self._collect(collected, zone, chunk_start, chunk_end)
-                chunk_start = chunk_end
+            if workers == 1:
+                parts = [self._fetch(*job) for job in jobs]
+            else:
+                pool = ThreadPoolExecutor(workers)
+                try:
+                    # map yields in job order, so the first failing job raises.
+                    parts = list(pool.map(lambda job: self._fetch(*job), jobs))
+                finally:
+                    pool.shutdown(cancel_futures=True)
         except SourceError as exc:
             raise SourceError(str(exc).replace(self._api_key, "[REDACTED_SECRET]")) from None
+        # Jobs never share a key: each covers one zone and a disjoint chunk.
+        collected = {key: price for part in parts for key, price in part.items()}
         return sorted(
             (p for p in collected.values() if start_utc <= p.start < end_utc),
             key=lambda p: (p.start, p.zone),
         )
+
+    def _fetch(
+        self, zone: BiddingZone, chunk_start: datetime, chunk_end: datetime
+    ) -> dict[tuple[BiddingZone, datetime], ImbalancePrice]:
+        collected: dict[tuple[BiddingZone, datetime], ImbalancePrice] = {}
+        self._collect(collected, zone, chunk_start, chunk_end)
+        return collected
 
     def _collect(
         self,

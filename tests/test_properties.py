@@ -30,7 +30,7 @@ from nordic_balancing import (
     SvKClient,
     reconcile_imbalance_prices,
 )
-from nordic_balancing.sources import energidataservice, fingrid
+from nordic_balancing.sources import energidataservice, entsoe, fingrid
 from nordic_balancing.sources.entsoe import _EIC_CODES as _ENTSOE_EIC
 from nordic_balancing.sources.esett import _EIC_CODES as _ESETT_EIC
 
@@ -541,10 +541,12 @@ def test_entsoe_same_records_however_the_window_is_split(
         httpx.Client(transport=httpx.MockTransport(_entsoe_handler)),
         sleep=lambda _: None,
     )
-    whole = client.imbalance_prices(start, end, zones)
-    _assert_price_invariants(whole, zones, start, end)
-    left = client.imbalance_prices(start, middle, zones)
-    right = client.imbalance_prices(middle, end, zones)
+    with pytest.MonkeyPatch().context() as patch:
+        patch.setattr(entsoe, "_CHUNK", timedelta(days=7))
+        whole = client.imbalance_prices(start, end, zones)
+        _assert_price_invariants(whole, zones, start, end)
+        left = client.imbalance_prices(start, middle, zones)
+        right = client.imbalance_prices(middle, end, zones)
     assert _price_tuples(left + right) == _price_tuples(whole)
     for price in whole:
         assert price.resolution == INTERVAL

@@ -1,11 +1,23 @@
 # Changelog
 
 All notable changes to this project. Versions follow [PEP 440](https://peps.python.org/pep-0440/);
-the project is pre-alpha and the API may change between alphas.
+the project is alpha and the API may change between 0.x versions.
 
-## Unreleased
+## 0.1.0 — 2026-10-12
 
-Second audit, against the published 0.1.0a3. No public names are removed or renamed.
+First release that is not a pre-release: `pip install nordic-balancing` no longer needs
+`--pre`. All five sources are now checked against their live APIs. The classifier moves
+from Pre-Alpha to Alpha; the API may still change between 0.x versions.
+
+Also contains the second audit, against the published 0.1.0a3. No public names are
+removed or renamed.
+
+### Changed
+- **ENTSO-E is faster.** Each request costs 2–40 s of server time however long its
+  window, so `EntsoeClient` now asks for up to 366 days per request (was 7) and runs up
+  to `max_workers` requests in parallel (new keyword, default 12; `max_workers=1` runs
+  them in turn). A year of all 12 zones takes about 90 s instead of 624 requests. The
+  default HTTP timeout rises from 30 s to 120 s, since single requests took up to 42 s.
 
 ### Added
 - `to_frame(records)` returns a pandas DataFrame with one typed column per field, leaving
@@ -65,6 +77,10 @@ Second audit, against the published 0.1.0a3. No public names are removed or rena
   zone-days matched eSett on every interval (DK1/DK2: a few 0.01 EUR rounding
   differences), and SE3/FI matched entsoe-py 0.8.1 exactly. No parser check fired.
   Details and the per-zone `PT15M` dates are in `docs/RELEASE_EVIDENCE.md`.
+- A full year (2025, all 12 zones) against eSett found gaps and zero prices in ENTSO-E's
+  own documents (mostly DK, January and April 2025), confirmed with entsoe-py; they are
+  listed in `docs/RELEASE_EVIDENCE.md`. Final count: 427 offline tests and 11 live tests
+  pass.
 
 ### Behaviour changes to note
 - Some ENTSO-E responses that were accepted before now raise: a mismatched area, a
