@@ -143,6 +143,8 @@ uv run mypy
 uv run pytest -m live      # calls the real APIs; not run by default
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE). Data retrieved through this library remains subject to each
