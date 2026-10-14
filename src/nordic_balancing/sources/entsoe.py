@@ -14,6 +14,7 @@ from these assumptions raises ``SourceError`` instead of passing silently.
 """
 
 import io
+import lzma
 import math
 import os
 import time
@@ -29,7 +30,7 @@ from xml.etree import ElementTree
 
 import httpx
 
-from nordic_balancing._http import get_bytes
+from nordic_balancing._http import _request
 from nordic_balancing.errors import SourceError
 from nordic_balancing.models import INTERVAL, BiddingZone, ImbalancePrice, to_utc
 
@@ -103,6 +104,9 @@ class EntsoeClient:
             raise ValueError("max_retries must be a non-negative integer")
         if isinstance(max_workers, bool) or not isinstance(max_workers, int) or max_workers < 1:
             raise ValueError("max_workers must be a positive integer")
+        key = key.strip()
+        if any(not "!" <= character <= "~" for character in key):
+            raise ValueError("api_key must contain only printable ASCII without whitespace")
         self._api_key = key
         self._owns_http = http is None
         # Observed latency reached 42 s for a single request.
@@ -173,8 +177,14 @@ class EntsoeClient:
                     pool.shutdown(cancel_futures=True)
         except SourceError as exc:
             raise SourceError(str(exc).replace(self._api_key, "[REDACTED_SECRET]")) from None
-        # Jobs never share a key: each covers one zone and a disjoint chunk.
-        collected = {key: price for part in parts for key, price in part.items()}
+        # Each job covers one zone and a disjoint chunk; overlapping keys
+        # indicate invalid chunk results, even when the prices agree.
+        collected: dict[tuple[BiddingZone, datetime], ImbalancePrice] = {}
+        for part in parts:
+            for key, price in part.items():
+                if key in collected:
+                    raise SourceError(f"{SOURCE}: duplicate price across chunks")
+                collected[key] = price
         return sorted(
             (p for p in collected.values() if start_utc <= p.start < end_utc),
             key=lambda p: (p.start, p.zone),
@@ -202,7 +212,7 @@ class EntsoeClient:
             ("periodEnd", _format(chunk_end)),
         ]
         try:
-            body, _ = get_bytes(
+            response = _request(
                 self._http,
                 self._base_url,
                 "",
@@ -210,12 +220,18 @@ class EntsoeClient:
                 source=SOURCE,
                 max_retries=self._max_retries,
                 sleep=self._sleep,
-                passthrough_statuses=_PASSTHROUGH,
+                # Retain the complete error body so redaction precedes truncation.
+                passthrough_statuses=frozenset(range(400, 600)),
             )
         except httpx.HTTPError:
             raise SourceError(f"{SOURCE}: request failed") from None
-        for member in _members(body):
-            for point in _points(member, _EIC_CODES[zone], chunk_start, chunk_end):
+        if response.is_error and response.status_code not in _PASSTHROUGH:
+            detail = response.text.replace(self._api_key, "[REDACTED_SECRET]")
+            raise SourceError(f"{SOURCE}: HTTP {response.status_code} for : {detail[:200]}")
+        for member in _members(response.content):
+            for point in _points(
+                member, _EIC_CODES[zone], chunk_start, chunk_end, api_key=self._api_key
+            ):
                 quarters = 4 if point.resolution == "PT60M" else 1
                 for quarter in range(quarters):
                     interval_start = point.start + quarter * INTERVAL
@@ -319,29 +335,47 @@ def _members(body: bytes) -> list[bytes]:
     try:
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
             members = [info for info in archive.infolist() if not info.is_dir()]
+            if not any(info.filename.lower().endswith(".xml") for info in members):
+                raise SourceError(f"{SOURCE}: ZIP archive has no XML member")
             if sum(info.file_size for info in members) > _LIMIT:
                 raise SourceError(f"{SOURCE}: ZIP members exceed {_LIMIT} bytes uncompressed")
             return [archive.read(info) for info in members]
-    except (zipfile.BadZipFile, RuntimeError, zlib.error, EOFError, NotImplementedError) as exc:
+    except (
+        zipfile.BadZipFile,
+        RuntimeError,
+        zlib.error,
+        EOFError,
+        NotImplementedError,
+        ValueError,
+        OSError,
+        lzma.LZMAError,
+    ) as exc:
         raise SourceError(f"{SOURCE}: response is not a valid ZIP archive") from exc
 
 
-def _points(member: bytes, eic: str, window_start: datetime, window_end: datetime) -> list[_Point]:
+def _points(
+    member: bytes,
+    eic: str,
+    window_start: datetime,
+    window_end: datetime,
+    *,
+    api_key: str = "",
+) -> list[_Point]:
     try:
         root = ElementTree.fromstring(member)
-    except ElementTree.ParseError as exc:
+    except (ElementTree.ParseError, ValueError, LookupError) as exc:
         raise SourceError(f"{SOURCE}: document is not XML") from exc
     name = _local(root.tag)
     if name == "Acknowledgement_MarketDocument":
-        _acknowledgement(root)
+        _acknowledgement(root, api_key)
         return []
     if name != "Balancing_MarketDocument":
         raise SourceError(f"{SOURCE}: unknown root element {name!r}")
     namespace = root.tag[1:].partition("}")[0] if root.tag.startswith("{") else ""
     if "451-6:balancingdocument" not in namespace:
         raise SourceError(f"{SOURCE}: unsupported namespace {namespace!r}")
-    document_type = _code(root, "type")
-    if document_type is not None and document_type != "A85":
+    document_type = _text(root, "type")
+    if document_type != "A85":
         # Other balancing documents (A86 imbalance volumes, ...) carry no prices;
         # parsing one would yield only unpublished intervals.
         raise SourceError(f"{SOURCE}: unexpected document type {document_type!r}")
@@ -356,17 +390,18 @@ def _points(member: bytes, eic: str, window_start: datetime, window_end: datetim
     ]
 
 
-def _acknowledgement(root: ElementTree.Element) -> None:
+def _acknowledgement(root: ElementTree.Element, api_key: str) -> None:
     reasons = [
-        (text.text or "").strip()
+        "; ".join((text.text or "").strip() for text in _children(reason, "text"))
         for reason in _children(root, "Reason")
-        for text in _children(reason, "text")
     ]
-    if any(_NO_DATA in reason for reason in reasons):
+    if reasons and all(_NO_DATA in reason for reason in reasons):
         return
     detail = "; ".join(reason for reason in reasons if reason)
     if not detail:
         raise SourceError(f"{SOURCE}: acknowledgement without a reason")
+    if api_key:
+        detail = detail.replace(api_key, "[REDACTED_SECRET]")
     raise SourceError(f"{SOURCE}: acknowledgement: {detail[:200]}")
 
 
@@ -427,6 +462,8 @@ def _period_points(
         start = period_start + (position - 1) * step
         if start.minute % 15 or start.second or start.microsecond:
             raise SourceError(f"{SOURCE}: point is not on a 15-minute boundary")
+        if resolution == "PT60M" and start.minute:
+            raise SourceError(f"{SOURCE}: hourly point is not on the hour")
         if not window_start <= start < window_end:
             raise SourceError(f"{SOURCE}: point outside requested window")
         amount_element = _child(element, "imbalance_Price.amount")
@@ -459,12 +496,9 @@ def _period_points(
                 f"(categories: {_category_names(existing.categories, record.categories)})"
             )
         _reject_repeated_categories(existing.categories, record.categories)
-        explicit[position] = replace(
-            existing,
-            categories=existing.categories + record.categories,
-            flow_direction=_flow_direction(existing.flow_direction, record.flow_direction),
-            financial_prices=existing.financial_prices + record.financial_prices,
-        )
+        # Category publications must use separate series. Combining them
+        # before A03 filling would lose each category's omitted positions.
+        raise SourceError(f"{SOURCE}: duplicate position {position} in Period")
     points: list[_Point] = []
     previous: _Point | None = None
     for index in range(1, count + 1):
@@ -490,7 +524,7 @@ def _code(parent: ElementTree.Element, name: str) -> str | None:
     element = _child(parent, name)
     if element is None:
         return None
-    return (element.text or "").strip() or None
+    return _text(parent, name)
 
 
 def _financial_price(element: ElementTree.Element) -> dict[str, float | str | None]:

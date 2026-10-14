@@ -1,8 +1,10 @@
 import io
 import os
+import struct
 import traceback
 import zipfile
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -74,7 +76,7 @@ def series(
 
 def document(*series_: str, namespace: str = NS) -> str:
     return (
-        f'<Balancing_MarketDocument xmlns="{namespace}">{"".join(series_)}'
+        f'<Balancing_MarketDocument xmlns="{namespace}"><type>A85</type>{"".join(series_)}'
         "</Balancing_MarketDocument>"
     )
 
@@ -1222,6 +1224,8 @@ def quarter_series(*, resolution: str = "PT15M", head: str = "", amount: float =
 
 
 def headed(head: str, *series_: str, namespace: str = NS_45) -> str:
+    if "<type>" not in head:
+        head = "<type>A85</type>" + head
     return (
         f'<Balancing_MarketDocument xmlns="{namespace}">{head}{"".join(series_)}'
         "</Balancing_MarketDocument>"
@@ -1323,3 +1327,226 @@ def test_corrupt_zip_member_is_a_source_error() -> None:
         client(lambda _: httpx.Response(200, content=bytes(archive))).imbalance_prices(
             START, END, [BiddingZone.FI]
         )
+
+
+@pytest.mark.parametrize("status", [200, 400, 401, 500])
+def test_redacts_tokens_before_error_text_truncation(status: int) -> None:
+    secret = KEY + "-0123456789abcdef"
+    detail = "x" * 185 + secret + " rejected"
+    body = acknowledgement(detail) if status in (200, 400) else detail
+    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(status, text=body)))
+    with pytest.raises(SourceError) as caught:
+        EntsoeClient(secret, http).imbalance_prices(START, END, [BiddingZone.SE3])
+    assert secret[:15] not in "".join(traceback.format_exception(caught.value))
+    assert "[REDACTED" in str(caught.value)
+    assert " rejected" not in str(caught.value)
+
+
+@pytest.mark.parametrize("from_env", [False, True])
+def test_strips_key_before_request_and_error_redaction(
+    from_env: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params["securityToken"])
+        return httpx.Response(401, text=f"Unauthorized securityToken={KEY}")
+
+    padded = f" \t{KEY}\r\n"
+    monkeypatch.setenv("ENTSOE_API_KEY", padded)
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(SourceError) as caught:
+        EntsoeClient(None if from_env else padded, http).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    assert seen == [KEY]
+    assert KEY not in "".join(traceback.format_exception(caught.value))
+    assert "[REDACTED_SECRET]" in str(caught.value)
+
+
+@pytest.mark.parametrize("key", ["a b", "a\tb", "a\nb", "a\x01b", "a\x7fb", "aéb"])
+@pytest.mark.parametrize("from_env", [False, True])
+def test_rejects_non_printable_or_internal_whitespace_keys(
+    key: str, from_env: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ENTSOE_API_KEY", key)
+    with pytest.raises(ValueError, match="api_key") as caught:
+        EntsoeClient(None if from_env else key)
+    assert key not in str(caught.value)
+
+
+@pytest.mark.parametrize("minute", [15, 30, 45])
+@pytest.mark.parametrize("curve", ["A01", "A03"])
+def test_rejects_off_hour_hourly_points(minute: int, curve: str) -> None:
+    begin = START + timedelta(minutes=minute)
+    body = document(
+        series(
+            period(
+                begin.isoformat(),
+                (begin + timedelta(hours=1)).isoformat(),
+                point(1),
+                resolution="PT60M",
+            ),
+            curve=curve,
+        )
+    )
+    with pytest.raises(SourceError, match="not on the hour"):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+@pytest.mark.parametrize("incoming", [21.0, 99.0])
+def test_rejects_duplicate_keys_from_disjoint_chunks(
+    workers: int, incoming: float, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    c = client(lambda _: httpx.Response(200, text=document(quarter_in("A04"))), max_workers=workers)
+    price = c.imbalance_prices(START, END, [BiddingZone.SE3])[0]
+
+    def fetch(zone: BiddingZone, begin: datetime, end: datetime) -> dict[Any, Any]:
+        value = price if begin == START else replace(price, imbalance_price_eur=incoming)
+        return {(zone, price.start): value}
+
+    monkeypatch.setattr(c, "_fetch", fetch)
+    with pytest.raises(SourceError, match="duplicate price across chunks"):
+        c.imbalance_prices(START, START + timedelta(days=367), [BiddingZone.SE3])
+
+
+@pytest.mark.parametrize("curve", ["A01", "A03"])
+@pytest.mark.parametrize("changed", [False, True])
+def test_rejects_distinct_categories_at_one_period_position(curve: str, changed: bool) -> None:
+    body = document(
+        series(
+            period(
+                "2026-01-15T00:00Z",
+                "2026-01-15T00:30Z",
+                point(1, 20.0, "A04"),
+                point(1, 20.0, "A05"),
+                point(2, 30.0 if changed else 20.0, "A04"),
+            ),
+            curve=curve,
+        )
+    )
+    with pytest.raises(SourceError, match="duplicate position"):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("compression", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
+def test_wraps_corrupt_compressed_archives(compression: int) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression) as archive:
+        archive.writestr("member0.xml", ONE_HOUR * 20)
+    corrupt = bytearray(buffer.getvalue())
+    for index in range(60, 100):
+        corrupt[index] ^= 0xFF
+    with pytest.raises(SourceError, match="not a valid ZIP archive"):
+        client(lambda _: httpx.Response(200, content=bytes(corrupt))).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+def test_wraps_corrupt_archive_directory_offset() -> None:
+    corrupt = bytearray(zipped(ONE_HOUR * 20))
+    offset = corrupt.rfind(b"PK\x05\x06")
+    corrupt[offset + 16 : offset + 20] = struct.pack("<I", 0x7FFFFFFF)
+    with pytest.raises(SourceError, match="not a valid ZIP archive"):
+        client(lambda _: httpx.Response(200, content=bytes(corrupt))).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("member", [None, "directory/", "readme.txt"])
+def test_rejects_archives_without_xml_members(member: str | None) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        if member is not None:
+            archive.writestr(member, ONE_HOUR)
+    with pytest.raises(SourceError, match="no XML member"):
+        client(lambda _: httpx.Response(200, content=buffer.getvalue())).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("encoding", ["UTF-32", "not-a-real-encoding"])
+def test_wraps_xml_encoding_failures(encoding: str) -> None:
+    body = f'<?xml version="1.0" encoding="{encoding}"?>'.encode() + ONE_HOUR.encode()
+    with pytest.raises(SourceError, match="not XML"):
+        client(lambda _: httpx.Response(200, content=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("value", ["", " \t\n"])
+@pytest.mark.parametrize(
+    "element",
+    [
+        "type",
+        "area_Domain.mRID",
+        "controlArea_Domain.mRID",
+        "imbalance_Price.category",
+        "flowDirection.direction",
+        "direction",
+        "priceDescriptor.type",
+    ],
+)
+def test_rejects_present_empty_code_elements(element: str, value: str) -> None:
+    empty = f"<{element}>{value}</{element}>"
+    if element == "type":
+        body = ONE_HOUR.replace("<type>A85</type>", empty)
+    elif element in ("area_Domain.mRID", "controlArea_Domain.mRID"):
+        body = ONE_HOUR.replace("<type>A85</type>", "<type>A85</type>" + empty)
+    elif element in ("direction", "priceDescriptor.type"):
+        component = f"<Financial_Price><amount>1</amount>{empty}</Financial_Price>"
+        body = ONE_HOUR.replace("</Point>", component + "</Point>")
+    else:
+        body = document(
+            series(
+                period(
+                    "2026-01-15T00:00Z",
+                    "2026-01-15T00:15Z",
+                    point(1).replace("</Point>", empty + "</Point>"),
+                )
+            )
+        )
+    with pytest.raises(SourceError, match=element):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+def test_rejects_missing_mandatory_document_type() -> None:
+    body = ONE_HOUR.replace("<type>A85</type>", "")
+    with pytest.raises(SourceError, match="missing type"):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("status", [200, 400])
+@pytest.mark.parametrize(
+    "other",
+    [
+        f"<text>Request processing failed {KEY}</text>",
+        "<text/>",
+        "",
+    ],
+)
+@pytest.mark.parametrize("first", [False, True])
+def test_rejects_mixed_no_data_acknowledgements(status: int, other: str, first: bool) -> None:
+    failure = f"<Reason><code>999</code>{other}</Reason>"
+    body = acknowledgement("No matching data found")
+    body = (
+        body.replace("<Reason>", failure + "<Reason>", 1)
+        if first
+        else body.replace(
+            "</Acknowledgement_MarketDocument>", failure + "</Acknowledgement_MarketDocument>"
+        )
+    )
+    with pytest.raises(SourceError, match="acknowledgement") as caught:
+        client(lambda _: httpx.Response(status, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    assert KEY not in "".join(traceback.format_exception(caught.value))
