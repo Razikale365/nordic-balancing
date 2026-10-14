@@ -44,18 +44,18 @@ class _AuthenticatedTransport(httpx.BaseTransport):
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         self._before_request()
         # Never follow a redirect: the key header would be sent to the new host.
-        response = self._http.get(
-            request.url, headers={"x-api-key": self._api_key}, follow_redirects=False
-        )
-        return httpx.Response(
-            response.status_code,
-            headers={
-                name: value
-                for name, value in response.headers.items()
-                if name not in ("content-encoding", "content-length")
-            },
-            content=b"" if response.is_error else response.content,
-        )
+        with self._http.stream(
+            "GET", request.url, headers={"x-api-key": self._api_key}, follow_redirects=False
+        ) as response:
+            return httpx.Response(
+                response.status_code,
+                headers={
+                    name: value
+                    for name, value in response.headers.items()
+                    if name not in ("content-encoding", "content-length")
+                },
+                content=b"" if response.is_error else response.read(),
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,9 +86,13 @@ class FingridClient:
         min_interval: float = 2.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        key = api_key if api_key is not None else os.environ.get("FINGRID_API_KEY")
-        if not isinstance(key, str) or not key.strip():
+        raw_key = api_key if api_key is not None else os.environ.get("FINGRID_API_KEY")
+        if not isinstance(raw_key, str) or not (key := raw_key.strip()):
             raise ValueError("api_key or FINGRID_API_KEY must be set")
+        if not all("!" <= char <= "~" for char in key):
+            raise ValueError(
+                "api_key or FINGRID_API_KEY must be printable ASCII without whitespace"
+            )
         if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
             raise ValueError("max_retries must be a non-negative integer")
         if (
@@ -224,9 +228,11 @@ class FingridClient:
         end_utc = to_utc(end, "end")
         if end_utc <= start_utc:
             raise ValueError("end must be after start")
-        # Floor the query start to the hour so an hourly record covering start
-        # is fetched; round the end up so no 15-minute record start is missed.
-        query_start = start_utc.replace(minute=0, second=0, microsecond=0)
+        # Floor the query start to the hour for hourly-policy datasets so an
+        # hourly record covering start is fetched, and to the quarter otherwise;
+        # round the end up so no 15-minute record start is missed.
+        start_minute = 0 if dataset_id in _HOURLY_POLICY_DATASETS else start_utc.minute // 15 * 15
+        query_start = start_utc.replace(minute=start_minute, second=0, microsecond=0)
         query_end = end_utc.replace(minute=end_utc.minute // 15 * 15, second=0, microsecond=0)
         if query_end < end_utc:
             query_end += INTERVAL
@@ -237,7 +243,7 @@ class FingridClient:
         }
         path = f"/datasets/{dataset_id}/data"
         first = self._get(path, {**params, "page": "1"})
-        rows = _page_rows(first)
+        page_rows = _page_rows(first)
         pagination = first.get("pagination")
         if not isinstance(pagination, dict):
             raise SourceError(f"{SOURCE}: page 1 has no pagination object")
@@ -247,8 +253,21 @@ class FingridClient:
             raise SourceError(f"{SOURCE}: page 1 has invalid total")
         if isinstance(last_page, bool) or not isinstance(last_page, int) or last_page < 1:
             raise SourceError(f"{SOURCE}: page 1 has invalid lastPage")
-        for page in range(2, last_page + 1):
-            rows.extend(_page_rows(self._get(path, {**params, "page": str(page)})))
+        rows: list[Any] = []
+        for page in range(1, last_page + 1):
+            if page > 1:
+                page_rows = _page_rows(self._get(path, {**params, "page": str(page)}))
+            rows.extend(page_rows)
+            if len(rows) > total:
+                raise SourceError(
+                    f"{SOURCE}: row count {len(rows)} != page-1 total {total}; "
+                    "data changed or truncated"
+                )
+            if (len(page_rows) < PAGE_SIZE and len(rows) < total) or (page > 1 and not page_rows):
+                raise SourceError(
+                    f"{SOURCE}: page {page} ended with row count {len(rows)} != page-1 "
+                    f"total {total}; data changed or truncated"
+                )
         if len(rows) != total:
             raise SourceError(
                 f"{SOURCE}: row count {len(rows)} != page-1 total {total}; "
