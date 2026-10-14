@@ -8,6 +8,7 @@ functions of zone and start. No test touches the network.
 
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -27,6 +28,7 @@ from nordic_balancing import (
     FingridClient,
     ImbalancePrice,
     ReserveProduct,
+    SourceError,
     SvKClient,
     reconcile_imbalance_prices,
 )
@@ -614,3 +616,518 @@ def test_reconcile_swapping_arguments_swaps_missing_counts(
     }
     for kind in DivergenceKind:
         assert forward.get(kind, 0) == reverse.get(swapped.get(kind, kind), 0)
+
+
+@dataclass(frozen=True, slots=True)
+class _EntsoePeriodSpec:
+    curve_type: str
+    resolution: str
+    start: datetime
+    count: int
+    positions: frozenset[int]
+    amounts: dict[int, float]
+
+    @property
+    def step(self) -> timedelta:
+        return INTERVAL if self.resolution == "PT15M" else HOUR
+
+    @property
+    def end(self) -> datetime:
+        return self.start + self.count * self.step
+
+    def is_valid_for(self, window_start: datetime, window_end: datetime) -> bool:
+        if any(
+            not window_start <= self.start + (pos - 1) * self.step < window_end
+            for pos in self.positions
+        ):
+            return False
+        if self.curve_type == "A01":
+            return set(self.positions) == set(range(1, self.count + 1))
+        return 1 in self.positions
+
+    def series_xml(self) -> str:
+        points = "".join(
+            f"<Point><position>{pos}</position>"
+            f"<imbalance_Price.amount>{self.amounts[pos]}</imbalance_Price.amount></Point>"
+            for pos in sorted(self.positions)
+        )
+        return (
+            "<TimeSeries><currency_Unit.name>EUR</currency_Unit.name>"
+            f"<curveType>{self.curve_type}</curveType><Period>"
+            f"<timeInterval><start>{self.start.strftime('%Y-%m-%dT%H:%MZ')}</start>"
+            f"<end>{self.end.strftime('%Y-%m-%dT%H:%MZ')}</end></timeInterval>"
+            f"<resolution>{self.resolution}</resolution>{points}</Period></TimeSeries>"
+        )
+
+
+def _entsoe_document_xml(eic: str, periods: tuple[_EntsoePeriodSpec, ...]) -> str:
+    body = "".join(period.series_xml() for period in periods)
+    return (
+        f'<Balancing_MarketDocument xmlns="{NS_45}"><type>A85</type>'
+        f'<area_Domain.mRID codingScheme="A01">{eic}</area_Domain.mRID>'
+        f"{body}</Balancing_MarketDocument>"
+    )
+
+
+@st.composite
+def _entsoe_period_spec(
+    draw: st.DrawFn,
+    anchor_end: datetime,
+    max_back: int,
+    max_overhang: int,
+    tag_base: float,
+) -> _EntsoePeriodSpec:
+    curve_type = draw(st.sampled_from(("A01", "A03")))
+    resolution = draw(st.sampled_from(("PT15M", "PT60M")))
+    step = INTERVAL if resolution == "PT15M" else HOUR
+    steps_before_end = draw(st.integers(1, max_back))
+    period_start = anchor_end - steps_before_end * step
+    mode = draw(
+        st.sampled_from(
+            ("in_window", "overhang", "arbitrary") if max_overhang else ("in_window", "arbitrary")
+        )
+    )
+    if mode == "in_window":
+        count = draw(st.integers(1, steps_before_end))
+        positions = (
+            draw(st.sets(st.integers(1, count)).map(lambda rest: frozenset({1, *rest})))
+            if curve_type == "A03"
+            else frozenset(range(1, count + 1))
+        )
+    elif mode == "overhang":
+        count = steps_before_end + draw(st.integers(1, max_overhang))
+        positions = draw(
+            st.sets(st.integers(1, steps_before_end)).map(lambda rest: frozenset({1, *rest}))
+        )
+    else:
+        count = draw(st.integers(1, steps_before_end + max_overhang))
+        positions = draw(st.sets(st.integers(1, count), min_size=1).map(frozenset))
+    amounts = {
+        pos: tag_base + pos * 10.0 + draw(st.integers(-50, 50)) / 100.0 for pos in sorted(positions)
+    }
+    return _EntsoePeriodSpec(
+        curve_type=curve_type,
+        resolution=resolution,
+        start=period_start,
+        count=count,
+        positions=positions,
+        amounts=amounts,
+    )
+
+
+@st.composite
+def _entsoe_two_chunk_case(
+    draw: st.DrawFn,
+) -> tuple[
+    datetime,
+    datetime,
+    BiddingZone,
+    tuple[datetime, datetime, tuple[_EntsoePeriodSpec, ...]],
+    tuple[datetime, datetime, tuple[_EntsoePeriodSpec, ...]],
+]:
+    day0 = datetime(2026, 1, 15, tzinfo=UTC)
+    day1 = datetime(2026, 1, 16, tzinfo=UTC)
+    start = day0 + timedelta(microseconds=draw(st.integers(0, _us(HOUR) - 1)))
+    end = day1 + timedelta(microseconds=draw(st.integers(_us(HOUR) + 1, _us(2 * HOUR))))
+    zone = draw(st.sampled_from(_ZONES))
+    early0 = (
+        (draw(_entsoe_period_spec(day0 + 3 * HOUR, 2, 0, 100.0)),) if draw(st.booleans()) else ()
+    )
+    boundary0 = draw(_entsoe_period_spec(day1, 3, 2, 200.0))
+    chunk0 = (day0, day1, (*early0, boundary0))
+    chunk1 = (
+        day1,
+        day1 + 2 * HOUR,
+        (draw(_entsoe_period_spec(day1 + 2 * HOUR, 2, 2, 1000.0)),),
+    )
+    return start, end, zone, chunk0, chunk1
+
+
+@given(case=_entsoe_two_chunk_case())
+@settings(max_examples=30, deadline=None)
+def test_entsoe_periods_return_only_published_in_window_records(
+    case: tuple[
+        datetime,
+        datetime,
+        BiddingZone,
+        tuple[datetime, datetime, tuple[_EntsoePeriodSpec, ...]],
+        tuple[datetime, datetime, tuple[_EntsoePeriodSpec, ...]],
+    ],
+) -> None:
+    """Generated A01/A03 responses must raise SourceError whenever a Period has
+    an explicit point outside its chunk request window, an A01 Period omits any
+    position in 1..count, or an A03 Period omits position 1; otherwise every
+    returned record lies in both its request window and a Period of that response."""
+    start, end, zone, chunk0, chunk1 = case
+    chunks = (chunk0, chunk1)
+    by_window = {(w_start, w_end): periods for w_start, w_end, periods in chunks}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = request.url.params
+        req_start = datetime.strptime(params["periodStart"], "%Y%m%d%H%M").replace(tzinfo=UTC)
+        req_end = datetime.strptime(params["periodEnd"], "%Y%m%d%H%M").replace(tzinfo=UTC)
+        periods = by_window[(req_start, req_end)]
+        return httpx.Response(200, text=_entsoe_document_xml(params["controlArea_Domain"], periods))
+
+    client = EntsoeClient(
+        "test-entsoe-token",
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        max_workers=1,
+        sleep=lambda _: None,
+    )
+    valid = all(
+        spec.is_valid_for(w_start, w_end) for w_start, w_end, periods in chunks for spec in periods
+    )
+    with pytest.MonkeyPatch().context() as patch:
+        patch.setattr(entsoe, "_CHUNK", timedelta(days=1))
+        if not valid:
+            with pytest.raises(SourceError):
+                client.imbalance_prices(start, end, [zone])
+            return
+        prices = client.imbalance_prices(start, end, [zone])
+
+    _assert_grid(prices, start, end)
+    expected: list[tuple[datetime, float, timedelta]] = []
+    for _w_start, w_end, periods in chunks:
+        for spec in periods:
+            carried = 0.0
+            for pos in range(1, spec.count + 1):
+                point_start = spec.start + (pos - 1) * spec.step
+                if point_start >= w_end:
+                    break
+                if pos in spec.positions:
+                    carried = spec.amounts[pos]
+                quarters = 4 if spec.resolution == "PT60M" else 1
+                for quarter in range(quarters):
+                    q_start = point_start + quarter * INTERVAL
+                    if start <= q_start < end:
+                        expected.append((q_start, carried, spec.step))
+
+    for price in prices:
+        assert price.imbalance_price_eur is not None
+        origin_idx = 0 if price.imbalance_price_eur < 500.0 else 1
+        req_start, req_end, origin_periods = chunks[origin_idx]
+        assert req_start <= price.start < req_end
+        assert any(spec.start <= price.start < spec.end for spec in origin_periods)
+        assert (price.start < chunk1[0]) == (origin_idx == 0)
+
+    assert [(p.start, p.imbalance_price_eur, p.resolution) for p in prices] == expected
+
+
+@st.composite
+def _esett_hourly_response_case(
+    draw: st.DrawFn,
+) -> tuple[datetime, datetime, list[BiddingZone], list[dict[str, Any]]]:
+    base = datetime(2023, 5, 10, tzinfo=UTC)
+    start = base + timedelta(microseconds=draw(st.integers(0, _us(timedelta(hours=4)))))
+    length = draw(st.integers(_us(timedelta(minutes=1)), _us(timedelta(hours=6))))
+    end = start + timedelta(microseconds=length)
+    zones = draw(_zones(_ZONES, 3))
+    hours: list[datetime] = []
+    hour = _floor_hour(start)
+    while hour < end:
+        hours.append(hour)
+        hour += HOUR
+    candidates = [(zone, h) for zone in zones for h in hours]
+    chosen = draw(
+        st.lists(
+            st.sampled_from(candidates),
+            unique_by=lambda pair: (pair[0], pair[1]),
+        )
+    )
+    finite = st.floats(-500, 500, allow_nan=False, allow_infinity=False)
+    rows: list[dict[str, Any]] = []
+    for zone, h in chosen:
+        single = draw(st.one_of(st.none(), finite))
+        mode = draw(st.sampled_from(("both", "sales", "purchase")))
+        sales = single if mode in ("both", "sales") else None
+        purchase = single if mode in ("both", "purchase") else None
+        rows.append(
+            {
+                "timestampUTC": _iso_z(h),
+                "mba": zone.value,
+                "imblSalesPrice": sales,
+                "imblPurchasePrice": purchase,
+                "upRegPrice": draw(st.one_of(st.none(), finite)),
+                "downRegPrice": draw(st.one_of(st.none(), finite)),
+                "mainDirRegPowerPerMBA": draw(st.sampled_from((None, -1.0, 0.0, 1.0))),
+            }
+        )
+    return start, end, zones, rows
+
+
+@given(case=_esett_hourly_response_case())
+@settings(max_examples=30, deadline=None)
+def test_esett_hourly_quarters_map_to_published_row(
+    case: tuple[datetime, datetime, list[BiddingZone], list[dict[str, Any]]],
+) -> None:
+    start, end, zones, rows = case
+    client = ESettClient(
+        httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=rows))),
+        sleep=lambda _: None,
+    )
+    prices = client.imbalance_prices(start, end, zones)
+    _assert_grid(prices, start, end)
+    keys = [(p.start, p.zone) for p in prices]
+    assert keys == sorted(keys)
+    assert len(keys) == len(set(keys))
+    parsed_rows = [
+        (BiddingZone[row["mba"]], datetime.fromisoformat(row["timestampUTC"]), row) for row in rows
+    ]
+    for price in prices:
+        assert price.resolution == HOUR
+        matching = [
+            row
+            for r_zone, r_hour, row in parsed_rows
+            if r_zone is price.zone and r_hour <= price.start < r_hour + HOUR
+        ]
+        assert len(matching) == 1
+        row = matching[0]
+        expected_single = (
+            row["imblSalesPrice"] if row["imblSalesPrice"] is not None else row["imblPurchasePrice"]
+        )
+        expected_dir = (
+            None
+            if row["mainDirRegPowerPerMBA"] is None
+            else Direction(int(row["mainDirRegPowerPerMBA"]))
+        )
+        assert price.imbalance_price_eur == expected_single
+        assert price.mfrr_up_price_eur == row["upRegPrice"]
+        assert price.mfrr_down_price_eur == row["downRegPrice"]
+        assert price.dominating_direction == expected_dir
+        assert price.raw == row
+    expected_keys = sorted(
+        (r_hour + q * INTERVAL, r_zone)
+        for r_zone, r_hour, _ in parsed_rows
+        for q in range(4)
+        if start <= r_hour + q * INTERVAL < end
+    )
+    assert keys == expected_keys
+
+
+@st.composite
+def _svk_response_case(
+    draw: st.DrawFn,
+) -> tuple[datetime, datetime, list[BiddingZone], ReserveProduct, list[dict[str, Any]]]:
+    base = datetime(2026, 1, 10, tzinfo=UTC)
+    start = base + timedelta(microseconds=draw(st.integers(0, _us(timedelta(hours=4)))))
+    length = draw(st.integers(_us(timedelta(minutes=1)), _us(timedelta(hours=6))))
+    end = start + timedelta(microseconds=length)
+    zones = draw(_zones((BiddingZone.SE1, BiddingZone.SE2, BiddingZone.SE3, BiddingZone.SE4), 3))
+    product = draw(st.sampled_from(ReserveProduct))
+    product_name = "mFRRCapacityMarket" if product is ReserveProduct.MFRR else "aFRRCapacityMarket"
+    hours: list[datetime] = []
+    hour = _floor_hour(start)
+    while hour < end:
+        hours.append(hour)
+        hour += HOUR
+    candidates = [
+        (h, zone, direction) for h in hours for zone in zones for direction in ("down", "up")
+    ]
+    chosen = draw(
+        st.lists(
+            st.sampled_from(candidates),
+            unique_by=lambda item: (item[0], item[1], item[2]),
+        )
+    )
+    finite_price = st.floats(-500, 500, allow_nan=False, allow_infinity=False)
+    finite_vol = st.floats(0, 2000, allow_nan=False, allow_infinity=False)
+    rows: list[dict[str, Any]] = []
+    for row_id, (h, zone, direction) in enumerate(chosen, start=1):
+        rows.append(
+            {
+                "_id": row_id,
+                "start_time_sweden": (h + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S"),
+                "start_time_utc": h.strftime("%Y-%m-%dT%H:00:00"),
+                "bidding_zone": zone.value,
+                "reserve_product": product_name,
+                "reserve_direction": direction,
+                "price": draw(st.one_of(st.none(), finite_price)),
+                "price_unit": "EUR-MW",
+                "volume": draw(st.one_of(st.none(), finite_vol)),
+                "volume_unit": "MW",
+                "soda_hashbyte": f"{row_id:032x}",
+                "soda_identity": row_id,
+            }
+        )
+    return start, end, zones, product, rows
+
+
+@given(case=_svk_response_case())
+@settings(max_examples=30, deadline=None)
+def test_svk_quarters_map_to_published_row(
+    case: tuple[datetime, datetime, list[BiddingZone], ReserveProduct, list[dict[str, Any]]],
+) -> None:
+    start, end, zones, product, rows = case
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/package_show"):
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "result": {
+                        "resources": [
+                            {"id": f"rid-{request.url.params['id']}", "datastore_active": True}
+                        ]
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"success": True, "result": {"total": len(rows), "records": rows}},
+        )
+
+    client = SvKClient(httpx.Client(transport=httpx.MockTransport(handler)), sleep=lambda _: None)
+    records = client.capacity_market(product, start, end, zones)
+    keys = [(r.start, r.zone, r.direction) for r in records]
+    assert keys == sorted(keys)
+    assert len(keys) == len(set(keys))
+    parsed_rows = [
+        (
+            datetime.fromisoformat(row["start_time_utc"]).replace(tzinfo=UTC),
+            BiddingZone[row["bidding_zone"]],
+            Direction.UP if row["reserve_direction"] == "up" else Direction.DOWN,
+            row,
+        )
+        for row in rows
+    ]
+    for record in records:
+        assert record.start.utcoffset() == timedelta(0)
+        assert record.start.minute % 15 == 0
+        assert record.start.second == 0 and record.start.microsecond == 0
+        assert start <= record.start < end
+        assert record.resolution == HOUR
+        assert record.product is product
+        matching = [
+            row
+            for r_hour, r_zone, r_dir, row in parsed_rows
+            if r_zone is record.zone
+            and r_dir is record.direction
+            and r_hour <= record.start < r_hour + HOUR
+        ]
+        assert len(matching) == 1
+        row = matching[0]
+        assert record.price_eur_per_mw == row["price"]
+        assert record.volume_mw == row["volume"]
+        assert record.raw == row
+    expected_keys = sorted(
+        (r_hour + q * INTERVAL, r_zone, r_dir)
+        for r_hour, r_zone, r_dir, _ in parsed_rows
+        for q in range(4)
+        if start <= r_hour + q * INTERVAL < end
+    )
+    assert keys == expected_keys
+
+
+@st.composite
+def _fingrid_hourly_response_case(
+    draw: st.DrawFn,
+) -> tuple[datetime, datetime, dict[int, list[dict[str, Any]]]]:
+    base = datetime(2025, 3, 10, tzinfo=UTC)
+    start = base + timedelta(microseconds=draw(st.integers(0, _us(timedelta(hours=4)))))
+    length = draw(st.integers(_us(timedelta(minutes=1)), _us(timedelta(hours=6))))
+    end = start + timedelta(microseconds=length)
+    hours: list[datetime] = []
+    hour = _floor_hour(start)
+    while hour < end:
+        hours.append(hour)
+        hour += HOUR
+    finite = st.floats(-500, 500, allow_nan=False, allow_infinity=False)
+    by_dataset: dict[int, list[dict[str, Any]]] = {}
+    for dataset in (319, 244, 106, 369):
+        chosen_hours = draw(st.lists(st.sampled_from(hours), unique=True))
+        value_strategy = (
+            st.sampled_from((None, -1.0, 0.0, 1.0))
+            if dataset == 369
+            else st.one_of(st.none(), finite)
+        )
+        by_dataset[dataset] = [
+            {
+                "datasetId": dataset,
+                "startTime": _iso_z(h),
+                "endTime": _iso_z(h + HOUR),
+                "value": draw(value_strategy),
+            }
+            for h in chosen_hours
+        ]
+    return start, end, by_dataset
+
+
+@given(case=_fingrid_hourly_response_case())
+@settings(max_examples=30, deadline=None)
+def test_fingrid_hourly_quarters_map_to_published_row(
+    case: tuple[datetime, datetime, dict[int, list[dict[str, Any]]]],
+) -> None:
+    start, end, by_dataset = case
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        dataset = int(request.url.path.split("/")[-2])
+        rows = by_dataset[dataset]
+        return httpx.Response(
+            200,
+            json={"data": rows, "pagination": {"total": len(rows), "lastPage": 1}},
+        )
+
+    client = FingridClient(
+        "test-fingrid-secret",
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        sleep=lambda _: None,
+        clock=lambda: 0.0,
+        min_interval=0,
+    )
+    parsed = {
+        dataset: [(datetime.fromisoformat(row["startTime"]), row) for row in rows]
+        for dataset, rows in by_dataset.items()
+    }
+    for dataset in (319, 244, 106, 369):
+        series = client.series(dataset, start, end)
+        for stamp, value in series:
+            assert stamp.utcoffset() == timedelta(0)
+            assert stamp.minute % 15 == 0 and stamp.second == 0 and stamp.microsecond == 0
+            assert start <= stamp < end
+            matching = [row for r_hour, row in parsed[dataset] if r_hour <= stamp < r_hour + HOUR]
+            assert len(matching) == 1
+            assert value == matching[0]["value"]
+        expected_stamps = sorted(
+            r_hour + q * INTERVAL
+            for r_hour, _ in parsed[dataset]
+            for q in range(4)
+            if start <= r_hour + q * INTERVAL < end
+        )
+        assert [stamp for stamp, _ in series] == expected_stamps
+
+    prices = client.imbalance_prices(start, end)
+    _assert_grid(prices, start, end)
+    for price in prices:
+        assert price.zone is BiddingZone.FI
+        assert price.resolution == HOUR
+        matching_319 = [row for r_hour, row in parsed[319] if r_hour <= price.start < r_hour + HOUR]
+        assert len(matching_319) == 1
+        assert price.imbalance_price_eur == matching_319[0]["value"]
+        assert price.raw["319"] == matching_319[0]
+        for dataset, actual in (
+            (244, price.mfrr_up_price_eur),
+            (106, price.mfrr_down_price_eur),
+        ):
+            matching = [
+                row for r_hour, row in parsed[dataset] if r_hour <= price.start < r_hour + HOUR
+            ]
+            assert len(matching) <= 1
+            if matching:
+                assert actual == matching[0]["value"]
+                assert price.raw[str(dataset)] == matching[0]
+            else:
+                assert actual is None
+                assert str(dataset) not in price.raw
+        matching_369 = [row for r_hour, row in parsed[369] if r_hour <= price.start < r_hour + HOUR]
+        assert len(matching_369) <= 1
+        if matching_369:
+            raw_dir = matching_369[0]["value"]
+            assert price.dominating_direction == (
+                None if raw_dir is None else Direction(int(raw_dir))
+            )
+            assert price.raw["369"] == matching_369[0]
+        else:
+            assert price.dominating_direction is None
+            assert "369" not in price.raw
