@@ -468,14 +468,20 @@ def _period_points(
     points: list[_Point] = []
     previous: _Point | None = None
     for index in range(1, count + 1):
+        start = period_start + (index - 1) * step
+        # Explicit points were checked above; implied A03 positions belong
+        # only to this request, even when the Period continues beyond it.
+        if curve_type == "A03" and start >= window_end:
+            break
         current = explicit.get(index)
         if current is None:
             if curve_type == "A01" or previous is None:
                 raise SourceError(f"{SOURCE}: missing position {index} in Period")
+            if start < window_start:
+                continue
             current = previous
         else:
             previous = current
-        start = period_start + (index - 1) * step
         points.append(replace(current, start=start))
     return points
 

@@ -6,6 +6,9 @@ the project is alpha and the API may change between 0.x versions.
 ## Unreleased
 
 ### Fixed
+- **ENTSO-E:** implied A03 positions now stop at the request window end, with filling
+  work bounded by that window. Before, a Period extending beyond a chunk could
+  fill intervals belonging to the next chunk, even when that chunk returned no data.
 - **Energi Data Service:** a record that is not a JSON object (for example a number or `null`
   in `records`) now raises `SourceError`, as the data contracts require. Before, it
   raised `AttributeError`.
