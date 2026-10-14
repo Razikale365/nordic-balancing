@@ -3,6 +3,13 @@
 All notable changes to this project. Versions follow [PEP 440](https://peps.python.org/pep-0440/);
 the project is alpha and the API may change between 0.x versions.
 
+## Unreleased
+
+### Fixed
+- **Energi Data Service:** a record that is not a JSON object (for example a number or `null`
+  in `records`) now raises `SourceError`, as the data contracts require. Before, it
+  raised `AttributeError`.
+
 ## 0.1.1 — 2026-10-12
 
 Corrections from an independent audit of 0.1.0. No public names are added, removed or

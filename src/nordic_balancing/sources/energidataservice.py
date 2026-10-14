@@ -223,7 +223,9 @@ def _direction(record: dict[str, Any]) -> Direction | None:
     return Direction(int(value))
 
 
-def _parse_imbalance(record: dict[str, Any]) -> ImbalancePrice:
+def _parse_imbalance(record: object) -> ImbalancePrice:
+    if not isinstance(record, dict):
+        raise SourceError(f"{SOURCE}: record is not a JSON object: {type(record).__name__}")
     area = record.get("PriceArea")
     if not isinstance(area, str) or area not in _DK:
         raise SourceError(f"{SOURCE}: unknown PriceArea {area!r}")
