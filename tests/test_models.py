@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -79,3 +80,29 @@ def test_reserve_capacity_raw_is_detached_too() -> None:
     )
     nested["v"] = 99
     assert capacity.raw["nested"] == {"v": 1}
+
+
+def reserve(start: datetime) -> ReserveCapacity:
+    return ReserveCapacity(
+        start=start,
+        zone=BiddingZone.SE3,
+        product=ReserveProduct.MFRR,
+        direction=Direction.UP,
+        price_eur_per_mw=1.0,
+        volume_mw=2.0,
+        source="test",
+        resolution=INTERVAL,
+        raw={},
+    )
+
+
+@pytest.mark.parametrize("kind", ["imbalance", "reserve"])
+def test_offset_zero_local_start_is_normalised_to_utc(kind: str) -> None:
+    # Europe/London at 01:15 on 2026-10-25 is ambiguous; fold=1 is GMT (offset 0).
+    start = datetime(2026, 10, 25, 1, 15, fold=1, tzinfo=ZoneInfo("Europe/London"))
+    record = replace(price({}), start=start) if kind == "imbalance" else reserve(start)
+
+    assert record.start.tzinfo is UTC
+    assert record.start == datetime(2026, 10, 25, 1, 15, tzinfo=UTC)
+    assert record.end - record.start == INTERVAL
+    assert record.end == datetime(2026, 10, 25, 1, 30, tzinfo=UTC)
