@@ -71,7 +71,9 @@
         "detail: str"
       ],
       "kind": "dataclass",
-      "methods": {},
+      "methods": {
+        "__init__": "(self, zone: nordic_balancing.models.BiddingZone, start: datetime.datetime, kind: nordic_balancing.reconcile.DivergenceKind, primary: nordic_balancing.models.ImbalancePrice | None, reference: nordic_balancing.models.ImbalancePrice | None, detail: str) -> None"
+      },
       "properties": {}
     },
     "DivergenceKind": {
@@ -165,7 +167,9 @@
         "raw: collections.abc.Mapping[str, typing.Any]"
       ],
       "kind": "dataclass",
-      "methods": {},
+      "methods": {
+        "__init__": "(self, start: datetime.datetime, zone: nordic_balancing.models.BiddingZone, imbalance_price_eur: float | None, imbalance_price_dkk: float | None, spot_price_eur: float | None, dominating_direction: nordic_balancing.models.Direction | None, satisfied_demand_mw: float | None, afrr_up_vwa_eur: float | None, afrr_down_vwa_eur: float | None, mfrr_up_price_eur: float | None, mfrr_down_price_eur: float | None, source: str, resolution: datetime.timedelta, raw: collections.abc.Mapping[str, typing.Any]) -> None"
+      },
       "properties": {
         "end": "(self) -> datetime.datetime"
       }
@@ -178,7 +182,9 @@
         "source_url: str"
       ],
       "kind": "dataclass",
-      "methods": {},
+      "methods": {
+        "__init__": "(self, effective: datetime.datetime, zones: frozenset[nordic_balancing.models.BiddingZone], summary: str, source_url: str) -> None"
+      },
       "properties": {}
     },
     "NordicBalancingError": {
@@ -212,6 +218,7 @@
       ],
       "kind": "dataclass",
       "methods": {
+        "__init__": "(self, primary_source: str, reference_source: str, zones: tuple[nordic_balancing.models.BiddingZone, ...], compared: int, identical: int, divergences: tuple[nordic_balancing.reconcile.Divergence, ...], primary_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = (), reference_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = ()) -> None",
         "counts": "(self) -> dict[nordic_balancing.reconcile.DivergenceKind, int]"
       },
       "properties": {}
@@ -229,7 +236,9 @@
         "raw: collections.abc.Mapping[str, typing.Any]"
       ],
       "kind": "dataclass",
-      "methods": {},
+      "methods": {
+        "__init__": "(self, start: datetime.datetime, zone: nordic_balancing.models.BiddingZone, product: nordic_balancing.models.ReserveProduct, direction: nordic_balancing.models.Direction, price_eur_per_mw: float | None, volume_mw: float | None, source: str, resolution: datetime.timedelta, raw: collections.abc.Mapping[str, typing.Any]) -> None"
+      },
       "properties": {
         "end": "(self) -> datetime.datetime"
       }
