@@ -195,6 +195,14 @@ def test_rejects_malformed_records(override: dict[str, Any], message: str) -> No
         client(lambda _: page([record])).imbalance_prices(START, END)
 
 
+@pytest.mark.parametrize("record", [1, None, "x", []])
+def test_rejects_record_that_is_not_an_object(record: object) -> None:
+    body = {"total": 1, "records": [record]}
+
+    with pytest.raises(SourceError, match="not a JSON object"):
+        client(lambda _: httpx.Response(200, json=body)).imbalance_prices(START, END)
+
+
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
 def test_rejects_non_finite_numbers(value: str) -> None:
     record = {**PUBLISHED, "ImbalancePriceEUR": json.loads(value)}
