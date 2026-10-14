@@ -7,8 +7,8 @@ the project is alpha and the API may change between 0.x versions.
 
 ### Fixed
 - **Energi Data Service:** a record that is not a JSON object (for example a number or `null`
-  in `records`) now raises `SourceError`, as contract C8 requires. Before, it raised
-  `AttributeError`.
+  in `records`) now raises `SourceError`, as the data contracts require. Before, it
+  raised `AttributeError`.
 
 ## 0.1.1 — 2026-10-12
 
