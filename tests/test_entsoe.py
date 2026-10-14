@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 import httpx
 import pytest
@@ -307,6 +308,89 @@ def test_a03_repeats_previous_point_for_missing_positions() -> None:
     )
     assert [p.imbalance_price_eur for p in prices] == [10.0, 10.0, 30.0, 30.0]
     assert [p.start for p in prices] == [START + i * INTERVAL for i in range(4)]
+
+
+@pytest.mark.parametrize(
+    ("resolution", "period_end"),
+    [("PT15M", "2025-01-01T01:00Z"), ("PT60M", "2025-01-01T02:00Z")],
+)
+def test_a03_fill_stops_at_chunk_end_without_next_chunk_data(
+    resolution: str, period_end: str
+) -> None:
+    boundary = datetime(2025, 1, 1, tzinfo=UTC)
+    seen: list[tuple[str, str]] = []
+    body = document(
+        series(period("2024-12-31T23:00Z", period_end, point(1, 10.0), resolution=resolution))
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        begin = request.url.params["periodStart"]
+        seen.append((begin, request.url.params["periodEnd"]))
+        if begin == "202401010000":
+            return httpx.Response(200, text=body)
+        return httpx.Response(200, text=acknowledgement("No matching data found"))
+
+    prices = client(handler, max_workers=1).imbalance_prices(
+        datetime(2024, 1, 1, tzinfo=UTC), datetime(2025, 1, 10, tzinfo=UTC), [BiddingZone.DK1]
+    )
+    assert seen == [("202401010000", "202501010000"), ("202501010000", "202501100000")]
+    assert [p.start for p in prices] == [
+        boundary - timedelta(hours=1) + i * INTERVAL for i in range(4)
+    ]
+    assert [p.imbalance_price_eur for p in prices] == [10.0] * 4
+    assert all(
+        p.resolution == timedelta(minutes=15 if resolution == "PT15M" else 60) for p in prices
+    )
+
+
+def test_a03_fill_stops_at_chunk_end_with_partial_next_chunk_data() -> None:
+    boundary = datetime(2025, 1, 1, tzinfo=UTC)
+    first = document(series(period("2024-12-31T23:00Z", "2025-01-01T01:00Z", point(1, 10.0))))
+    second = document(
+        series(period("2025-01-01T00:30Z", "2025-01-01T01:00Z", point(1, 20.0), point(2, 30.0)))
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = first if request.url.params["periodStart"] == "202401010000" else second
+        return httpx.Response(200, text=body)
+
+    prices = client(handler, max_workers=1).imbalance_prices(
+        datetime(2024, 1, 1, tzinfo=UTC), datetime(2025, 1, 10, tzinfo=UTC), [BiddingZone.DK1]
+    )
+    assert [p.start for p in prices] == [
+        *(boundary - timedelta(hours=1) + i * INTERVAL for i in range(4)),
+        boundary + 2 * INTERVAL,
+        boundary + 3 * INTERVAL,
+    ]
+    assert [p.imbalance_price_eur for p in prices] == [10.0] * 4 + [20.0, 30.0]
+
+
+def test_a03_fill_still_rejects_explicit_point_outside_chunk_window() -> None:
+    body = document(
+        series(
+            period(
+                "2024-12-31T23:00Z",
+                "2025-01-01T02:00Z",
+                point(1, 10.0),
+                point(2, 20.0),
+                resolution="PT60M",
+            )
+        )
+    )
+    with pytest.raises(SourceError, match="point outside requested window"):
+        client(lambda _: httpx.Response(200, text=body), max_workers=1).imbalance_prices(
+            datetime(2024, 1, 1, tzinfo=UTC), datetime(2025, 1, 10, tzinfo=UTC), [BiddingZone.DK1]
+        )
+
+
+def test_a03_fill_work_is_bounded_by_window_for_year_long_period() -> None:
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    element = ElementTree.fromstring(
+        period("2024-01-01T00:00Z", "2025-01-01T00:00Z", point(1, 10.0))
+    )
+    points = entsoe_module._period_points(element, "A03", NS, start, start + timedelta(hours=1))
+    assert [p.start for p in points] == [start + i * INTERVAL for i in range(4)]
+    assert [p.amount for p in points] == [10.0] * 4
 
 
 def test_a01_uses_each_position_and_rejects_gaps() -> None:
