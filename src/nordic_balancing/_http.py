@@ -101,7 +101,9 @@ def _request(
             sleep(_DEFAULT_RETRY_AFTER)
         else:
             break
-    if response.is_error and response.status_code not in passthrough_statuses:
+    if (
+        not response.is_success or response.status_code == 204
+    ) and response.status_code not in passthrough_statuses:
         raise SourceError(
             f"{source}: HTTP {response.status_code} for {path}: {response.text[:200]}"
         )
@@ -124,12 +126,32 @@ def _retry_after(
 
 
 def _seconds_until(header: str, now: datetime) -> float | None:
+    tokens = header.split()
+    if (
+        len(tokens) == 5
+        and tokens[0].isalpha()
+        and tokens[1].isalpha()
+        and tokens[2].isdigit()
+        and ":" in tokens[3]
+        and len(tokens[4]) == 4
+        and tokens[4].isdigit()
+    ):
+        # parsedate_to_datetime leaves "-0000" naive; HTTP-dates are always GMT.
+        header = f"{header} GMT"
+    elif tokens:
+        tz = tokens[-1]
+        if len(tz) == 6 and tz[0] in "+-" and tz[3] == ":":
+            tz = tz[:3] + tz[4:]
+        if len(tz) == 5 and tz[0] in "+-" and tz[1:].isdigit():
+            if int(tz[1:3]) >= 24 or int(tz[3:5]) >= 60:
+                return None
+            tokens[-1] = "+0000" if tz == "-0000" else tz
+            header = " ".join(tokens)
     try:
         when = parsedate_to_datetime(header)
     except (TypeError, ValueError):
         return None
     if when.tzinfo is None:
-        # parsedate_to_datetime leaves "-0000" naive; HTTP-dates are always GMT.
-        when = when.replace(tzinfo=UTC)
+        return None
     # A date already past means retry now.
     return max((when - now).total_seconds(), 0.0)
