@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -30,3 +30,18 @@ jobs:
           uv venv /tmp/smoke --python ${{ matrix.python-version }}
           uv pip install --python /tmp/smoke --prerelease=allow dist/*.whl
           /tmp/smoke/bin/python -c "import nordic_balancing as n; print(n.__version__, len(n.__all__))"
+
+  lowest-direct:
+    name: lowest-direct (httpx 0.27.0, pandas 2.1, numpy<2; transitive dependencies latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Install the declared dependency floor into a fresh environment (no lockfile)
+        run: |
+          uv venv /tmp/floor --python 3.12
+          uv pip install --python /tmp/floor . "httpx==0.27.0" "pandas==2.1.*" "numpy<2" pytest hypothesis
+      - name: Run the offline tests against the installed package
+        run: /tmp/floor/bin/python -m pytest -q
