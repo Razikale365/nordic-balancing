@@ -146,6 +146,7 @@ class EnergiDataServiceClient:
 
     def _records(self, dataset: str, params: dict[str, str]) -> Iterator[dict[str, Any]]:
         offset = 0
+        total: int | None = None
         while True:
             page = self._get(
                 f"/dataset/{dataset}",
@@ -154,9 +155,15 @@ class EnergiDataServiceClient:
             records = page.get("records")
             if not isinstance(records, list):
                 raise SourceError(f"{SOURCE}: response for {dataset} has no 'records' list")
-            total = page.get("total")
-            if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            page_total = page.get("total")
+            if isinstance(page_total, bool) or not isinstance(page_total, int) or page_total < 0:
                 raise SourceError(f"{SOURCE}: response for {dataset} has invalid total")
+            if total is None:
+                total = page_total
+            elif page_total != total:
+                raise SourceError(
+                    f"{SOURCE}: total for {dataset} changed from {total} to {page_total}"
+                )
             offset += len(records)
             if offset > total:
                 raise SourceError(
@@ -196,12 +203,16 @@ def _format(value: datetime) -> str:
 def _parse_time(value: object) -> datetime:
     if not isinstance(value, str):
         raise SourceError(f"{SOURCE}: TimeUTC is missing or not a string: {value!r}")
+    if ("T" not in value and "t" not in value and " " not in value) or ":" not in value:
+        raise SourceError(f"{SOURCE}: unparseable TimeUTC {value!r}")
     try:
         parsed = datetime.fromisoformat(value)
-    except ValueError as exc:
+    except (ValueError, OverflowError) as exc:
         raise SourceError(f"{SOURCE}: unparseable TimeUTC {value!r}") from exc
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    if parsed.tzinfo is not None and (
+        parsed.utcoffset() != timedelta(0) or not value.endswith(("Z", "z", "+00:00"))
+    ):
+        raise SourceError(f"{SOURCE}: TimeUTC must be UTC: {value!r}")
     parsed = parsed.replace(tzinfo=UTC)
     # Check every field: int(timestamp()) would drop fractional seconds (00:00:00.5).
     if parsed.minute % 15 or parsed.second or parsed.microsecond:
