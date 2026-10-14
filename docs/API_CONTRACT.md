@@ -46,6 +46,7 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
 
 Every client enforces the same data contracts (C1–C8 in [README.md](../README.md));
 any violation raises `SourceError`.
+See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how unpublished intervals appear.
 
 ### Intervals and resolution
 
