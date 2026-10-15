@@ -122,7 +122,7 @@ status, observed API behaviour and known limitations.
 
 | Source | Client | Data | Access | Verified against the live API |
 |---|---|---|---|---|
-| Energinet — Energi Data Service | `EnergiDataServiceClient` | DK1/DK2 imbalance prices and components, from 2025-03-04; aFRR capacity for all 12 Nordic zones from 2022-12-07T23:00Z; mFRR capacity for DK1/DK2 from 2023-06-20T22:00Z (hourly, expanded to 15 minutes) | free, no key (CC BY 4.0) | yes (imbalance); capacity client live checks pending |
+| Energinet — Energi Data Service | `EnergiDataServiceClient` | DK1/DK2 imbalance prices and components, from 2025-03-04; aFRR capacity for all 12 Nordic zones from 2022-12-07T23:00Z; mFRR capacity for DK1/DK2 from 2023-06-20T22:00Z (hourly, expanded to 15 minutes) | free, no key (CC BY 4.0) | yes |
 | Fingrid | `FingridClient` | FI imbalance prices, mFRR up/down prices, dominating direction; any 15-minute dataset via `series()` | free API key | yes |
 | Svenska kraftnät | `SvKClient` | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) | free (CC-BY-4.0) | yes |
 | eSett | `ESettClient` | Imbalance prices, all 12 Nordic zones, from 2021-10-31T23:00Z | free, no key | yes |

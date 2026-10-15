@@ -36,5 +36,12 @@ Offline checks:
 uv run pytest -q tests/test_energidataservice.py -k comparison
 ```
 
-The B3 implementer did not run the live comparison. No equality or coverage result
-from the upstream services is claimed by this example.
+## Results (runs 2026-10-15)
+
+Three seven-day windows, SE3 aFRR (`--end` 2026-10-01, 2026-10-08 and 2026-10-15):
+on every hour and direction both sources publish, prices and procured volumes are
+equal (26, 8 and 4 hour-directions; 0 differences). EDS also publishes every other
+hour with a price and, almost always, 0 MW, which SvK omits. The window ending
+2026-10-15 reports `FAIL` for one such hour with volume: EDS has 1 MW up and down
+for 2026-10-14T11:00Z, and SvK had not published that hour when the script ran.
+Whether SvK publishes it later, or omits it, is not established here.
