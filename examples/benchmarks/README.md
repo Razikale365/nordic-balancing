@@ -68,6 +68,10 @@ XML parsing).
 
 ## Threshold check
 
+The flags below are the benchmark's own rule. The decision taken on these numbers
+(keep the synchronous list API for 0.2.0) and its reasoning are in
+`docs/RELEASE_EVIDENCE.md`, "Memory and timing".
+
 Threshold: 1.5 GiB peak RSS or 3 KiB per record. Per scenario:
 
 - `esett-2025`: **crossed** — bytes/record (3,352 > 3,072); peak RSS stays

@@ -20,7 +20,9 @@ date it was observed. Every claim cites a file, a test, a command or a URL.
   passed 17 of 17 with none skipped.
 - Licence: MIT (`LICENSE`). Retrieved data remains under each source's own terms.
 - Runtime dependency: `httpx>=0.27,<1` only. Optional extra `pandas` (`pandas>=2.1`), used
-  only by `to_frame`; tested with pandas 2.1.4, 2.2.3 and 3.0.6.
+  only by `to_frame`; CI runs the suite at the lowest allowed version (pandas 2.1, the
+  `lowest-direct` job in `.github/workflows/ci.yml`) and at the locked version (pandas
+  3.0.6, `uv.lock`).
 
 ## Provider matrix
 
@@ -170,10 +172,11 @@ Observed 2026-10-09 unless noted; file references are under
     must equal the requested EIC.
   - The price unit is `price_Measure_Unit.name` up to v4.4 and
     `price_Measurement_Unit.name` in v4.5. Both are checked.
-  - `type`, which is mandatory, must be A85 when present.
+  - `type` is mandatory and must be A85; a document without it raises.
   - A Period must be a whole number of resolution steps.
   - An interval published at two resolutions raises, even with equal prices.
-- The three live tests skip without `ENTSOE_API_KEY`.
+- The four ENTSO-E live tests (three in `tests/test_entsoe.py`, one in
+  `tests/test_live_recent.py`) skip without `ENTSOE_API_KEY`.
 
 ## Memory and timing
 
@@ -188,12 +191,18 @@ One year, all 12 zones, 420,480 records, measured offline with synthetic respons
 | ENTSO-E 2025 | 266.5 | 2,301 | 906 | 492 |
 | ENTSO-E 2022 | 159.2 | 1,515 | 567 | 449 |
 
-The project's escalation threshold is defined on traced memory (1.5 GB peak or
-3 KB per record); the worst case, ENTSO-E 2025, stays under it (906 MiB, about
-2.3 KB per record). Peak resident memory is higher, 2.3 GB for ENTSO-E 2025, mostly
-the C-level XML parser across 12 parallel requests. The API therefore stays
-synchronous and list-returning. A caller that needs less memory can fetch fewer
-zones or a shorter window per call, or pass a lower `max_workers` to `EntsoeClient`.
+The benchmark flags a scenario when peak resident memory exceeds 1.5 GiB or 3 KiB per
+record (`memory.py`). By that rule ENTSO-E 2025 crosses both (2,301 MiB, 5,739 B per
+record), and eSett 2025 and ENTSO-E 2022 cross the per-record figure.
+
+Decision (maintainer, 2026-10-14; unchanged by the 2026-10-15 rerun): keep the
+synchronous, list-returning API for 0.2.0. The memory the library itself holds,
+measured as the traced peak, is under both limits in every scenario (worst: ENTSO-E
+2025, 906 MiB, about 2.3 KB per record). Most of the resident excess is the C-level
+XML parser working on up to 12 parallel requests, which ends when the call returns.
+A caller that needs less memory can fetch fewer zones or a shorter window per call,
+or pass a lower `max_workers` to `EntsoeClient`. An option to drop `raw`, or a lower
+default `max_workers`, will be considered if a user reports memory as a problem.
 Wall times exclude network latency, which dominates live ENTSO-E calls.
 
 ## Data contracts

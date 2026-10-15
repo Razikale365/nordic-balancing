@@ -89,7 +89,8 @@ Every client enforces the same contracts; a violation raises `SourceError`.
   - ENTSO-E: an interval published under distinct price categories (A04 and
     A05) with one equal price collapses to that price, with every category kept
     in `raw`. The same category twice (or two records without one), unequal
-    prices, or equal prices at different resolutions raise.
+    prices, equal prices at different resolutions, or two points at the same
+    position within one Period raise.
   - Fingrid: around its 2025-03 switch an hourly and a 15-minute record can cover
     the same quarter. The hourly value is kept before 2025-03-18T23:00Z and the
     15-minute value from then on; the other stays in `raw["<dataset>_superseded"]`.
