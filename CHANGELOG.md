@@ -77,9 +77,10 @@ changed.
 - **Energi Data Service, SvK (pagination):** the total from the first page is kept; a later
   page reporting a different total raises. Before, a smaller later total turned an incomplete
   fetch into success.
-- **Energi Data Service, SvK (timestamps):** a date without a time of day, a non-UTC offset, or
-  a value at the datetime limits raises `SourceError`. Naive timestamps (what both providers
-  send) and explicit UTC designators (`Z`, `+00:00`) are read as before.
+- **Energi Data Service, SvK (timestamps):** a date without a time of day, or a non-UTC offset
+  (including one that would move the value past the datetime limits), raises `SourceError`.
+  Naive timestamps (what both providers send) are read as before; explicit UTC designators
+  (`Z`, `+00:00`) are accepted by both (SvK rejected them before).
 - **All clients (HTTP):** a redirect, an informational status or HTTP 204 now raises
   `SourceError` naming the status (for example `HTTP 302`), without the response body. Before,
   such a response was returned as data, or reported as "not JSON". Redirects are still never
