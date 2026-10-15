@@ -1,9 +1,12 @@
-"""Property-based and metamorphic tests for time windows and chunking.
+"""Property-based and metamorphic tests for time windows, chunking and source rows.
 
-Every fake server is a deterministic function of the request: it honours the
-request window exactly as the client sends it and returns only records whose
-start lies in ``[start, end)`` (exclusive end). Prices are deterministic
-functions of zone and start. No test touches the network.
+In the window-splitting properties each fake server is a deterministic function
+of the request: it honours the request window exactly as the client sends it and
+returns only records whose start lies in ``[start, end)`` (exclusive end), with
+prices determined by zone and start. The source-response properties instead
+generate ENTSO-E Periods (including invalid Periods that must raise
+``SourceError``) and sparse hourly rows with random values. No test touches the
+network.
 """
 
 import json
@@ -14,7 +17,7 @@ from typing import Any
 
 import httpx
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from nordic_balancing import (
@@ -744,6 +747,41 @@ def _entsoe_two_chunk_case(
 
 
 @given(case=_entsoe_two_chunk_case())
+@example(
+    case=(
+        datetime(2026, 1, 15, tzinfo=UTC),
+        datetime(2026, 1, 16, 1, 0, 0, 1, tzinfo=UTC),
+        BiddingZone.DK1,
+        (
+            datetime(2026, 1, 15, tzinfo=UTC),
+            datetime(2026, 1, 16, tzinfo=UTC),
+            (
+                _EntsoePeriodSpec(
+                    curve_type="A03",
+                    resolution="PT15M",
+                    start=datetime(2026, 1, 15, 23, 45, tzinfo=UTC),
+                    count=2,
+                    positions=frozenset({1}),
+                    amounts={1: 210.0},
+                ),
+            ),
+        ),
+        (
+            datetime(2026, 1, 16, tzinfo=UTC),
+            datetime(2026, 1, 16, 2, tzinfo=UTC),
+            (
+                _EntsoePeriodSpec(
+                    curve_type="A01",
+                    resolution="PT15M",
+                    start=datetime(2026, 1, 16, 1, 45, tzinfo=UTC),
+                    count=1,
+                    positions=frozenset({1}),
+                    amounts={1: 1010.0},
+                ),
+            ),
+        ),
+    )
+)
 @settings(max_examples=30, deadline=None)
 def test_entsoe_periods_return_only_published_in_window_records(
     case: tuple[
