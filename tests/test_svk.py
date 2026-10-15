@@ -17,6 +17,7 @@ from nordic_balancing import (
     SvKClient,
 )
 from nordic_balancing.sources import SvKClient as SourceSvKClient
+from nordic_balancing.sources.svk import _parse_time
 
 RECORD: dict[str, Any] = {
     "_id": 191887,
@@ -306,6 +307,54 @@ def test_rejects_bare_date_without_time_of_day(start_time_utc: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "start_time_utc",
+    [
+        "2026-10-08T00:00:00Z",
+        "2026-10-08T00:00:00+00:00",
+    ],
+)
+def test_accepts_utc_zone_designators(start_time_utc: str) -> None:
+    record = {**RECORD, "start_time_utc": start_time_utc}
+    result = client(lambda _: httpx.Response(200, json=search([record]))).capacity_market(
+        ReserveProduct.MFRR, START, END, [BiddingZone.SE3]
+    )
+    assert [r.start for r in result] == [START + i * INTERVAL for i in range(4)]
+    assert all(r.start.tzinfo is UTC for r in result)
+
+
+@pytest.mark.parametrize(
+    ("start_time_utc", "expected_start"),
+    [
+        ("0001-01-01T00:00:00Z", datetime(1, 1, 1, tzinfo=UTC)),
+        ("0001-01-01T00:00:00+00:00", datetime(1, 1, 1, tzinfo=UTC)),
+        ("9999-12-31T23:00:00Z", datetime(9999, 12, 31, 23, tzinfo=UTC)),
+        ("9999-12-31T23:00:00+00:00", datetime(9999, 12, 31, 23, tzinfo=UTC)),
+    ],
+)
+def test_accepts_utc_zone_designators_at_datetime_limits(
+    start_time_utc: str, expected_start: datetime
+) -> None:
+    parsed = _parse_time(start_time_utc)
+    assert parsed == expected_start
+    assert parsed.tzinfo is UTC
+
+
+@pytest.mark.parametrize(
+    "start_time_utc",
+    [
+        "20261008T000000",
+        "2026-10-08T00",
+    ],
+)
+def test_preserves_compact_and_hour_only_naive_timestamps(start_time_utc: str) -> None:
+    record = {**RECORD, "start_time_utc": start_time_utc}
+    result = client(lambda _: httpx.Response(200, json=search([record]))).capacity_market(
+        ReserveProduct.MFRR, START, END, [BiddingZone.SE3]
+    )
+    assert [r.start for r in result] == [START + i * INTERVAL for i in range(4)]
+
+
+@pytest.mark.parametrize(
     ("override", "message"),
     [
         ({"reserve_product": "aFRRCapacityMarket"}, "unexpected reserve_product"),
@@ -319,8 +368,11 @@ def test_rejects_bare_date_without_time_of_day(start_time_utc: str) -> None:
         ({"start_time_utc": None}, "missing or not a string"),
         ({"start_time_utc": 5}, "missing or not a string"),
         ({"start_time_utc": "invalid"}, "unparseable start_time_utc"),
-        ({"start_time_utc": "2026-10-08T00:00:00Z"}, "must be naive UTC"),
-        ({"start_time_utc": "2026-10-08T00:00:00+00:00"}, "must be naive UTC"),
+        ({"start_time_utc": "2026-10-08T00:00:00+01:00"}, "must be UTC"),
+        ({"start_time_utc": "2026-10-08T00:00:00-00:00"}, "must be UTC"),
+        ({"start_time_utc": "2026-10-08T00:00:30+00:00:30"}, "must be UTC"),
+        ({"start_time_utc": "0001-01-01T00:00:00+01:00"}, "must be UTC"),
+        ({"start_time_utc": "9999-12-31T23:00:00-01:00"}, "must be UTC"),
         ({"start_time_utc": "2026-10-08T00:15:00"}, "not on the hour"),
         ({"start_time_utc": "2026-10-08T01:00:00"}, "outside requested chunk"),
         ({"price_unit": "EUR-MWh"}, "unexpected price_unit"),

@@ -495,3 +495,19 @@ def test_rejects_bare_date_non_utc_offset_and_overflow_timestamps(time_utc: str)
     ]
     prices = client(lambda _: page(valid_records)).imbalance_prices(START, END)
     assert [p.start for p in prices] == [START, START]
+
+
+@pytest.mark.parametrize(
+    ("time_utc", "expected_start"),
+    [
+        ("20261009T023000", START),
+        ("2026-10-09T02", datetime(2026, 10, 9, 2, 0, tzinfo=UTC)),
+    ],
+)
+def test_preserves_compact_and_hour_only_naive_timestamps(
+    time_utc: str, expected_start: datetime
+) -> None:
+    window_start = datetime(2026, 10, 9, 2, 0, tzinfo=UTC)
+    record = {**PUBLISHED, "TimeUTC": time_utc}
+    prices = client(lambda _: page([record])).imbalance_prices(window_start, END)
+    assert [p.start for p in prices] == [expected_start]

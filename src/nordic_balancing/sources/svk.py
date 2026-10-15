@@ -218,14 +218,16 @@ def _number(record: dict[str, Any], column: str) -> float | None:
 def _parse_time(value: object) -> datetime:
     if not isinstance(value, str):
         raise SourceError(f"{SOURCE}: start_time_utc is missing or not a string: {value!r}")
-    if ("T" not in value and "t" not in value and " " not in value) or ":" not in value:
+    if "T" not in value and "t" not in value and " " not in value:
         raise SourceError(f"{SOURCE}: unparseable start_time_utc {value!r}")
     try:
         parsed = datetime.fromisoformat(value)
     except (ValueError, OverflowError) as exc:
         raise SourceError(f"{SOURCE}: unparseable start_time_utc {value!r}") from exc
-    if parsed.tzinfo is not None:
-        raise SourceError(f"{SOURCE}: start_time_utc must be naive UTC: {value!r}")
+    if parsed.tzinfo is not None and (
+        parsed.utcoffset() != timedelta(0) or not value.endswith(("Z", "z", "+00:00"))
+    ):
+        raise SourceError(f"{SOURCE}: start_time_utc must be UTC: {value!r}")
     if parsed.minute or parsed.second or parsed.microsecond:
         raise SourceError(f"{SOURCE}: start_time_utc {value!r} is not on the hour")
     return parsed.replace(tzinfo=UTC)
