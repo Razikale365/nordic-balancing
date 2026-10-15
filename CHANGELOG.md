@@ -1,11 +1,47 @@
 # Changelog
 
 All notable changes to this project. Versions follow [PEP 440](https://peps.python.org/pep-0440/);
-the project is alpha and the API may change between 0.x versions.
+the project is in beta: the public API is defined in
+[docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it before 1.0 is listed here.
 
 ## Unreleased
 
-## 0.2.0 (unreleased; prepared on `release/0.2`)
+## 0.2.0 — unreleased (Beta candidate)
+
+First beta. The public surface is now written down and tested, the supported Python and
+dependency range is tested in CI, and every source is checked against its live API daily. The
+fixes below come from an independent audit of 0.1.1; no public signature or record field
+changed.
+
+### Added
+- `docs/API_CONTRACT.md`: the public API (names in `nordic_balancing.__all__`, their parameters,
+  fields, `source` values and exceptions), and the compatibility policy that applies from 1.0.
+  `tests/test_public_api.py` fails on any change to that surface.
+- `docs/FIELD_MATRIX.md`: which record fields each source provides, and how each source shows an
+  interval it has not published. `None` in a field a source does not provide is now part of the
+  contract; `tests/test_field_matrix.py` enforces the matrix.
+- Python 3.14 support (classifier and CI), and a CI job at the lowest declared dependency
+  versions (`httpx` 0.27.0, `pandas` 2.1).
+- Daily scheduled live tests (`.github/workflows/live.yml`), including a recent window for each
+  source and a check that Svenska kraftnät still publishes hourly capacity records.
+- Hypothesis property tests for intervals as each source publishes them.
+- `examples/benchmarks/`: memory and wall time for a one-year, 12-zone fetch (results in
+  `docs/RELEASE_EVIDENCE.md`).
+- `examples/entsoe_validation/validate.py multi-chunk`: ENTSO-E against eSett across the client's
+  366-day request boundary.
+- `SECURITY.md` (private vulnerability reporting) and `CONTRIBUTING.md`.
+
+### Changed
+- Development status is now `4 - Beta`.
+
+### Behaviour changes to note
+- Several checks are stricter: data that 0.1.1 accepted, or failed on with an unrelated exception,
+  now raises `SourceError` (ENTSO-E documents and records, pagination totals, timestamps,
+  non-success HTTP statuses). Each case is listed under Fixed. Valid responses from the five
+  providers parse as before; the live suite and the ENTSO-E/eSett comparisons were rerun on this
+  version.
+- `FingridClient` and `EntsoeClient` raise `ValueError` at construction for an API key with
+  internal whitespace or non-printable characters; surrounding whitespace is stripped.
 
 ### Fixed
 - **Fingrid:** the API key has surrounding whitespace stripped; an empty key, or one with
