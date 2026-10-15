@@ -82,8 +82,10 @@ changed.
   decoded, a present but empty code element (document type, area, category, direction) and a
   missing document type now raise `SourceError`. Before, some raised `ValueError`, `OSError`,
   `LZMAError` or `LookupError`, and others were accepted or returned no records silently.
-- **ENTSO-E (acknowledgements):** an acknowledgement means "no data" only when every reason
-  says so; any other reason raises. Before, one "No matching data found" reason hid the others.
+- **ENTSO-E (acknowledgements):** an acknowledgement means "no data" only when every text of
+  every reason says so; any other text, including an empty one, raises. Before, one "No matching
+  data found" reason hid the others, and a reason combining that text with another message was
+  read as no data.
 - **Records:** a `start` in a non-UTC time zone at offset zero (for example
   `Europe/London` in winter) is now converted to UTC. Before, `end` was computed in
   local wall time and could fall before `start` at the autumn clock change.

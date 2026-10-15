@@ -81,10 +81,11 @@ def document(*series_: str, namespace: str = NS) -> str:
     )
 
 
-def acknowledgement(text: str) -> str:
+def acknowledgement(text: str, *additional_texts: str) -> str:
+    texts = "".join(f"<text>{value}</text>" for value in (text, *additional_texts))
     return (
         f'<Acknowledgement_MarketDocument xmlns="{ACK_NS}">'
-        f"<Reason><code>999</code><text>{text}</text></Reason>"
+        f"<Reason><code>999</code>{texts}</Reason>"
         "</Acknowledgement_MarketDocument>"
     )
 
@@ -289,6 +290,40 @@ def test_acknowledgement_without_reason_raises() -> None:
     body = f'<Acknowledgement_MarketDocument xmlns="{ACK_NS}"/>'
     with pytest.raises(SourceError, match="without a reason"):
         client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("status", [200, 400])
+@pytest.mark.parametrize("first", [False, True])
+def test_rejects_mixed_texts_in_one_acknowledgement_reason(status: int, first: bool) -> None:
+    texts = ("No matching data found", "Request rejected: quota exceeded")
+    body = acknowledgement(*(texts[::-1] if first else texts))
+    with pytest.raises(SourceError, match="Request rejected: quota exceeded"):
+        client(lambda _: httpx.Response(status, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("status", [200, 400])
+def test_multiple_no_data_texts_in_one_acknowledgement_reason_return_empty(status: int) -> None:
+    body = acknowledgement(" No matching data found for SE3 ", "No matching data found for FI")
+    prices = client(lambda _: httpx.Response(status, text=body)).imbalance_prices(
+        START, END, [BiddingZone.SE3]
+    )
+    assert prices == []
+
+
+@pytest.mark.parametrize("status", [200, 400])
+@pytest.mark.parametrize("empty", ["", " \t\n"])
+@pytest.mark.parametrize("first", [False, True])
+def test_rejects_empty_text_beside_no_data_in_one_reason(
+    status: int, empty: str, first: bool
+) -> None:
+    texts = ("No matching data found", empty)
+    body = acknowledgement(*(texts[::-1] if first else texts))
+    with pytest.raises(SourceError, match=r"acknowledgement:.*No matching data found"):
+        client(lambda _: httpx.Response(status, text=body)).imbalance_prices(
             START, END, [BiddingZone.SE3]
         )
 

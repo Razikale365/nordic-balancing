@@ -391,12 +391,15 @@ def _points(
 
 
 def _acknowledgement(root: ElementTree.Element, api_key: str) -> None:
-    reasons = [
-        "; ".join((text.text or "").strip() for text in _children(reason, "text"))
+    reason_texts = [
+        [(text.text or "").strip() for text in _children(reason, "text")]
         for reason in _children(root, "Reason")
     ]
-    if reasons and all(_NO_DATA in reason for reason in reasons):
+    if reason_texts and all(
+        texts and all(_NO_DATA in text for text in texts) for texts in reason_texts
+    ):
         return
+    reasons = ["; ".join(texts) for texts in reason_texts]
     detail = "; ".join(reason for reason in reasons if reason)
     if not detail:
         raise SourceError(f"{SOURCE}: acknowledgement without a reason")
