@@ -405,7 +405,7 @@ wheels = [
 
 [[package]]
 name = "nordic-balancing"
-version = "0.1.1"
+version = "0.3.0.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

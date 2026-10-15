@@ -5,6 +5,8 @@ the project is alpha and the API may change between 0.x versions.
 
 ## Unreleased
 
+## 0.2.0 (unreleased; prepared on `release/0.2`)
+
 ### Fixed
 - **Fingrid:** the API key has surrounding whitespace stripped; an empty key, or one with
   internal whitespace or characters outside printable ASCII, raises `ValueError` at
