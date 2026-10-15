@@ -13,6 +13,7 @@ permissions:
 jobs:
   live:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       FINGRID_API_KEY: ${{ secrets.FINGRID_API_KEY }}
       ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
@@ -36,7 +37,7 @@ jobs:
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             sleep 60
-            uv run pytest -q -m live -rs --lf 2>&1 | tee rerun.log
+            uv run pytest -q -m live -rs --lf --lfnf=none 2>&1 | tee rerun.log
             status=${PIPESTATUS[0]}
           fi
           if grep -h -E '^SKIPPED|[0-9]+ skipped' first.log rerun.log 2>/dev/null; then
