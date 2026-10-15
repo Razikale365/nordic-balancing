@@ -203,10 +203,12 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
 - **Accepted (part of the contract).** `EntsoeClient`'s strict parser raises
   `SourceError` on differing dual-category prices and on curve types `A02`, `A04`,
   and `A05`, which `entsoe-py` may tolerate. None of these occurred in the 60 live
-  zone-windows checked. Covered by
-  `tests/test_entsoe.py::test_rejects_dual_prices_for_the_same_interval`,
-  `tests/test_entsoe.py::test_fixture_v45_conflicting_dual_categories_raise`, and
-  `tests/test_entsoe.py::test_rejects_malformed_documents`.
+  zone-windows checked. Conflicting dual-category prices are covered by
+  `tests/test_entsoe.py::test_rejects_dual_prices_for_the_same_interval` and
+  `tests/test_entsoe.py::test_fixture_v45_conflicting_dual_categories_raise`.
+  Rejection of curve types `A02` and `A05` is covered by
+  `tests/test_entsoe.py::test_rejects_malformed_documents`. Rejection of curve
+  type `A04` is enforced by the parser but has no dedicated test or live check.
 - **Accepted (part of the contract).** A possible FI imbalance-price formula
   change around `2026-06-01` is **UNVERIFIED**: no primary source was found, so it
   has no entry in `CHANGES` and no test coverage. The library applies no formula of
@@ -249,10 +251,13 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
 - **Accepted (part of the contract).** Energi Data Service:
   `DominatingDirection` must be `-1`, `0`, `1`, or `null` (observed values in
   ~16.8k records: only those and `null`); any other value raises `SourceError`.
-  Covered by
+  Acceptance of the numeric values and rejection of invalid numeric values are
+  covered by
   `tests/test_energidataservice.py::test_accepts_exact_dominating_directions`,
   `tests/test_energidataservice.py::test_rejects_fractional_dominating_direction`,
   and `tests/test_energidataservice.py::test_rejects_malformed_records`.
+  Acceptance of `DominatingDirection=null` is implemented but has no dedicated
+  test or live check.
 - **Accepted (part of the contract).** ENTSO-E checks that never triggered on live
   data (60 zone-windows and all 12 zones for 2025, checked 2026-10-12) stay
   strict so they fail loudly if the API changes:
