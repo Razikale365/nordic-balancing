@@ -3,9 +3,12 @@
 Python client for Nordic electricity **balancing** and **imbalance** data, normalised to
 15-minute UTC intervals.
 
-> **Status: alpha.** Releases are on [PyPI](https://pypi.org/project/nordic-balancing/).
-> Every source is checked against its live API, but the API of this library may still
-> change between 0.x versions. See [CHANGELOG.md](CHANGELOG.md).
+> **Status: beta.** Releases are on [PyPI](https://pypi.org/project/nordic-balancing/).
+> The public API is defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md) and the fields
+> each source provides in [docs/FIELD_MATRIX.md](docs/FIELD_MATRIX.md); a test fails on any
+> change to either. Every source is checked against its live API daily. Before 1.0 the API
+> can still change between minor versions; every change is listed in
+> [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 

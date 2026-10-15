@@ -9,6 +9,10 @@ Two fixed, bounded comparisons, all 12 Nordic zones:
              12 ENTSO-E requests and one eSett query per window.
   year-2025  2025-01-01T00:00Z to 2026-01-01T00:00Z: 12 ENTSO-E requests (one per
              zone, in parallel; about 100 s) and one paged eSett query.
+  multi-chunk  DK1 and SE3 only, 2024-06-01T00:00Z to 2025-07-01T00:00Z (395 days):
+             two ENTSO-E requests per zone, split at the 366-day chunk boundary
+             2025-06-02T00:00Z. Also fetches 2025-05-31..06-04 in one request per
+             zone and records whether it equals the multi-chunk result there.
 
 Live requests run only with ``--live``, and ENTSO-E needs ``ENTSOE_API_KEY`` in the
 environment. Without ``--live`` the script fetches nothing and exits. Importing it
@@ -87,6 +91,15 @@ WINDOWS: dict[str, list[tuple[str, datetime, datetime]]] = {
     "year-2025": [
         ("year-2025", datetime(2025, 1, 1, tzinfo=UTC), datetime(2026, 1, 1, tzinfo=UTC)),
     ],
+    "multi-chunk": [
+        ("multi-chunk-2024-06", datetime(2024, 6, 1, tzinfo=UTC), datetime(2025, 7, 1, tzinfo=UTC)),
+    ],
+}
+# Modes limited to some zones; the others use all 12.
+ZONES: dict[str, tuple[str, ...]] = {"multi-chunk": ("DK1", "SE3")}
+# A window around the chunk boundary, fetched again in a single request per zone.
+SEAMS: dict[str, tuple[datetime, datetime]] = {
+    "multi-chunk": (datetime(2025, 5, 31, tzinfo=UTC), datetime(2025, 6, 4, tzinfo=UTC)),
 }
 
 # (zone, interval start) -> (price in EUR/MWh or None, resolution in minutes)
@@ -174,9 +187,13 @@ def summarise(entsoe: Series, esett: Series, tolerance: float = TOLERANCE_EUR) -
     }
 
 
-def fetch(start: datetime, end: datetime) -> tuple[Series, Series]:
-    """Both sources over [start, end) for all 12 zones. Live requests."""
-    from nordic_balancing import EntsoeClient, ESettClient, ImbalancePrice
+def fetch(
+    start: datetime, end: datetime, zones: tuple[str, ...] | None = None
+) -> tuple[Series, Series]:
+    """Both sources over [start, end) for ``zones`` (default all 12). Live requests."""
+    from nordic_balancing import BiddingZone, EntsoeClient, ESettClient, ImbalancePrice
+
+    selected = tuple(BiddingZone(z) for z in zones) if zones else tuple(BiddingZone)
 
     def series(prices: list[ImbalancePrice]) -> dict[Key, tuple[float | None, int]]:
         return {
@@ -188,8 +205,8 @@ def fetch(start: datetime, end: datetime) -> tuple[Series, Series]:
         }
 
     with EntsoeClient() as entsoe, ESettClient() as esett:
-        return series(entsoe.imbalance_prices(start, end)), series(
-            esett.imbalance_prices(start, end)
+        return series(entsoe.imbalance_prices(start, end, selected)), series(
+            esett.imbalance_prices(start, end, selected)
         )
 
 
@@ -205,13 +222,25 @@ def main(argv: list[str]) -> int:
     windows = []
     for label, start, end in WINDOWS[args.mode]:
         began = time.perf_counter()
-        entsoe, esett = fetch(start, end)
+        zones = ZONES.get(args.mode)
+        entsoe, esett = fetch(start, end, zones)
         summary = summarise(entsoe, esett)
         seconds = round(time.perf_counter() - began)
         print(label, f"{seconds} s", summary["totals"], flush=True)
-        windows.append(
-            {"label": label, "start": start.isoformat(), "end": end.isoformat(), **summary}
-        )
+        window = {"label": label, "start": start.isoformat(), "end": end.isoformat(), **summary}
+        if args.mode in SEAMS:
+            first, last = SEAMS[args.mode]
+            single, _ = fetch(first, last, zones)
+            chunked = {key: value for key, value in entsoe.items() if first <= key[1] < last}
+            window["seam"] = {
+                "start": first.isoformat(),
+                "end": last.isoformat(),
+                "multi_chunk_intervals": len(chunked),
+                "single_request_intervals": len(single),
+                "identical": chunked == single,
+            }
+            print("seam", window["seam"], flush=True)
+        windows.append(window)
     totals = {name: sum(w["totals"][name] for w in windows) for name in CATEGORIES}
     result = {
         "mode": args.mode,
