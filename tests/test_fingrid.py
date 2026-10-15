@@ -2,10 +2,11 @@ import gzip
 import json
 import os
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
+import httpcore
 import httpx
 import pytest
 
@@ -156,7 +157,10 @@ def test_missing_key_names_env_var(key: str | None, monkeypatch: pytest.MonkeyPa
         FingridClient(key)
 
 
-def test_pages_follow_page_one_last_page_despite_inconsistent_later_metadata() -> None:
+def test_pages_follow_page_one_last_page_despite_inconsistent_later_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("nordic_balancing.sources.fingrid.PAGE_SIZE", 1)
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -178,7 +182,11 @@ def test_pages_follow_page_one_last_page_despite_inconsistent_later_metadata() -
 
 
 @pytest.mark.parametrize("later_rows", [[], [row(), row(quarter=1)]])
-def test_row_count_must_match_page_one_total(later_rows: list[Any]) -> None:
+def test_row_count_must_match_page_one_total(
+    later_rows: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("nordic_balancing.sources.fingrid.PAGE_SIZE", 1)
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.params["page"] == "1":
             return page([row(quarter=3)], total=2, last_page=2)
@@ -681,3 +689,254 @@ def test_api_key_is_not_sent_to_a_redirect_target() -> None:
     with pytest.raises(SourceError):
         fingrid.series(319, START, END)
     assert hosts == ["data.fingrid.fi"]
+
+
+def test_strips_surrounding_whitespace_from_key_and_redacts_stripped_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_headers: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_headers.append(request.headers["x-api-key"])
+        return httpx.Response(401)
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    with FingridClient(f"  {KEY}\n", http, sleep=lambda _: None, clock=lambda: 0.0) as fingrid:
+        assert fingrid._api_key == KEY
+        with pytest.raises(SourceError) as caught:
+            fingrid._get(f"/datasets/319/data/{KEY}", {})
+        assert KEY not in str(caught.value)
+        assert "[REDACTED_SECRET]" in str(caught.value)
+
+    monkeypatch.setenv("FINGRID_API_KEY", f"\t{KEY}  \r\n")
+    with FingridClient(http=http, sleep=lambda _: None, clock=lambda: 0.0) as from_env:
+        assert from_env._api_key == KEY
+        with pytest.raises(SourceError) as caught_env:
+            from_env._get(f"/datasets/319/data/{KEY}", {})
+        assert KEY not in str(caught_env.value)
+    assert seen_headers == [KEY, KEY]
+
+
+@pytest.mark.parametrize(
+    "bad_key",
+    [
+        f"{KEY}-ä",
+        f"{KEY} extra",
+        f"{KEY}\nextra",
+        f"{KEY}\textra",
+        f"{KEY}\x01extra",
+        f"{KEY}\x7fextra",
+    ],
+)
+def test_rejects_non_ascii_and_internal_whitespace_keys_without_echoing_key(
+    bad_key: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ValueError, match="printable ASCII") as caught:
+        FingridClient(bad_key)
+    assert KEY not in str(caught.value)
+    assert bad_key.strip() not in str(caught.value)
+
+    monkeypatch.setenv("FINGRID_API_KEY", bad_key)
+    with pytest.raises(ValueError, match="printable ASCII") as caught_env:
+        FingridClient()
+    assert KEY not in str(caught_env.value)
+    assert bad_key.strip() not in str(caught_env.value)
+
+
+def test_error_response_with_corrupt_encoding_is_not_decoded_and_retries() -> None:
+    class TrackedStream(httpx.SyncByteStream):
+        def __init__(self) -> None:
+            self.reads = 0
+            self.closed = False
+
+        def __iter__(self) -> Iterator[bytes]:
+            self.reads += 1
+            yield b"Service Unavailable"
+
+        def close(self) -> None:
+            self.closed = True
+
+    timer = FakeClock()
+    streams: list[TrackedStream] = []
+
+    def rate_limit_handler(request: httpx.Request) -> httpx.Response:
+        stream = TrackedStream()
+        streams.append(stream)
+        return httpx.Response(
+            503,
+            headers={"Content-Encoding": "gzip", "Retry-After": "1"},
+            stream=stream,
+        )
+
+    with pytest.raises(RateLimitError) as caught:
+        client(rate_limit_handler, timer).series(319, START, END)
+    assert caught.value.source == "fingrid"
+    assert caught.value.retry_after == 1.0
+    assert len(streams) == 4
+    assert all(stream.reads == 0 and stream.closed for stream in streams)
+    assert timer.sleeps == [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+    transient_attempts = 0
+    transient_timer = FakeClock()
+
+    def transient_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal transient_attempts
+        transient_attempts += 1
+        if transient_attempts == 1:
+            return httpx.Response(
+                502,
+                headers={"Content-Encoding": "gzip"},
+                stream=httpx.ByteStream(b"Bad Gateway"),
+            )
+        return page([PUBLISHED])
+
+    assert client(transient_handler, transient_timer).series(319, START, END) == [(START, 21.0)]
+    assert transient_attempts == 2
+
+
+def test_non_hourly_dataset_floors_query_start_to_quarter_for_quarter_and_mid_hour_starts() -> None:
+    seen_quarter: list[httpx.Request] = []
+    quarter_start = START + INTERVAL
+    quarter_end = START + 2 * INTERVAL
+
+    def quarter_handler(request: httpx.Request) -> httpx.Response:
+        seen_quarter.append(request)
+        return page([row(75, 1, 25)])
+
+    assert client(quarter_handler).series(75, quarter_start, quarter_end) == [(quarter_start, 25.0)]
+    assert seen_quarter[0].url.params["startTime"] == "2026-01-15T00:15:00Z"
+
+    with pytest.raises(SourceError, match="outside requested window"):
+        client(lambda _: page([row(75, 0, 99), row(75, 1, 25)])).series(
+            75, quarter_start, quarter_end
+        )
+
+    seen_mid_hour: list[httpx.Request] = []
+    mid_hour_start = START + timedelta(minutes=20)
+    mid_hour_end = START + 3 * INTERVAL
+
+    def mid_hour_handler(request: httpx.Request) -> httpx.Response:
+        seen_mid_hour.append(request)
+        return page([row(75, 1, 10), row(75, 2, 25)])
+
+    assert client(mid_hour_handler).series(75, mid_hour_start, mid_hour_end) == [
+        (START + 2 * INTERVAL, 25.0)
+    ]
+    assert seen_mid_hour[0].url.params["startTime"] == "2026-01-15T00:15:00Z"
+
+    with pytest.raises(SourceError, match="outside requested window"):
+        client(lambda _: page([row(75, 0, 99), row(75, 2, 25)])).series(
+            75, mid_hour_start, mid_hour_end
+        )
+
+
+def test_pagination_rejects_empty_short_and_overflowing_pages_without_further_requests() -> None:
+    pages_empty_first: list[str] = []
+
+    def empty_first_handler(request: httpx.Request) -> httpx.Response:
+        page_num = request.url.params["page"]
+        pages_empty_first.append(page_num)
+        return page([] if page_num == "1" else [PUBLISHED], total=1, last_page=2)
+
+    with pytest.raises(SourceError, match=r"page 1 ended with row count 0 != page-1 total 1"):
+        client(empty_first_handler).series(319, START, END)
+    assert pages_empty_first == ["1"]
+
+    pages_short_first: list[str] = []
+
+    def short_first_handler(request: httpx.Request) -> httpx.Response:
+        page_num = request.url.params["page"]
+        pages_short_first.append(page_num)
+        return page([PUBLISHED] if page_num == "1" else [row(quarter=1)], total=2, last_page=2)
+
+    with pytest.raises(SourceError, match=r"page 1 ended with row count 1 != page-1 total 2"):
+        client(short_first_handler).series(319, START, END)
+    assert pages_short_first == ["1"]
+
+    pages_empty_after_total: list[str] = []
+
+    def empty_after_total_handler(request: httpx.Request) -> httpx.Response:
+        page_num = request.url.params["page"]
+        pages_empty_after_total.append(page_num)
+        return page([PUBLISHED] if page_num == "1" else [], total=1, last_page=3)
+
+    with pytest.raises(SourceError, match=r"page 2 ended with row count 1 != page-1 total 1"):
+        client(empty_after_total_handler).series(319, START, END)
+    assert pages_empty_after_total == ["1", "2"]
+
+    pages_overflow: list[str] = []
+
+    def overflow_handler(request: httpx.Request) -> httpx.Response:
+        page_num = request.url.params["page"]
+        pages_overflow.append(page_num)
+        return page([PUBLISHED, row(quarter=1)], total=1, last_page=2)
+
+    with pytest.raises(SourceError, match=r"row count 2 != page-1 total 1"):
+        client(overflow_handler).series(319, START, END)
+    assert pages_overflow == ["1"]
+
+
+@pytest.mark.parametrize("padded_key", [f"  {KEY}  ", f"{KEY}\n"])
+def test_padded_keys_work_through_http_header_validation(padded_key: str) -> None:
+    body = b'{"data":[],"pagination":{"total":0,"lastPage":1}}'
+    raw = (
+        b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+        + f"Content-Length: {len(body)}\r\n\r\n".encode()
+        + body
+    )
+    transport = httpx.HTTPTransport()
+    transport._pool._network_backend = httpcore.MockBackend([raw])
+    with (
+        httpx.Client(transport=transport) as http,
+        FingridClient(
+            padded_key, http, min_interval=0, sleep=lambda _: None, clock=lambda: 0.0
+        ) as fingrid,
+    ):
+        assert fingrid.series(319, START, END) == []
+
+
+@pytest.mark.parametrize("status", [429, 502, 503, 504])
+def test_corrupt_encoded_http_error_preserves_status_and_retry_budget(status: int) -> None:
+    body = b"Service Unavailable"
+    raw = (
+        f"HTTP/1.1 {status} Error\r\nContent-Encoding: gzip\r\n"
+        f"Content-Length: {len(body)}\r\nRetry-After: 1\r\n\r\n"
+    ).encode() + body
+    transport = httpx.HTTPTransport()
+    transport._pool._network_backend = httpcore.MockBackend([raw] * 4)
+    sleeps: list[float] = []
+    with (
+        httpx.Client(transport=transport) as http,
+        FingridClient(
+            KEY, http, min_interval=0, max_retries=3, sleep=sleeps.append, clock=lambda: 0.0
+        ) as fingrid,
+    ):
+        if status in (429, 503):
+            with pytest.raises(RateLimitError) as caught:
+                fingrid.series(319, START, END)
+            assert caught.value.source == "fingrid"
+            assert caught.value.retry_after == 1.0
+        else:
+            with pytest.raises(SourceError, match=f"HTTP {status}") as transient:
+                fingrid.series(319, START, END)
+            assert not isinstance(transient.value, RateLimitError)
+    assert sleeps == ([1.0] * 3 if status in (429, 503) else [10.0] * 3)
+
+
+def test_non_hourly_transition_mock_honours_transmitted_query_window() -> None:
+    start = datetime(2025, 3, 14, 23, 15, tzinfo=UTC)
+    end = start + INTERVAL
+    rows = [_at(75, start - INTERVAL, 60, 100), _at(75, start, 15, 25)]
+    seen: list[tuple[datetime, datetime]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        low = datetime.fromisoformat(request.url.params["startTime"])
+        high = datetime.fromisoformat(request.url.params["endTime"])
+        seen.append((low, high))
+        return page(
+            [record for record in rows if low <= datetime.fromisoformat(record["startTime"]) < high]
+        )
+
+    with client(handler) as fingrid:
+        assert fingrid.series(75, start, end) == [(start, 25.0)]
+    assert seen == [(start, end)]
