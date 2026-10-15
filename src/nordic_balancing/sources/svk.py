@@ -159,27 +159,31 @@ class SvKClient:
             "sort": "start_time_utc,bidding_zone,reserve_direction",
         }
         rows: list[Any] = []
+        total: int | None = None
         while True:
             result = _result(
                 self._get("/datastore_search", {**params, "offset": str(len(rows))}),
                 "/datastore_search",
             )
-            total = result.get("total")
-            if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            page_total = result.get("total")
+            if isinstance(page_total, bool) or not isinstance(page_total, int) or page_total < 0:
                 raise SourceError(f"{SOURCE}: datastore_search has invalid total")
+            if total is None:
+                total = page_total
+            elif page_total != total:
+                raise SourceError(
+                    f"{SOURCE}: datastore_search total changed from {total} to {page_total}"
+                )
             records = result.get("records")
             if not isinstance(records, list):
                 raise SourceError(f"{SOURCE}: datastore_search has no records list")
-            if not records and len(rows) < total:
-                raise SourceError(f"{SOURCE}: datastore_search ended before reaching total")
             rows.extend(records)
+            if len(rows) > total:
+                raise SourceError(f"{SOURCE}: row count {len(rows)} exceeds total {total}")
+            if len(records) < _PAGE_LIMIT and len(rows) < total:
+                raise SourceError(f"{SOURCE}: datastore_search ended before reaching total")
             if len(rows) >= total:
-                break
-        if len(rows) != total:
-            raise SourceError(
-                f"{SOURCE}: row count {len(rows)} != total {total}; data changed or truncated"
-            )
-        return rows
+                return rows
 
     def _get(self, path: str, params: dict[str, str]) -> Any:
         try:
@@ -214,12 +218,16 @@ def _number(record: dict[str, Any], column: str) -> float | None:
 def _parse_time(value: object) -> datetime:
     if not isinstance(value, str):
         raise SourceError(f"{SOURCE}: start_time_utc is missing or not a string: {value!r}")
+    if "T" not in value and "t" not in value and " " not in value:
+        raise SourceError(f"{SOURCE}: unparseable start_time_utc {value!r}")
     try:
         parsed = datetime.fromisoformat(value)
-    except ValueError as exc:
+    except (ValueError, OverflowError) as exc:
         raise SourceError(f"{SOURCE}: unparseable start_time_utc {value!r}") from exc
-    if parsed.tzinfo is not None:
-        raise SourceError(f"{SOURCE}: start_time_utc must be naive UTC: {value!r}")
+    if parsed.tzinfo is not None and (
+        parsed.utcoffset() != timedelta(0) or not value.endswith(("Z", "z", "+00:00"))
+    ):
+        raise SourceError(f"{SOURCE}: start_time_utc must be UTC: {value!r}")
     if parsed.minute or parsed.second or parsed.microsecond:
         raise SourceError(f"{SOURCE}: start_time_utc {value!r} is not on the hour")
     return parsed.replace(tzinfo=UTC)

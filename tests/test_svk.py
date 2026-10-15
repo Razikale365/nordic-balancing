@@ -17,6 +17,7 @@ from nordic_balancing import (
     SvKClient,
 )
 from nordic_balancing.sources import SvKClient as SourceSvKClient
+from nordic_balancing.sources.svk import _parse_time
 
 RECORD: dict[str, Any] = {
     "_id": 191887,
@@ -205,7 +206,8 @@ def test_chunks_hour_filters_at_one_week_per_request() -> None:
     assert hour_lists[1] == ["2026-10-15T00:00:00", "2026-10-15T01:00:00"]
 
 
-def test_pages_with_offset_until_rows_reach_total() -> None:
+def test_pages_with_offset_until_rows_reach_total(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("nordic_balancing.sources.svk._PAGE_LIMIT", 1)
     seen: list[httpx.Request] = []
     pages = {
         "0": search([RECORD], total=3),
@@ -229,7 +231,10 @@ def test_pages_with_offset_until_rows_reach_total() -> None:
     assert len(result) == 12
 
 
-def test_rejects_an_empty_page_before_total_and_overshooting_total() -> None:
+def test_rejects_an_empty_page_before_total_and_overshooting_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("nordic_balancing.sources.svk._PAGE_LIMIT", 1)
     pages = iter(
         [
             httpx.Response(200, json=search([RECORD], total=2)),
@@ -241,8 +246,112 @@ def test_rejects_an_empty_page_before_total_and_overshooting_total() -> None:
             ReserveProduct.MFRR, START, END, [BiddingZone.SE3]
         )
     over = httpx.Response(200, json=search([RECORD, RECORD], total=1))
-    with pytest.raises(SourceError, match="row count 2 != total 1"):
+    with pytest.raises(SourceError, match="row count 2 exceeds total 1"):
         client(lambda _: over).capacity_market(ReserveProduct.MFRR, START, END, [BiddingZone.SE3])
+
+
+def test_rejects_short_page_before_total() -> None:
+    seen: list[httpx.Request] = []
+    pages = iter(
+        [
+            httpx.Response(200, json=search([RECORD], total=2)),
+            httpx.Response(
+                200,
+                json=search([{**RECORD, "reserve_direction": "down"}], total=2),
+            ),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return next(pages)
+
+    with pytest.raises(SourceError, match="ended before reaching total"):
+        client(handler).capacity_market(ReserveProduct.MFRR, START, END, [BiddingZone.SE3])
+    assert len(seen) == 1
+
+
+@pytest.mark.parametrize(
+    ("first_total", "second_records", "second_total"),
+    [
+        (3, [], 1),
+        (2, [{**RECORD, "reserve_direction": "down"}, {**RECORD, "bidding_zone": "SE4"}], 3),
+    ],
+)
+def test_rejects_total_changing_across_pages(
+    monkeypatch: pytest.MonkeyPatch,
+    first_total: int,
+    second_records: list[dict[str, Any]],
+    second_total: int,
+) -> None:
+    monkeypatch.setattr("nordic_balancing.sources.svk._PAGE_LIMIT", 1)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params["offset"] == "0":
+            return httpx.Response(200, json=search([RECORD], total=first_total))
+        return httpx.Response(200, json=search(second_records, total=second_total))
+
+    with pytest.raises(SourceError, match="total changed"):
+        client(handler).capacity_market(
+            ReserveProduct.MFRR, START, END, [BiddingZone.SE3, BiddingZone.SE4]
+        )
+
+
+@pytest.mark.parametrize("start_time_utc", ["2026-10-08", "20261008"])
+def test_rejects_bare_date_without_time_of_day(start_time_utc: str) -> None:
+    record = {**RECORD, "start_time_utc": start_time_utc}
+    with pytest.raises(SourceError, match="unparseable start_time_utc"):
+        client(lambda _: httpx.Response(200, json=search([record]))).capacity_market(
+            ReserveProduct.MFRR, START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize(
+    "start_time_utc",
+    [
+        "2026-10-08T00:00:00Z",
+        "2026-10-08T00:00:00+00:00",
+    ],
+)
+def test_accepts_utc_zone_designators(start_time_utc: str) -> None:
+    record = {**RECORD, "start_time_utc": start_time_utc}
+    result = client(lambda _: httpx.Response(200, json=search([record]))).capacity_market(
+        ReserveProduct.MFRR, START, END, [BiddingZone.SE3]
+    )
+    assert [r.start for r in result] == [START + i * INTERVAL for i in range(4)]
+    assert all(r.start.tzinfo is UTC for r in result)
+
+
+@pytest.mark.parametrize(
+    ("start_time_utc", "expected_start"),
+    [
+        ("0001-01-01T00:00:00Z", datetime(1, 1, 1, tzinfo=UTC)),
+        ("0001-01-01T00:00:00+00:00", datetime(1, 1, 1, tzinfo=UTC)),
+        ("9999-12-31T23:00:00Z", datetime(9999, 12, 31, 23, tzinfo=UTC)),
+        ("9999-12-31T23:00:00+00:00", datetime(9999, 12, 31, 23, tzinfo=UTC)),
+    ],
+)
+def test_accepts_utc_zone_designators_at_datetime_limits(
+    start_time_utc: str, expected_start: datetime
+) -> None:
+    parsed = _parse_time(start_time_utc)
+    assert parsed == expected_start
+    assert parsed.tzinfo is UTC
+
+
+@pytest.mark.parametrize(
+    "start_time_utc",
+    [
+        "20261008T000000",
+        "2026-10-08T00",
+    ],
+)
+def test_preserves_compact_and_hour_only_naive_timestamps(start_time_utc: str) -> None:
+    record = {**RECORD, "start_time_utc": start_time_utc}
+    result = client(lambda _: httpx.Response(200, json=search([record]))).capacity_market(
+        ReserveProduct.MFRR, START, END, [BiddingZone.SE3]
+    )
+    assert [r.start for r in result] == [START + i * INTERVAL for i in range(4)]
 
 
 @pytest.mark.parametrize(
@@ -259,8 +368,11 @@ def test_rejects_an_empty_page_before_total_and_overshooting_total() -> None:
         ({"start_time_utc": None}, "missing or not a string"),
         ({"start_time_utc": 5}, "missing or not a string"),
         ({"start_time_utc": "invalid"}, "unparseable start_time_utc"),
-        ({"start_time_utc": "2026-10-08T00:00:00Z"}, "must be naive UTC"),
-        ({"start_time_utc": "2026-10-08T00:00:00+00:00"}, "must be naive UTC"),
+        ({"start_time_utc": "2026-10-08T00:00:00+01:00"}, "must be UTC"),
+        ({"start_time_utc": "2026-10-08T00:00:00-00:00"}, "must be UTC"),
+        ({"start_time_utc": "2026-10-08T00:00:30+00:00:30"}, "must be UTC"),
+        ({"start_time_utc": "0001-01-01T00:00:00+01:00"}, "must be UTC"),
+        ({"start_time_utc": "9999-12-31T23:00:00-01:00"}, "must be UTC"),
         ({"start_time_utc": "2026-10-08T00:15:00"}, "not on the hour"),
         ({"start_time_utc": "2026-10-08T01:00:00"}, "outside requested chunk"),
         ({"price_unit": "EUR-MWh"}, "unexpected price_unit"),

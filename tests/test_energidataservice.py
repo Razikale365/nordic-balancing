@@ -438,3 +438,76 @@ def test_deterministic_transport_errors_are_not_retried() -> None:
         client(handler, sleeps).imbalance_prices(START, END)
     assert len(calls) == 1
     assert sleeps == []
+
+
+@pytest.mark.parametrize(
+    ("first_total", "second_total", "second_count"),
+    [
+        (10_002, 10_000, 0),
+        (10_001, 10_002, 2),
+    ],
+)
+def test_rejects_total_changing_across_pages(
+    first_total: int, second_total: int, second_count: int
+) -> None:
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+
+    def records_at(offset: int, count: int) -> list[dict[str, Any]]:
+        return [
+            {
+                **PUBLISHED,
+                "PriceArea": "DK1",
+                "TimeUTC": (start + (offset + i) * INTERVAL).strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            for i in range(count)
+        ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = int(request.url.params["offset"])
+        if offset == 0:
+            return page(records_at(0, 10_000), total=first_total)
+        return page(records_at(offset, second_count), total=second_total)
+
+    with pytest.raises(SourceError, match="changed from"):
+        client(handler).imbalance_prices(start, start + timedelta(days=120), [BiddingZone.DK1])
+
+
+@pytest.mark.parametrize(
+    "time_utc",
+    [
+        "2026-10-09",
+        "20261009",
+        "2026-10-09T02:30:30+00:00:30",
+        "2026-10-09T04:30:00+02:00",
+        "2026-10-09T02:30:00-00:00",
+        "0001-01-01T00:00:00+01:00",
+        "9999-12-31T23:45:00-01:00",
+    ],
+)
+def test_rejects_bare_date_non_utc_offset_and_overflow_timestamps(time_utc: str) -> None:
+    start = datetime(2026, 10, 9, 0, 0, tzinfo=UTC)
+    record = {**PUBLISHED, "TimeUTC": time_utc}
+    with pytest.raises(SourceError):
+        client(lambda _: page([record])).imbalance_prices(start, start + timedelta(hours=3))
+    valid_records = [
+        {**PUBLISHED, "TimeUTC": "2026-10-09T02:30:00Z", "PriceArea": "DK1"},
+        {**PUBLISHED, "TimeUTC": "2026-10-09T02:30:00+00:00", "PriceArea": "DK2"},
+    ]
+    prices = client(lambda _: page(valid_records)).imbalance_prices(START, END)
+    assert [p.start for p in prices] == [START, START]
+
+
+@pytest.mark.parametrize(
+    ("time_utc", "expected_start"),
+    [
+        ("20261009T023000", START),
+        ("2026-10-09T02", datetime(2026, 10, 9, 2, 0, tzinfo=UTC)),
+    ],
+)
+def test_preserves_compact_and_hour_only_naive_timestamps(
+    time_utc: str, expected_start: datetime
+) -> None:
+    window_start = datetime(2026, 10, 9, 2, 0, tzinfo=UTC)
+    record = {**PUBLISHED, "TimeUTC": time_utc}
+    prices = client(lambda _: page([record])).imbalance_prices(window_start, END)
+    assert [p.start for p in prices] == [expected_start]
