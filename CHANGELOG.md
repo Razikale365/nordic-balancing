@@ -6,6 +6,25 @@ the project is alpha and the API may change between 0.x versions.
 ## Unreleased
 
 ### Fixed
+- **Fingrid:** the API key has surrounding whitespace stripped; an empty key, or one with
+  internal whitespace or characters outside printable ASCII, raises `ValueError` at
+  construction without echoing it. Before, such a key could reach an uncaught
+  `UnicodeEncodeError` that carried the key.
+- **Fingrid:** an error response's body is no longer decoded, so a 429/502/503/504 with a
+  broken compressed body is retried as its status says. Before, it raised a decoding error and
+  skipped the retry rules.
+- **Fingrid:** the query start is floored to the hour only for the hourly datasets (319, 244,
+  106, 369); other datasets floor to the quarter, so a mid-hour start no longer fetches or
+  returns an earlier record.
+- **Fingrid, SvK (pagination):** an empty or short page before the reported total, or rows
+  beyond it, raise `SourceError` at that page, as README contract C2 states. Before, Fingrid
+  requested every page before checking, and SvK accepted a short page.
+- **Energi Data Service, SvK (pagination):** the total from the first page is kept; a later
+  page reporting a different total raises. Before, a smaller later total turned an incomplete
+  fetch into success.
+- **Energi Data Service, SvK (timestamps):** a date without a time of day, a non-UTC offset, or
+  a value at the datetime limits raises `SourceError`. Naive timestamps (what both providers
+  send) and explicit UTC designators (`Z`, `+00:00`) are read as before.
 - **All clients (HTTP):** a redirect, an informational status or HTTP 204 now raises
   `SourceError` naming the status (for example `HTTP 302`), without the response body. Before,
   such a response was returned as data, or reported as "not JSON". Redirects are still never
