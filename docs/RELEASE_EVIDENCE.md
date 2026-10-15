@@ -2,15 +2,22 @@
 
 Originally compiled 2026-10-09, before the first PyPI release; updated 2026-10-12
 for the 0.1.0 ENTSO-E live verification and again after it for the committed
-ENTSO-E validation script. Each live result carries the date it was observed. Every
-claim cites a file, a test, a command or a URL.
+ENTSO-E validation script; updated 2026-10-15 for 0.2.0. Each live result carries the
+date it was observed. Every claim cites a file, a test, a command or a URL.
 
 ## Status
 
-- Version `0.1.1` (`pyproject.toml`); **alpha** — the API may change between 0.x
-  versions (classifier `Development Status :: 3 - Alpha`). 0.1.0 was the first
-  non-pre-release; 0.1.0a1–a3 were PyPI pre-releases.
-- Python `>=3.12` (`requires-python`); classifiers list 3.12 and 3.13.
+- Version `0.2.0` (`pyproject.toml`); **beta** (classifier `Development Status :: 4 -
+  Beta`). The public surface is defined and tested (`docs/API_CONTRACT.md`,
+  `tests/test_public_api.py`); before 1.0 it can still change between minor versions,
+  and any such change is listed in the CHANGELOG. 0.1.0 was the first non-pre-release;
+  0.1.0a1–a3 were PyPI pre-releases.
+- Python `>=3.12` (`requires-python`); classifiers list 3.12, 3.13 and 3.14, and CI
+  runs all three plus a job at the lowest declared dependency versions.
+- Scheduled live runs: `.github/workflows/live.yml` runs `pytest -m live` daily at
+  09:17 UTC with repository secrets. The first scheduled run, 2026-10-15
+  ([38749451136](https://github.com/Razikale365/nordic-balancing/actions/runs/38749451136)),
+  passed 17 of 17 with none skipped.
 - Licence: MIT (`LICENSE`). Retrieved data remains under each source's own terms.
 - Runtime dependency: `httpx>=0.27,<1` only. Optional extra `pandas` (`pandas>=2.1`), used
   only by `to_frame`; tested with pandas 2.1.4, 2.2.3 and 3.0.6.
@@ -132,6 +139,14 @@ Observed 2026-10-09 unless noted; file references are under
     2025-04-02/03, so these are in the published documents. The client reports every
     case above as published (contract C4), and `reconcile_imbalance_prices` against
     eSett finds them.
+- Across a chunk boundary (2026-10-15; `examples/entsoe_validation/validate.py
+  multi-chunk --live`, `results_multi-chunk.json`): DK1 and SE3, 2024-06-01 to
+  2025-07-01 (395 days), two requests per zone split at 2025-06-02T00:00Z. Of 75,840
+  intervals, 71,989 exact, 189 rounding (DK1), 43 zero_price (DK1, the 2025-04-01/02
+  quarters above), 1 material (DK1 2025-06-29T17:45Z, above) and 3,618 missing in
+  ENTSO-E (DK1 3,570, mostly the January 2025 gap; SE3 48, whole hours between
+  2024-09 and 2025-02). Nothing is missing in eSett. Around the boundary the result
+  equals a single request per zone (768 intervals, identical).
 - The parser follows the official IEC 62325-451-6
   balancing document schema: element names, optional fields and code lists were
   checked against ENTSO-E's `CIM_xsd_package_v2026` (balancing v3.0 to v4.5). The
@@ -160,6 +175,27 @@ Observed 2026-10-09 unless noted; file references are under
   - An interval published at two resolutions raises, even with equal prices.
 - The three live tests skip without `ENTSOE_API_KEY`.
 
+## Memory and timing
+
+One year, all 12 zones, 420,480 records, measured offline with synthetic responses
+(`examples/benchmarks/memory.py`; method, machine and full table in
+`examples/benchmarks/README.md`; medians of three runs, 2026-10-15):
+
+| Scenario | Wall s | Peak RSS MiB | Traced peak MiB | Retained MiB |
+|---|---:|---:|---:|---:|
+| eSett 2025 | 78.0 | 1,344 | 401 | 330 |
+| eSett 2022 | 44.4 | 816 | 274 | 237 |
+| ENTSO-E 2025 | 266.5 | 2,301 | 906 | 492 |
+| ENTSO-E 2022 | 159.2 | 1,515 | 567 | 449 |
+
+The project's escalation threshold is defined on traced memory (1.5 GB peak or
+3 KB per record); the worst case, ENTSO-E 2025, stays under it (906 MiB, about
+2.3 KB per record). Peak resident memory is higher, 2.3 GB for ENTSO-E 2025, mostly
+the C-level XML parser across 12 parallel requests. The API therefore stays
+synchronous and list-returning. A caller that needs less memory can fetch fewer
+zones or a shorter window per call, or pass a lower `max_workers` to `EntsoeClient`.
+Wall times exclude network latency, which dominates live ENTSO-E calls.
+
 ## Data contracts
 
 See [README.md — Data contracts](../README.md#data-contracts) (C1–C8).
@@ -187,8 +223,12 @@ Not duplicated here.
   before 2025-03-18T23:00Z are labelled 15 min although the four quarters of an
   hour carried a single hourly value (`examples/mfrr_transition/README.md`;
   `examples/entsoe_py_comparison/REPORT.md`, "Gaps found").
-- `None` conflates "not yet published" with "not provided by this source"
-  (`models.py` docstrings; same REPORT section).
+- `None` has one meaning per source and field: a field a source does not provide
+  is `None` on every record from that source; in a field it provides, `None` means
+  the source returned no value. `docs/FIELD_MATRIX.md` lists which fields each
+  source provides and how it shows an unpublished interval, and
+  `tests/test_field_matrix.py` enforces it. The library cannot tell "not yet
+  published" from "never published" where the source does not.
 - `EntsoeClient`'s strict parser raises `SourceError` on differing dual-category prices
   and on curve types A02/A04/A05, which entsoe-py may tolerate. None of these occurred
   in the 60 live zone-windows checked.
@@ -226,7 +266,7 @@ Not duplicated here.
 
 ## Test coverage
 
-- Offline suite (default; `addopts` deselects `live`): 645 tests, all passing on
+- Offline suite (default; `addopts` deselects `live`): 646 tests, all passing on
   2026-10-15. `tests/test_properties.py` holds Hypothesis property tests: for every
   client, splitting the window gives the same records, and every start is on the
   15-minute grid in `[start, end)` with none missing; it also checks reconciliation
@@ -239,7 +279,7 @@ Not duplicated here.
 
 ```
 uv run pytest --co -q | tail -1
-645/662 tests collected (17 deselected)
+646/663 tests collected (17 deselected)
 ```
 
 Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in
@@ -255,7 +295,8 @@ loads it). Branch coverage is measured on demand, not enforced:
 | `examples/mfrr_transition/analysis.py` | `uv run --with matplotlib python examples/mfrr_transition/analysis.py` | When quarter-hourly prices became real (2025-03-18T23:00Z); caches eSett data in `cache.json` |
 | `examples/entsoe_py_comparison/nordic_quirks.py` | `uv run python examples/entsoe_py_comparison/nordic_quirks.py` | Live eSett: the 2023-05 resolution switch, repeated hourly prices, unpublished intervals |
 | `examples/entsoe_py_comparison/repro_issue_529.py` | `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/repro_issue_529.py` | Offline repro of entsoe-py bug #529 (35,519 vs 35,520 rows); upstream fix PR #539 open |
-| `examples/entsoe_validation/validate.py` | `uv run python examples/entsoe_validation/validate.py samples --live` (or `year-2025 --live`) | ENTSO-E vs eSett, all 12 zones, every interval in one category; writes `results_<mode>.json`. Needs `ENTSOE_API_KEY`; does nothing without `--live` |
+| `examples/entsoe_validation/validate.py` | `uv run python examples/entsoe_validation/validate.py samples --live` (or `year-2025 --live`, `multi-chunk --live`) | ENTSO-E vs eSett (all 12 zones; DK1 and SE3 across a chunk boundary for `multi-chunk`), every interval in one category; writes `results_<mode>.json`. Needs `ENTSOE_API_KEY`; does nothing without `--live` |
 | `examples/entsoe_py_comparison/live_side_by_side.py` | `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/live_side_by_side.py` | Three-way diff nordic-balancing vs entsoe-py vs eSett (SE3, FI, 2026-01-15): 96/96 rows, 0 differences on 2026-10-12; exits early without `ENTSOE_API_KEY` |
+| `examples/benchmarks/memory.py` | `uv run --with psutil python examples/benchmarks/memory.py` | Peak memory and wall time for one year, 12 zones, eSett and ENTSO-E; offline, synthetic responses, no keys |
 
 Each script's documented output is in the README/REPORT next to it.

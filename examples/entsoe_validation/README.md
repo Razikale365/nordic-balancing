@@ -1,12 +1,13 @@
 # ENTSO-E vs eSett validation
 
 `validate.py` compares `EntsoeClient` (ENTSO-E A85) with `ESettClient` interval by
-interval, for all 12 Nordic zones, over two fixed comparisons:
+interval, over three fixed comparisons:
 
 | Mode | UTC windows | Requests |
 |---|---|---|
 | `samples` | 2022-01-15 (24 h); 2023-05-21T12:00Z, 2025-03-18T12:00Z and 2025-10-25T22:00Z (24 h each); 2026-10-10 (48 h). 60 zone-windows, 72 zone-days | 12 ENTSO-E + 1 eSett query per window |
 | `year-2025` | 2025-01-01T00:00Z to 2026-01-01T00:00Z | 12 ENTSO-E (parallel, about 100 s) + 1 paged eSett query |
+| `multi-chunk` | DK1 and SE3 only, 2024-06-01T00:00Z to 2025-07-01T00:00Z (395 days) | 2 ENTSO-E per zone, split at the 366-day chunk boundary 2025-06-02T00:00Z, + 1 paged eSett query; then 2025-05-31 to 2025-06-04 again in one request per zone |
 
 The windows are fixed in the script; there is no option to widen them.
 
@@ -18,6 +19,7 @@ request. ENTSO-E needs `ENTSOE_API_KEY` in the environment. eSett needs no key.
 ```
 uv run python examples/entsoe_validation/validate.py samples --live
 uv run python examples/entsoe_validation/validate.py year-2025 --live
+uv run python examples/entsoe_validation/validate.py multi-chunk --live
 ```
 
 Each run writes `results_<mode>.json` next to the script (or to `--out`).
@@ -46,7 +48,7 @@ The JSON holds, per window, the totals, counts per zone, the missing intervals a
 contiguous runs, and every interval that is not `exact` or missing, with both prices.
 `tests/test_entsoe_validation.py` tests the classification offline.
 
-## Results (run 2026-10-12)
+## Results (`samples` and `year-2025`: run 2026-10-12)
 
 `samples` (`results_samples.json`): 6,912 intervals, all present in both sources;
 6,896 exact and 16 rounding (DK1 5, DK2 11). Resolution labels differ in 656
@@ -70,3 +72,25 @@ while eSett's equals its mFRR up price (`docs/RELEASE_EVIDENCE.md`).
 These match the counts from the first probe that `docs/RELEASE_EVIDENCE.md` was
 written from. The 0.1.0 text named only the three material differences outside DK.
 ENTSO-E's published data can still be revised, so a later run may differ.
+
+## Results (`multi-chunk`: run 2026-10-15)
+
+`results_multi-chunk.json`: 75,840 intervals (2 zones × 395 days × 96). This is the only
+committed run whose requests cross the client's 366-day chunk boundary.
+
+| Category | DK1 | SE3 |
+|---|---:|---:|
+| `missing_in_entsoe` | 3,570 | 48 |
+| `exact` | 34,117 | 37,872 |
+| `rounding` | 189 | 0 |
+| `zero_price` | 43 | 0 |
+| `material` | 1 | 0 |
+| all others | 0 | 0 |
+
+Around the boundary (2025-05-31 to 2025-06-04) the two-chunk result equals the
+single-request result: 768 intervals, identical prices and resolutions. The 2025
+part repeats the `year-2025` findings for these zones (the DK1 January gap, the 43
+zero quarters, the DK1 2025-06-29T17:45Z value). The 2024 part adds whole hours
+missing from ENTSO-E: SE3 on 2024-09-11, 2024-10-11, 2024-10-13, 2024-11-09,
+2024-11-18, 2024-12-10 and 2024-12-16, DK1 on 2024-10-11 and 2024-11-05 (every run
+is in the JSON). Nothing is missing in eSett, and no price is `None` on either side.

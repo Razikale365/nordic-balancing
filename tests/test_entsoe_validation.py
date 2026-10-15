@@ -122,7 +122,10 @@ def test_live_run_writes_machine_readable_totals(
 ) -> None:
     calls: list[tuple[datetime, datetime]] = []
 
-    def fake_fetch(start: datetime, end: datetime) -> tuple[dict[Any, Any], dict[Any, Any]]:
+    def fake_fetch(
+        start: datetime, end: datetime, zones: Any = None
+    ) -> tuple[dict[Any, Any], dict[Any, Any]]:
+        assert zones is None
         calls.append((start, end))
         return {("SE3", start): (1.0, 15)}, {
             ("SE3", start): (1.0, 15),
@@ -137,3 +140,32 @@ def test_live_run_writes_machine_readable_totals(
     assert result["totals"]["exact"] == 5
     assert result["totals"]["missing_in_entsoe"] == 5
     assert all(sum(w["totals"].values()) == w["keys"] for w in result["windows"])
+
+
+def test_multi_chunk_mode_limits_zones_and_compares_the_seam(
+    validate: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[tuple[datetime, datetime, Any]] = []
+    seam_start = validate.SEAMS["multi-chunk"][0]
+
+    def fake_fetch(
+        start: datetime, end: datetime, zones: Any = None
+    ) -> tuple[dict[Any, Any], dict[Any, Any]]:
+        calls.append((start, end, zones))
+        if start == seam_start:
+            return {("SE3", seam_start): (1.0, 15)}, {}
+        return {("SE3", seam_start): (1.0, 15), ("SE3", start): (2.0, 60)}, {
+            ("SE3", start): (2.0, 15)
+        }
+
+    monkeypatch.setattr(validate, "fetch", fake_fetch)
+    out = tmp_path / "out.json"
+    assert validate.main(["multi-chunk", "--live", "--out", str(out)]) == 0
+    result = json.loads(out.read_text(encoding="utf-8"))
+    assert [zones for *_, zones in calls] == [("DK1", "SE3"), ("DK1", "SE3")]
+    (window,) = result["windows"]
+    assert window["seam"]["identical"] is True
+    assert (
+        window["seam"]["multi_chunk_intervals"] == window["seam"]["single_request_intervals"] == 1
+    )
+    assert window["resolution_label_differs"] == 1
