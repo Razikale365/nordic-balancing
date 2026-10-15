@@ -17,6 +17,8 @@ updates:
     commit-message:
       prefix: "deps"
 
+  # Actions: workflows pin each action to a full commit SHA with the release tag in a
+  # trailing comment; Dependabot updates both together.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
