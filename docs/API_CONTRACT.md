@@ -55,6 +55,33 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   expanded to four quarters with hourly `resolution`. Procured volume includes
   cross-border allocation; demand and DKK prices remain in `raw`. Results sort
   by `(start, zone, direction)` and are filtered to `[start, end)`.
+- EDS `ReserveProduct.FCR_N = "FCR-N"` and `ReserveProduct.FCR_D = "FCR-D"`
+  use `FcrNdDK2` for DK2 and SE1–SE4 from `2021-11-09T23:00Z`. Only
+  `AuctionType == "Total"` is emitted: `PurchasedVolumeLocal` is the area's MW
+  and `PriceTotalEUR` is EUR/MW per hour. Other auction rows for the same hour,
+  area and source product are retained in `raw["auctions"]`; auction rows
+  without a Total, duplicate Totals and unknown product names raise `SourceError`.
+  FCR-N is symmetric (`Direction.NONE`); `FCR-D upp` maps to `UP` and
+  `FCR-D ned` to `DOWN`. Before `2024-02-01` prices are average prices; from
+  that date each auction has a marginal price and Total is the volume-weighted
+  average of the auctions (common to all areas).
+- EDS `ReserveProduct.FCR = "FCR"` uses `FcrDK1` for DK1 only:
+  `FCRdomestic_MW` and `FCRdk_EUR` supply volume and price, with
+  `Direction.NONE`; other source columns stay in `raw`. These FCR datasets
+  expand hourly records to quarters with hourly `resolution`; null volume or
+  price becomes `None`. Pass `zones=(BiddingZone.DK1,)` for FCR or
+  `zones=(BiddingZone.DK2,)` / covered SE zones for FCR-N/FCR-D; the existing
+  default `(DK1, DK2)` raises `ValueError` for all three products.
+- `EntsoeClient.capacity_market(product, start, end, *, zones=(NO1, NO2, NO3, NO4, NO5))`
+  returns only FCR-N for Norwegian zones, using A81/B95/A52 and market agreement
+  A01. Documents must be A81/A52; series must be B95, symmetric flow A03,
+  quantity unit MAW and currency EUR. `quantity` supplies MW and
+  `procurement_Price.amount` supplies EUR/MW per hour; hourly points expand to
+  quarters with `Direction.NONE`, retaining hourly `resolution`. A03 omitted
+  positions continue the preceding quantity and price. Duplicate values for a
+  zone and hour raise `SourceError`; other products/zones raise `ValueError`.
+  Results sort by `(start, zone, direction)` and are filtered to `[start, end)`.
+  ENTSO-E does not name the product; the series is FCR-N because the identical query returns EDS's FCR-N figures for SE and DK2.
 - `SvKClient.capacity_market(product, start, end, zones=(SE1, SE2, SE3, SE4))`
   returns `list[ReserveCapacity]` for Swedish aFRR and mFRR capacity markets.
 
@@ -119,14 +146,15 @@ bidding zone, product, direction, and 15-minute UTC interval:
 
 - `start: datetime` — UTC start of the 15-minute interval.
 - `zone: BiddingZone` — Nordic bidding zone (`SE1`–`SE4` for `SvKClient`;
-  all 12 zones for EDS aFRR, DK1/DK2 for EDS mFRR).
-- `product: ReserveProduct` — reserve product (`ReserveProduct.MFRR = "mFRR"` or
-  `ReserveProduct.AFRR = "aFRR"`).
-- `direction: Direction` — regulation direction (`Direction.UP` or
-  `Direction.DOWN`).
+  all 12 zones for EDS aFRR, DK1/DK2 for EDS mFRR, DK2/SE1–SE4 for EDS
+  FCR-N/FCR-D, DK1 for EDS FCR, and NO1–NO5 for ENTSO-E FCR-N).
+- `product: ReserveProduct` — reserve product (`ReserveProduct.MFRR = "mFRR"`,
+  `ReserveProduct.AFRR = "aFRR"`, `ReserveProduct.FCR_N = "FCR-N"`,
+  `ReserveProduct.FCR_D = "FCR-D"`, or `ReserveProduct.FCR = "FCR"`).
+- `direction: Direction` — `Direction.UP` or `Direction.DOWN` for products procured per direction (aFRR, mFRR, FCR-D). For a symmetric product (FCR-N, FCR) it is `Direction.NONE`: the volume is available in both directions and the price is paid once, so count such a record in both directions when summing volume per direction, and once when summing cost.
 - `price_eur_per_mw: float | None` — capacity price in EUR per MW per hour.
 - `volume_mw: float | None` — procured capacity volume in MW.
-- `source: str` — provider identifier (`"svk"` or `"energidataservice"`).
+- `source: str` — provider identifier (`"svk"`, `"energidataservice"`, or `"entsoe"`).
 - `resolution: timedelta` — publication interval at the source.
 - `raw: Mapping[str, Any]` — read-only view of the underlying source record
   (`compare=False, repr=False`).
@@ -142,7 +170,7 @@ bidding zone, product, direction, and 15-minute UTC interval:
 - **Pagination and duplicates**: paginated fetches must match the total row count
   reported by the source. Duplicate source records for the same series key raise
   `SourceError`, with two documented exceptions:
-  - ENTSO-E: an interval published under distinct price categories (`A04` and
+  - ENTSO-E imbalance prices (A85): an interval published under distinct price categories (`A04` and
     `A05`) at the same resolution with an equal price collapses to one record,
     keeping all categories in `raw["categories"]`.
   - Fingrid: where hourly and 15-minute records overlap around the March 2025

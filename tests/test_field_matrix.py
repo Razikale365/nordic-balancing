@@ -117,6 +117,17 @@ RESERVE_CAPACITY_AVAILABILITY: dict[str, dict[str, str]] = {
         "resolution": "provided",
         "raw": "provided",
     },
+    "entsoe": {
+        "start": "provided",
+        "zone": "provided",
+        "product": "provided",
+        "direction": "provided",
+        "price_eur_per_mw": "provided",
+        "volume_mw": "provided",
+        "source": "provided",
+        "resolution": "provided",
+        "raw": "provided",
+    },
 }
 
 
@@ -349,7 +360,7 @@ def test_reserve_capacity_never_provided_fields_are_none_and_column_mapping() ->
         assert all(value is not None for value in column_mapping.values()), column_mapping
 
 
-@pytest.mark.parametrize("product", list(ReserveProduct))
+@pytest.mark.parametrize("product", [ReserveProduct.MFRR, ReserveProduct.AFRR])
 def test_eds_capacity_field_matrix_and_direction_mapping(product: ReserveProduct) -> None:
     start = datetime(2026, 10, 8, tzinfo=UTC)
     row = {

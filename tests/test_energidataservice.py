@@ -70,7 +70,7 @@ CAPACITY_NUMBERS = tuple(key for key in CAPACITY if key.startswith(("Up", "Down"
 HOUR_START = START.replace(minute=0)
 
 
-@pytest.mark.parametrize("product", list(ReserveProduct))
+@pytest.mark.parametrize("product", [ReserveProduct.MFRR, ReserveProduct.AFRR])
 def test_capacity_expands_both_directions_and_preserves_mapping(product: ReserveProduct) -> None:
     # Given a row whose procurement differs from demand, including zero and negatives.
     eds = client(lambda _: page([CAPACITY]))

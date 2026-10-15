@@ -126,6 +126,7 @@
         "__enter__": "(self) -> Self",
         "__exit__": "(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: traceback | None) -> None",
         "__init__": "(self, api_key: str | None = None, http: httpx.Client | None = None, *, base_url: str = 'https://web-api.tp.entsoe.eu/api', max_retries: int = 3, max_workers: int = 12, sleep: collections.abc.Callable[[float], None] = <built-in function sleep>) -> None",
+        "capacity_market": "(self, product: nordic_balancing.models.ReserveProduct, start: datetime.datetime, end: datetime.datetime, *, zones: collections.abc.Iterable[nordic_balancing.models.BiddingZone] = (<BiddingZone.NO1: 'NO1'>, <BiddingZone.NO2: 'NO2'>, <BiddingZone.NO3: 'NO3'>, <BiddingZone.NO4: 'NO4'>, <BiddingZone.NO5: 'NO5'>)) -> list[nordic_balancing.models.ReserveCapacity]",
         "close": "(self) -> None",
         "imbalance_prices": "(self, start: datetime.datetime, end: datetime.datetime, zones: collections.abc.Iterable[nordic_balancing.models.BiddingZone] = (<BiddingZone.DK1: 'DK1'>, <BiddingZone.DK2: 'DK2'>, <BiddingZone.FI: 'FI'>, <BiddingZone.NO1: 'NO1'>, <BiddingZone.NO2: 'NO2'>, <BiddingZone.NO3: 'NO3'>, <BiddingZone.NO4: 'NO4'>, <BiddingZone.NO5: 'NO5'>, <BiddingZone.SE1: 'SE1'>, <BiddingZone.SE2: 'SE2'>, <BiddingZone.SE3: 'SE3'>, <BiddingZone.SE4: 'SE4'>)) -> list[nordic_balancing.models.ImbalancePrice]"
       },
@@ -248,6 +249,9 @@
       "kind": "enum",
       "members": {
         "AFRR": "aFRR",
+        "FCR": "FCR",
+        "FCR_D": "FCR-D",
+        "FCR_N": "FCR-N",
         "MFRR": "mFRR"
       }
     },
