@@ -226,40 +226,26 @@ Not duplicated here.
 
 ## Test coverage
 
-- Offline suite (default; `addopts` deselects `live`): **463 tests**, all
-  passing on 2026-10-12 (427 at the 0.1.0 tag). `tests/test_properties.py` holds
-  Hypothesis property tests: for every client, splitting the window gives the same
-  records, and every start is on the 15-minute grid in `[start, end)` with none
-  missing. It also checks reconciliation symmetry.
-- Live suite (`uv run pytest -m live`): **11 tests**, all passing on 2026-10-12
-  (EDS 1, eSett 2, Fingrid 3, SvK 2, ENTSO-E 3). The Fingrid tests skip without `FINGRID_API_KEY`, the ENTSO-E tests
-  without `ENTSOE_API_KEY`.
-
-| File | Offline | Live |
-|---|---:|---:|
-| `tests/test_changes.py` | 7 | — |
-| `tests/test_energidataservice.py` | 63 | 1 |
-| `tests/test_entsoe.py` | 102 | 3 |
-| `tests/test_entsoe_validation.py` | 13 | — |
-| `tests/test_esett.py` | 59 | 2 |
-| `tests/test_fingrid.py` | 94 | 3 |
-| `tests/test_frame.py` | 9 | — |
-| `tests/test_http.py` | 16 | — |
-| `tests/test_models.py` | 5 | — |
-| `tests/test_package.py` | 1 | — |
-| `tests/test_properties.py` | 7 | — |
-| `tests/test_reconcile.py` | 27 | — |
-| `tests/test_svk.py` | 60 | 2 |
-
-`uv run pytest --co -q | tail -1`:
+- Offline suite (default; `addopts` deselects `live`): 645 tests, all passing on
+  2026-10-15. `tests/test_properties.py` holds Hypothesis property tests: for every
+  client, splitting the window gives the same records, and every start is on the
+  15-minute grid in `[start, end)` with none missing; it also checks reconciliation
+  symmetry. `tests/test_public_api.py` fails on any change to the public surface, and
+  `tests/test_field_matrix.py` enforces `docs/FIELD_MATRIX.md`.
+- Live suite (`uv run pytest -m live`): 17 tests. The Fingrid tests skip without
+  `FINGRID_API_KEY`, the ENTSO-E tests without `ENTSOE_API_KEY`;
+  `tests/test_live_recent.py` checks a recent window for each source daily.
+- Test counts show what runs, not that it is correct. Count them with:
 
 ```
-463/474 tests collected (11 deselected)
+uv run pytest --co -q | tail -1
+645/662 tests collected (17 deselected)
 ```
 
 Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in
 the environment or a repo `.env` (see `.env.example`; `tests/conftest.py`
-loads it). No coverage tool is configured.
+loads it). Branch coverage is measured on demand, not enforced:
+`uv run --with pytest-cov pytest -q --cov=nordic_balancing --cov-branch`.
 
 ## Reproducible evidence
 

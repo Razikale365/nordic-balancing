@@ -50,31 +50,33 @@ and `pandas` for `to_frame()` (installed by `uv sync` from the dev group).
   lazy pandas import is warmed up first so it is not counted.
 - **B/record** — peak RSS divided by the number of records returned.
 
-## Results (run 2026-10-14, measured under load)
+## Results (run 2026-10-15)
 
 Machine: Windows 11 (10.0.22621), 6 CPUs, 31.9 GiB RAM, Python 3.12.13.
-Wall times were measured under load — other work was running on the machine;
-rerun timing on an idle machine before trusting it. Memory figures are
-unaffected by load.
+No other agents or test runs were active; a browser was open in the background
+(system CPU 6-29 %). Medians of three fresh subprocesses per scenario. Memory
+figures are within 3 % of an earlier run under load on 2026-10-14; the eSett
+wall times were lower here, the ENTSO-E ones were not (ENTSO-E is CPU-bound
+XML parsing).
 
 | Scenario | Records | Wall s | Peak RSS MiB | Traced peak MiB | Retained MiB | Frame +peak MiB | Frame +retained MiB | B/record |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| esett-2025 | 420,480 | 122.7 | 1,344 | 401 | 330 | 141 | 39 | 3,351 |
-| esett-2022 | 420,480 | 61.0 | 813 | 274 | 237 | 141 | 39 | 2,027 |
-| entsoe-2025 | 420,480 | 274.0 | 2,352 | 928 | 490 | 141 | 39 | 5,865 |
-| entsoe-2022 | 420,480 | 153.6 | 1,483 | 556 | 449 | 141 | 39 | 3,698 |
+| esett-2025 | 420,480 | 78.0 | 1,344 | 401 | 330 | 141 | 39 | 3,352 |
+| esett-2022 | 420,480 | 44.4 | 816 | 274 | 237 | 141 | 39 | 2,034 |
+| entsoe-2025 | 420,480 | 266.5 | 2,301 | 906 | 492 | 141 | 39 | 5,739 |
+| entsoe-2022 | 420,480 | 159.2 | 1,515 | 567 | 449 | 141 | 39 | 3,778 |
 
 ## Threshold check
 
 Threshold: 1.5 GiB peak RSS or 3 KiB per record. Per scenario:
 
-- `esett-2025`: **crossed** — bytes/record (3,351 > 3,072); peak RSS stays
+- `esett-2025`: **crossed** — bytes/record (3,352 > 3,072); peak RSS stays
   under (1,344 MiB).
-- `esett-2022`: not crossed (813 MiB, 2,027 B/record).
-- `entsoe-2025`: **crossed** — both measures (2,352 MiB > 1,536 MiB and
-  5,865 > 3,072 B/record).
-- `entsoe-2022`: **crossed** — bytes/record (3,698 > 3,072); peak RSS stays
-  under (1,483 MiB).
+- `esett-2022`: not crossed (816 MiB, 2,034 B/record).
+- `entsoe-2025`: **crossed** — both measures (2,301 MiB > 1,536 MiB and
+  5,739 > 3,072 B/record).
+- `entsoe-2022`: **crossed** — bytes/record (3,778 > 3,072); peak RSS stays
+  under (1,515 MiB).
 
 Observations, without proposing a fix: the gap between peak RSS and traced
 peak is largest for `entsoe-2025` (~1.4 GiB), which is where expat's C-level
