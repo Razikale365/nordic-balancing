@@ -1,0 +1,47 @@
+name: Live
+
+# Daily run of the tests marked `live` against the real APIs. Not run on pull requests,
+# because they need the repository secrets.
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FINGRID_API_KEY: ${{ secrets.FINGRID_API_KEY }}
+      ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked
+      # The live tests skip when a key is missing, which would give a green run that
+      # tested nothing for Fingrid and ENTSO-E.
+      - name: Require both API keys
+        run: |
+          test -n "$FINGRID_API_KEY" || { echo "::error::FINGRID_API_KEY secret is empty"; exit 1; }
+          test -n "$ENTSOE_API_KEY" || { echo "::error::ENTSOE_API_KEY secret is empty"; exit 1; }
+      - name: Run the live tests (failures retried once after 60 s; any skip fails the job)
+        run: |
+          set +e
+          : > rerun.log
+          uv run pytest -q -m live -rs 2>&1 | tee first.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            sleep 60
+            uv run pytest -q -m live -rs --lf --lfnf=none 2>&1 | tee rerun.log
+            status=${PIPESTATUS[0]}
+          fi
+          if grep -h -E '^SKIPPED|[0-9]+ skipped' first.log rerun.log 2>/dev/null; then
+            echo "::error::live tests were skipped"
+            exit 1
+          fi
+          exit "$status"
