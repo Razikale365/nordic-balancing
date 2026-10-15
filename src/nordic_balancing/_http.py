@@ -104,9 +104,8 @@ def _request(
     if (
         not response.is_success or response.status_code == 204
     ) and response.status_code not in passthrough_statuses:
-        raise SourceError(
-            f"{source}: HTTP {response.status_code} for {path}: {response.text[:200]}"
-        )
+        detail = f": {response.text[:200]}" if response.is_error else ""
+        raise SourceError(f"{source}: HTTP {response.status_code} for {path}{detail}")
     return response
 
 
@@ -126,6 +125,8 @@ def _retry_after(
 
 
 def _seconds_until(header: str, now: datetime) -> float | None:
+    if not header.isascii():
+        return None
     tokens = header.split()
     if (
         len(tokens) == 5
@@ -136,7 +137,7 @@ def _seconds_until(header: str, now: datetime) -> float | None:
         and len(tokens[4]) == 4
         and tokens[4].isdigit()
     ):
-        # parsedate_to_datetime leaves "-0000" naive; HTTP-dates are always GMT.
+        # The obsolete asctime HTTP-date format has an implicit GMT zone.
         header = f"{header} GMT"
     elif tokens:
         tz = tokens[-1]
