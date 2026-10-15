@@ -2,10 +2,11 @@ import gzip
 import json
 import os
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
+import httpcore
 import httpx
 import pytest
 
@@ -743,23 +744,36 @@ def test_rejects_non_ascii_and_internal_whitespace_keys_without_echoing_key(
 
 
 def test_error_response_with_corrupt_encoding_is_not_decoded_and_retries() -> None:
+    class TrackedStream(httpx.SyncByteStream):
+        def __init__(self) -> None:
+            self.reads = 0
+            self.closed = False
+
+        def __iter__(self) -> Iterator[bytes]:
+            self.reads += 1
+            yield b"Service Unavailable"
+
+        def close(self) -> None:
+            self.closed = True
+
     timer = FakeClock()
-    attempts = 0
+    streams: list[TrackedStream] = []
 
     def rate_limit_handler(request: httpx.Request) -> httpx.Response:
-        nonlocal attempts
-        attempts += 1
+        stream = TrackedStream()
+        streams.append(stream)
         return httpx.Response(
             503,
             headers={"Content-Encoding": "gzip", "Retry-After": "1"},
-            stream=httpx.ByteStream(b"Service Unavailable"),
+            stream=stream,
         )
 
     with pytest.raises(RateLimitError) as caught:
         client(rate_limit_handler, timer).series(319, START, END)
     assert caught.value.source == "fingrid"
     assert caught.value.retry_after == 1.0
-    assert attempts == 4
+    assert len(streams) == 4
+    assert all(stream.reads == 0 and stream.closed for stream in streams)
     assert timer.sleeps == [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 
     transient_attempts = 0
@@ -860,3 +874,69 @@ def test_pagination_rejects_empty_short_and_overflowing_pages_without_further_re
     with pytest.raises(SourceError, match=r"row count 2 != page-1 total 1"):
         client(overflow_handler).series(319, START, END)
     assert pages_overflow == ["1"]
+
+
+@pytest.mark.parametrize("padded_key", [f"  {KEY}  ", f"{KEY}\n"])
+def test_padded_keys_work_through_http_header_validation(padded_key: str) -> None:
+    body = b'{"data":[],"pagination":{"total":0,"lastPage":1}}'
+    raw = (
+        b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+        + f"Content-Length: {len(body)}\r\n\r\n".encode()
+        + body
+    )
+    transport = httpx.HTTPTransport()
+    transport._pool._network_backend = httpcore.MockBackend([raw])
+    with (
+        httpx.Client(transport=transport) as http,
+        FingridClient(
+            padded_key, http, min_interval=0, sleep=lambda _: None, clock=lambda: 0.0
+        ) as fingrid,
+    ):
+        assert fingrid.series(319, START, END) == []
+
+
+@pytest.mark.parametrize("status", [429, 502, 503, 504])
+def test_corrupt_encoded_http_error_preserves_status_and_retry_budget(status: int) -> None:
+    body = b"Service Unavailable"
+    raw = (
+        f"HTTP/1.1 {status} Error\r\nContent-Encoding: gzip\r\n"
+        f"Content-Length: {len(body)}\r\nRetry-After: 1\r\n\r\n"
+    ).encode() + body
+    transport = httpx.HTTPTransport()
+    transport._pool._network_backend = httpcore.MockBackend([raw] * 4)
+    sleeps: list[float] = []
+    with (
+        httpx.Client(transport=transport) as http,
+        FingridClient(
+            KEY, http, min_interval=0, max_retries=3, sleep=sleeps.append, clock=lambda: 0.0
+        ) as fingrid,
+    ):
+        if status in (429, 503):
+            with pytest.raises(RateLimitError) as caught:
+                fingrid.series(319, START, END)
+            assert caught.value.source == "fingrid"
+            assert caught.value.retry_after == 1.0
+        else:
+            with pytest.raises(SourceError, match=f"HTTP {status}") as transient:
+                fingrid.series(319, START, END)
+            assert not isinstance(transient.value, RateLimitError)
+    assert sleeps == ([1.0] * 3 if status in (429, 503) else [10.0] * 3)
+
+
+def test_non_hourly_transition_mock_honours_transmitted_query_window() -> None:
+    start = datetime(2025, 3, 14, 23, 15, tzinfo=UTC)
+    end = start + INTERVAL
+    rows = [_at(75, start - INTERVAL, 60, 100), _at(75, start, 15, 25)]
+    seen: list[tuple[datetime, datetime]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        low = datetime.fromisoformat(request.url.params["startTime"])
+        high = datetime.fromisoformat(request.url.params["endTime"])
+        seen.append((low, high))
+        return page(
+            [record for record in rows if low <= datetime.fromisoformat(record["startTime"]) < high]
+        )
+
+    with client(handler) as fingrid:
+        assert fingrid.series(75, start, end) == [(start, 25.0)]
+    assert seen == [(start, end)]
