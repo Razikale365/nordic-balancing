@@ -6,6 +6,12 @@ the project is in beta: the public API is defined in
 
 ## Unreleased
 
+### Documentation
+- `docs/API_CONTRACT.md` now states how a deprecation is announced (`DeprecationWarning` pointing
+  at the caller, naming the version that removes it) and that the API snapshot test defines the
+  public surface. The known limitations moved there from `docs/RELEASE_EVIDENCE.md`; each is
+  marked accepted and names the test or live check that covers it, or says that none does.
+
 ## 0.2.0 — unreleased (Beta candidate)
 
 First beta. The public surface is now written down and tested, the supported Python and

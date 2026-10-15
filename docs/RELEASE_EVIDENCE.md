@@ -219,50 +219,7 @@ Not duplicated here.
 
 ## Known limitations
 
-- `resolution` records publication cadence, not information content: quarters
-  before 2025-03-18T23:00Z are labelled 15 min although the four quarters of an
-  hour carried a single hourly value (`examples/mfrr_transition/README.md`;
-  `examples/entsoe_py_comparison/REPORT.md`, "Gaps found").
-- `None` has one meaning per source and field: a field a source does not provide
-  is `None` on every record from that source; in a field it provides, `None` means
-  the source returned no value. `docs/FIELD_MATRIX.md` lists which fields each
-  source provides and how it shows an unpublished interval, and
-  `tests/test_field_matrix.py` enforces it. The library cannot tell "not yet
-  published" from "never published" where the source does not.
-- `EntsoeClient`'s strict parser raises `SourceError` on differing dual-category prices
-  and on curve types A02/A04/A05, which entsoe-py may tolerate. None of these occurred
-  in the 60 live zone-windows checked.
-- A possible FI imbalance-price formula change around 2026-06-01 is UNVERIFIED
-  (no primary source found): it has no entry in `CHANGES` and no test coverage.
-- No async client; all clients are synchronous over `httpx.Client`.
-- Python 3.12+ only.
-- eSett history starts 2021-10-31T23:00Z; nothing earlier exists in this API.
-- Reconciliation classifies differences only; it never merges series or picks
-  a source (`reconcile_imbalance_prices`, README).
-- `raw` is a read-only mapping over a deep copy private to each record. Only the
-  top level rejects writes; nested containers are mutable but unshared, so treat
-  them as read-only.
-- Fingrid `series()` has a verified hourly policy only for datasets 319, 244, 106
-  and 369 (per-interval prices/direction). Hourly records from any other dataset
-  raise `SourceError` rather than being repeated, since they may be additive totals.
-- eSett: a price published in only one of the sales/purchase columns is taken as
-  the single price (never observed in ~107k records sampled 2021-11 to 2026-10).
-- Energi Data Service: `DominatingDirection` must be exactly -1, 0 or 1 (observed
-  values in ~16.8k records: only those and null).
-- ENTSO-E checks that never triggered on live data (60 zone-windows and all 12 zones for
-  2025, 2026-10-12) but stay strict, so they fail loudly if the API changes:
-  - A point outside the requested window raises. entsoe-py truncates its A85 results
-    to the window; no extra points were observed.
-  - A TimeSeries without `curveType` raises, although the element is optional in the
-    XSD; every observed TimeSeries had A03.
-  - The response area must equal the bidding-zone EIC sent as `controlArea_Domain`;
-    it did in every observed document.
-- ENTSO-E: the token is a query parameter, as the API requires. If you enable INFO
-  logging for the `httpx` logger, request URLs are logged, and with them the token.
-- SvK: the client asks for on-the-hour starts and expands each record to four
-  quarters. Every record observed so far is hourly (latest checked:
-  2026-10-09T21:00Z), and the dataset has no duration column. If SvK moves to
-  15-minute capacity records, the change would not be detected.
+See [API_CONTRACT.md — Known limitations](API_CONTRACT.md#known-limitations).
 
 ## Test coverage
 
