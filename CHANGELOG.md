@@ -6,6 +6,21 @@ the project is alpha and the API may change between 0.x versions.
 ## Unreleased
 
 ### Fixed
+- **ENTSO-E (secrets):** the token is now redacted before a server message is truncated,
+  so a token straddling the cut can no longer leak a prefix. The API key has surrounding
+  whitespace stripped, and a key with internal whitespace or characters outside printable
+  ASCII raises `ValueError` without echoing it.
+- **ENTSO-E (records):** a PT60M point that does not start on the hour, the same position
+  twice within one Period, and the same series key in two chunk results now raise
+  `SourceError`. Before, an off-hour point could expand past the request window, a repeated
+  position could hide a missing category or a price conflict, and the chunk merge silently
+  kept one value.
+- **ENTSO-E (documents):** a corrupt or empty ZIP archive, an XML encoding that cannot be
+  decoded, a present but empty code element (document type, area, category, direction) and a
+  missing document type now raise `SourceError`. Before, some raised `ValueError`, `OSError`,
+  `LZMAError` or `LookupError`, and others were accepted or returned no records silently.
+- **ENTSO-E (acknowledgements):** an acknowledgement means "no data" only when every reason
+  says so; any other reason raises. Before, one "No matching data found" reason hid the others.
 - **Records:** a `start` in a non-UTC time zone at offset zero (for example
   `Europe/London` in winter) is now converted to UTC. Before, `end` was computed in
   local wall time and could fall before `start` at the autumn clock change.
