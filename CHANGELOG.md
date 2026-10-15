@@ -6,6 +6,9 @@ the project is alpha and the API may change between 0.x versions.
 ## Unreleased
 
 ### Fixed
+- **Records:** a `start` in a non-UTC time zone at offset zero (for example
+  `Europe/London` in winter) is now converted to UTC. Before, `end` was computed in
+  local wall time and could fall before `start` at the autumn clock change.
 - **ENTSO-E:** implied A03 positions now stop at the request window end, with filling
   work bounded by that window. Before, a Period extending beyond a chunk could
   fill intervals belonging to the next chunk, even when that chunk returned no data.

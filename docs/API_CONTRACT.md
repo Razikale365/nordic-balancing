@@ -51,9 +51,10 @@ See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how
 ### Intervals and resolution
 
 - `start` (`datetime`): the inclusive start of the 15-minute settlement interval as
-  a timezone-aware UTC `datetime` (`tzinfo` set with zero UTC offset). Passing a
-  naive or non-UTC `start` to `ImbalancePrice` or `ReserveCapacity` raises
-  `ValueError`.
+  a timezone-aware UTC `datetime` (`tzinfo` is `datetime.UTC`). Passing a naive
+  `start`, or one with a non-zero UTC offset, to `ImbalancePrice` or
+  `ReserveCapacity` raises `ValueError`; a `start` in another time zone at offset
+  zero (for example `Europe/London` in winter) is converted to UTC.
 - `end` (`datetime` property): the exclusive end of the interval, equal to
   `start + INTERVAL` where `INTERVAL = timedelta(minutes=15)`.
 - Query window (`[start, end)`): client query methods require timezone-aware

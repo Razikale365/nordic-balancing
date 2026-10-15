@@ -102,6 +102,9 @@ class ImbalancePrice:
     def __post_init__(self) -> None:
         if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
             raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
+        if self.start.tzinfo is not UTC:
+            # Same instant, but interval arithmetic must not run in a local wall clock.
+            object.__setattr__(self, "start", self.start.astimezone(UTC))
         object.__setattr__(self, "raw", MappingProxyType(_copy_raw(self.raw)))
 
     @property
@@ -137,6 +140,9 @@ class ReserveCapacity:
     def __post_init__(self) -> None:
         if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
             raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
+        if self.start.tzinfo is not UTC:
+            # Same instant, but interval arithmetic must not run in a local wall clock.
+            object.__setattr__(self, "start", self.start.astimezone(UTC))
         object.__setattr__(self, "raw", MappingProxyType(_copy_raw(self.raw)))
 
     @property
