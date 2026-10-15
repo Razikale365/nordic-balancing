@@ -27,6 +27,8 @@ from nordic_balancing.models import (
     BiddingZone,
     Direction,
     ImbalancePrice,
+    ReserveCapacity,
+    ReserveProduct,
     to_utc,
 )
 
@@ -34,6 +36,24 @@ SOURCE = "energidataservice"
 BASE_URL = "https://api.energidataservice.dk"
 PAGE_SIZE = 10_000
 _DK = frozenset({BiddingZone.DK1, BiddingZone.DK2})
+_HOUR = timedelta(hours=1)
+_CAPACITY_DATASETS = {
+    ReserveProduct.AFRR: "AfrrReservesNordic",
+    ReserveProduct.MFRR: "mFRRCapacityMarket",
+}
+_CAPACITY_COLUMNS = (
+    "TimeUTC",
+    "TimeDK",
+    "PriceArea",
+    "UpDemandMW",
+    "UpProcuredMW",
+    "UpPriceEUR",
+    "UpPriceDKK",
+    "DownDemandMW",
+    "DownProcuredMW",
+    "DownPriceEUR",
+    "DownPriceDKK",
+)
 
 _IMBALANCE_COLUMNS = (
     "TimeUTC",
@@ -143,6 +163,91 @@ class EnergiDataServiceClient:
                 prices.append(price)
         prices.sort(key=lambda p: (p.start, p.zone))
         return prices
+
+    def capacity_market(
+        self,
+        product: ReserveProduct,
+        start: datetime,
+        end: datetime,
+        *,
+        zones: Iterable[BiddingZone] = (BiddingZone.DK1, BiddingZone.DK2),
+    ) -> list[ReserveCapacity]:
+        """Return hourly capacity expanded to quarters starting in ``[start, end)``.
+
+        aFRR covers all Nordic zones from 2022-12-07T23:00Z; mFRR covers DK1/DK2
+        from 2023-06-20T22:00Z. Volumes are procured MW including cross-border
+        allocation, not demand. Prices are marginal EUR/MW per hour. Demand and
+        DKK prices remain in ``raw``. Results sort by start, zone and direction.
+        """
+        if not isinstance(product, ReserveProduct):
+            raise ValueError("product must be a ReserveProduct")
+        start_utc = to_utc(start, "start")
+        end_utc = to_utc(end, "end")
+        if end_utc <= start_utc:
+            raise ValueError("end must be after start")
+        requested = list(zones)
+        if any(not isinstance(z, BiddingZone) for z in requested):
+            raise ValueError("zones must contain only BiddingZone values")
+        zone_list = sorted(set(requested))
+        if not zone_list:
+            raise ValueError("zones must not be empty")
+        if product is ReserveProduct.MFRR and any(z not in _DK for z in zone_list):
+            raise ValueError("Energi Data Service mFRR capacity covers only DK1 and DK2")
+        query_start = start_utc.replace(minute=0, second=0, microsecond=0)
+        query_end = end_utc.replace(second=0, microsecond=0)
+        if query_end < end_utc:
+            query_end += timedelta(minutes=1)
+        params = {
+            "start": _format(query_start),
+            "end": _format(query_end),
+            "timezone": "UTC",
+            "filter": json.dumps({"PriceArea": [z.value for z in zone_list]}),
+            "columns": ",".join(_CAPACITY_COLUMNS),
+            "sort": "TimeUTC asc,PriceArea asc",
+        }
+        capacities: list[ReserveCapacity] = []
+        seen: set[tuple[datetime, BiddingZone]] = set()
+        for record in self._records(_CAPACITY_DATASETS[product], params):
+            if not isinstance(record, dict):
+                raise SourceError(f"{SOURCE}: record is not a JSON object")
+            missing = set(_CAPACITY_COLUMNS) - record.keys()
+            if missing:
+                raise SourceError(f"{SOURCE}: missing capacity columns {sorted(missing)}")
+            hour = _parse_time(record["TimeUTC"])
+            if hour.minute:
+                raise SourceError(f"{SOURCE}: TimeUTC is not on the hour")
+            if not query_start <= hour < query_end:
+                raise SourceError(f"{SOURCE}: TimeUTC outside requested window")
+            area = record["PriceArea"]
+            zone = BiddingZone.__members__.get(area) if isinstance(area, str) else None
+            if zone is None or zone not in zone_list:
+                raise SourceError(f"{SOURCE}: unrequested PriceArea {area!r}")
+            reject_duplicate(
+                seen,
+                (hour, zone),
+                source=SOURCE,
+                detail=f"record for {hour.isoformat()} {zone}",
+            )
+            numbers = {column: _number(record, column) for column in _CAPACITY_COLUMNS[3:]}
+            for direction, prefix in ((Direction.UP, "Up"), (Direction.DOWN, "Down")):
+                for quarter in range(4):
+                    quarter_start = hour + quarter * INTERVAL
+                    if start_utc <= quarter_start < end_utc:
+                        capacities.append(
+                            ReserveCapacity(
+                                start=quarter_start,
+                                zone=zone,
+                                product=product,
+                                direction=direction,
+                                price_eur_per_mw=numbers[f"{prefix}PriceEUR"],
+                                volume_mw=numbers[f"{prefix}ProcuredMW"],
+                                source=SOURCE,
+                                resolution=_HOUR,
+                                raw=record,
+                            )
+                        )
+        capacities.sort(key=lambda c: (c.start, c.zone, c.direction))
+        return capacities
 
     def _records(self, dataset: str, params: dict[str, str]) -> Iterator[dict[str, Any]]:
         offset = 0

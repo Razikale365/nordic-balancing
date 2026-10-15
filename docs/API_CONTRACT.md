@@ -44,6 +44,20 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
 
 ## Record field semantics and data contracts
 
+### Capacity market methods
+
+- `EnergiDataServiceClient.capacity_market(product, start, end, *, zones=(DK1, DK2))`
+  returns `list[ReserveCapacity]`: aFRR (`AfrrReservesNordic`) for all 12 Nordic
+  zones from `2022-12-07T23:00Z`, or mFRR (`mFRRCapacityMarket`) for DK1/DK2 from
+  `2023-06-20T22:00Z`. `product` must be a `ReserveProduct`, and `zones` must be a
+  non-empty iterable of `BiddingZone` values. Other mFRR zones raise `ValueError`.
+  Each hourly row supplies UP and DOWN marginal EUR/MW prices and procured MW,
+  expanded to four quarters with hourly `resolution`. Procured volume includes
+  cross-border allocation; demand and DKK prices remain in `raw`. Results sort
+  by `(start, zone, direction)` and are filtered to `[start, end)`.
+- `SvKClient.capacity_market(product, start, end, zones=(SE1, SE2, SE3, SE4))`
+  returns `list[ReserveCapacity]` for Swedish aFRR and mFRR capacity markets.
+
 Every client enforces the same data contracts (C1–C8 in [README.md](../README.md));
 any violation raises `SourceError`.
 See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how unpublished intervals appear.
@@ -104,14 +118,15 @@ Frozen, slotted dataclass representing procured reserve capacity and price for o
 bidding zone, product, direction, and 15-minute UTC interval:
 
 - `start: datetime` — UTC start of the 15-minute interval.
-- `zone: BiddingZone` — Nordic bidding zone (`SE1`–`SE4` for `SvKClient`).
+- `zone: BiddingZone` — Nordic bidding zone (`SE1`–`SE4` for `SvKClient`;
+  all 12 zones for EDS aFRR, DK1/DK2 for EDS mFRR).
 - `product: ReserveProduct` — reserve product (`ReserveProduct.MFRR = "mFRR"` or
   `ReserveProduct.AFRR = "aFRR"`).
 - `direction: Direction` — regulation direction (`Direction.UP` or
   `Direction.DOWN`).
 - `price_eur_per_mw: float | None` — capacity price in EUR per MW per hour.
 - `volume_mw: float | None` — procured capacity volume in MW.
-- `source: str` — provider identifier (`"svk"`).
+- `source: str` — provider identifier (`"svk"` or `"energidataservice"`).
 - `resolution: timedelta` — publication interval at the source.
 - `raw: Mapping[str, Any]` — read-only view of the underlying source record
   (`compare=False, repr=False`).

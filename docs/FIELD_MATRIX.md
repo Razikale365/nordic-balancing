@@ -43,18 +43,24 @@ their contribution to the single imbalance price is not verified.
 
 ## `ReserveCapacity`
 
-| Field | Svenska kraftnät (`svk`) |
-|---|---|
-| `start` | `provided` |
-| `zone` | `provided` |
-| `product` | `provided` |
-| `direction` | `provided` |
-| `price_eur_per_mw` | `provided` |
-| `volume_mw` | `provided` |
-| `source` | `provided` |
-| `resolution` | `provided` |
-| `raw` | `provided` |
-| Unpublished interval appears as | No record when the hourly row is absent from `datastore_search`; four quarter-hour records with `None` (`price_eur_per_mw` / `volume_mw`) when a row is returned with null values |
+| Field | Svenska kraftnät (`svk`) | Energi Data Service (`energidataservice`) |
+|---|---|---|
+| `start` | `provided` | `provided` |
+| `zone` | `provided` | `provided` |
+| `product` | `provided` | `provided` |
+| `direction` | `provided` | `provided` |
+| `price_eur_per_mw` | `provided` | `provided` |
+| `volume_mw` | `provided` | `provided` |
+| `source` | `provided` | `provided` |
+| `resolution` | `provided` | `provided` |
+| `raw` | `provided` | `provided` |
+| Unpublished interval appears as | No record when the hourly row is absent from `datastore_search`; four quarter-hour records with `None` (`price_eur_per_mw` / `volume_mw`) when a row is returned with null values | No record when the hourly row is absent; each returned row expands to four quarters per direction, with `None` for null price or procured volume |
+
+EDS aFRR covers all 12 Nordic zones; EDS mFRR covers DK1/DK2. Each row maps
+`UpPriceEUR` / `DownPriceEUR` to `price_eur_per_mw` and `UpProcuredMW` /
+`DownProcuredMW` to `volume_mw`. Procured MW include cross-border allocation;
+`UpDemandMW`, `DownDemandMW`, DKK prices and `TimeDK` remain in `raw`.
+Both datasets publish hourly records, expanded with hourly `resolution` retained.
 
 An hourly record expanded to quarters repeats a level (a price, or MW of
 capacity), not an amount, so summing records over time is meaningless; a

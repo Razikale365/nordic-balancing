@@ -106,6 +106,17 @@ RESERVE_CAPACITY_AVAILABILITY: dict[str, dict[str, str]] = {
         "resolution": "provided",
         "raw": "provided",
     },
+    "energidataservice": {
+        "start": "provided",
+        "zone": "provided",
+        "product": "provided",
+        "direction": "provided",
+        "price_eur_per_mw": "provided",
+        "volume_mw": "provided",
+        "source": "provided",
+        "resolution": "provided",
+        "raw": "provided",
+    },
 }
 
 
@@ -336,3 +347,37 @@ def test_reserve_capacity_never_provided_fields_are_none_and_column_mapping() ->
 
         column_mapping = {name: getattr(record, name) for name in provided_fields}
         assert all(value is not None for value in column_mapping.values()), column_mapping
+
+
+@pytest.mark.parametrize("product", list(ReserveProduct))
+def test_eds_capacity_field_matrix_and_direction_mapping(product: ReserveProduct) -> None:
+    start = datetime(2026, 10, 8, tzinfo=UTC)
+    row = {
+        "TimeUTC": "2026-10-08T00:00:00",
+        "TimeDK": "2026-10-08T02:00:00",
+        "PriceArea": "DK1",
+        "UpDemandMW": 5.0,
+        "UpProcuredMW": 7.0,
+        "UpPriceEUR": 11.0,
+        "UpPriceDKK": 82.0,
+        "DownDemandMW": 3.0,
+        "DownProcuredMW": 2.0,
+        "DownPriceEUR": 9.0,
+        "DownPriceDKK": 67.0,
+    }
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"total": 1, "records": [row]})
+    )
+    with httpx.Client(transport=transport) as http, EnergiDataServiceClient(http) as eds:
+        records = eds.capacity_market(product, start, start + timedelta(hours=1))
+    availability = RESERVE_CAPACITY_AVAILABILITY["energidataservice"]
+    assert tuple(availability) == RESERVE_CAPACITY_FIELDS
+    assert all(status == "provided" for status in availability.values())
+    assert len(records) == 8
+    for record in records:
+        assert record.source == "energidataservice"
+        assert all(getattr(record, name) is not None for name in availability)
+        prefix = "Up" if record.direction.value == 1 else "Down"
+        assert record.price_eur_per_mw == row[f"{prefix}PriceEUR"]
+        assert record.volume_mw == row[f"{prefix}ProcuredMW"]
+        assert record.raw == row
