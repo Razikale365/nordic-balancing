@@ -1,6 +1,11 @@
+import importlib.util
 import json
+import sys
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import httpx
@@ -12,6 +17,8 @@ from nordic_balancing import (
     Direction,
     EnergiDataServiceClient,
     RateLimitError,
+    ReserveCapacity,
+    ReserveProduct,
     SourceError,
 )
 
@@ -45,6 +52,60 @@ START = datetime(2026, 10, 9, 2, 30, tzinfo=UTC)
 END = START + timedelta(minutes=30)
 
 Handler = Callable[[httpx.Request], httpx.Response]
+
+CAPACITY: dict[str, Any] = {
+    "TimeUTC": "2026-10-09T02:00:00",
+    "TimeDK": "2026-10-09T04:00:00",
+    "PriceArea": "DK1",
+    "UpDemandMW": 20.0,
+    "UpProcuredMW": 30.0,
+    "UpPriceEUR": -2.5,
+    "UpPriceDKK": -18.65,
+    "DownDemandMW": 10.0,
+    "DownProcuredMW": 0.0,
+    "DownPriceEUR": 5.0,
+    "DownPriceDKK": 37.3,
+}
+CAPACITY_NUMBERS = tuple(key for key in CAPACITY if key.startswith(("Up", "Down")))
+HOUR_START = START.replace(minute=0)
+
+
+@pytest.mark.parametrize("product", list(ReserveProduct))
+def test_capacity_expands_both_directions_and_preserves_mapping(product: ReserveProduct) -> None:
+    # Given a row whose procurement differs from demand, including zero and negatives.
+    eds = client(lambda _: page([CAPACITY]))
+    # When requesting one whole hour.
+    result = eds.capacity_market(product, HOUR_START, END, zones=[BiddingZone.DK1])
+    # Then values are levels repeated on quarters, with source resolution and raw intact.
+    assert len(result) == 8
+    assert [(r.start, r.zone, r.direction) for r in result] == [
+        (HOUR_START + q * INTERVAL, BiddingZone.DK1, direction)
+        for q in range(4)
+        for direction in (Direction.DOWN, Direction.UP)
+    ]
+    for record in result:
+        assert isinstance(record, ReserveCapacity)
+        assert record.product is product
+        assert record.resolution == timedelta(hours=1)
+        assert record.source == "energidataservice"
+        assert record.start.tzinfo is UTC
+        assert record.end == record.start + INTERVAL
+        assert record.raw == CAPACITY
+    assert (result[0].price_eur_per_mw, result[0].volume_mw) == (5.0, 0.0)
+    assert (result[1].price_eur_per_mw, result[1].volume_mw) == (-2.5, 30.0)
+
+
+@pytest.mark.parametrize("zone", list(BiddingZone))
+def test_capacity_afrr_covers_every_nordic_zone(zone: BiddingZone) -> None:
+    # Given one synthetic aFRR row for a Nordic zone.
+    row = {**CAPACITY, "PriceArea": zone.value}
+    # When fetching that zone through the public method.
+    result = client(lambda _: page([row])).capacity_market(
+        ReserveProduct.AFRR, HOUR_START, END, zones=[zone]
+    )
+    # Then all expanded records retain the zone.
+    assert len(result) == 8
+    assert {r.zone for r in result} == {zone}
 
 
 def page(records: list[dict[str, Any]], total: int | None = None) -> httpx.Response:
@@ -511,3 +572,348 @@ def test_preserves_compact_and_hour_only_naive_timestamps(
     record = {**PUBLISHED, "TimeUTC": time_utc}
     prices = client(lambda _: page([record])).imbalance_prices(window_start, END)
     assert [p.start for p in prices] == [expected_start]
+
+
+@pytest.mark.parametrize(
+    ("product", "dataset"),
+    [(ReserveProduct.AFRR, "AfrrReservesNordic"), (ReserveProduct.MFRR, "mFRRCapacityMarket")],
+)
+def test_capacity_query_uses_dataset_defaults_columns_and_utc(
+    product: ReserveProduct, dataset: str
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return page([])
+
+    local = timezone(timedelta(hours=2))
+    result = client(handler).capacity_market(
+        product, START.astimezone(local), END.astimezone(local)
+    )
+    assert result == []
+    assert seen[0].url.path == f"/dataset/{dataset}"
+    params = seen[0].url.params
+    assert params["start"] == "2026-10-09T02:00"
+    assert params["end"] == "2026-10-09T03:00"
+    assert params["timezone"] == "UTC"
+    assert json.loads(params["filter"]) == {"PriceArea": ["DK1", "DK2"]}
+    assert params["columns"].split(",") == list(CAPACITY)
+    assert params["sort"] == "TimeUTC asc,PriceArea asc"
+    assert params["offset"] == "0"
+    assert params["limit"] == "10000"
+
+
+def test_capacity_rounds_outward_and_trims_at_subsecond_precision() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return page([CAPACITY, {**CAPACITY, "TimeUTC": "2026-10-09T03:00:00"}])
+
+    result = client(handler).capacity_market(
+        ReserveProduct.AFRR,
+        HOUR_START + INTERVAL + timedelta(microseconds=1),
+        END + timedelta(microseconds=1),
+        zones=[BiddingZone.DK1],
+    )
+    assert seen[0].url.params["start"] == "2026-10-09T02:00"
+    assert seen[0].url.params["end"] == "2026-10-09T03:01"
+    assert [r.start for r in result] == [HOUR_START + q * INTERVAL for q in (2, 2, 3, 3, 4, 4)]
+
+
+def test_capacity_sorts_rows_and_accepts_deduplicated_zone_generator() -> None:
+    rows = [{**CAPACITY, "PriceArea": "DK2"}, CAPACITY]
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return page(rows)
+
+    result = client(handler).capacity_market(
+        ReserveProduct.MFRR,
+        HOUR_START,
+        END,
+        zones=(z for z in (BiddingZone.DK2, BiddingZone.DK1, BiddingZone.DK2)),
+    )
+    assert json.loads(seen[0].url.params["filter"]) == {"PriceArea": ["DK1", "DK2"]}
+    assert [(r.start, r.zone, r.direction) for r in result] == [
+        (HOUR_START + q * INTERVAL, zone, direction)
+        for q in range(4)
+        for zone in (BiddingZone.DK1, BiddingZone.DK2)
+        for direction in (Direction.DOWN, Direction.UP)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"TimeUTC": None}, "TimeUTC is missing"),
+        ({"TimeUTC": "2026-10-09"}, "unparseable TimeUTC"),
+        ({"TimeUTC": "invalid"}, "unparseable TimeUTC"),
+        ({"TimeUTC": "2026-10-09T02:15:00"}, "not on the hour"),
+        ({"TimeUTC": "2026-10-09T02:00:00.000001"}, "15-minute boundary"),
+        ({"TimeUTC": "2026-10-09T02:00:01"}, "15-minute boundary"),
+        ({"TimeUTC": "2026-10-09T02:00:00+02:00"}, "must be UTC"),
+        ({"TimeUTC": "2026-10-09T02:00:00-00:00"}, "must be UTC"),
+        ({"TimeUTC": "2026-10-09T01:00:00"}, "outside requested window"),
+        ({"TimeUTC": "2026-10-09T03:00:00"}, "outside requested window"),
+        ({"PriceArea": "SE3"}, "unrequested PriceArea"),
+        ({"PriceArea": "unknown"}, "unrequested PriceArea"),
+        ({"PriceArea": None}, "unrequested PriceArea"),
+        ({"PriceArea": []}, "unrequested PriceArea"),
+    ],
+)
+def test_capacity_rejects_malformed_rows(override: dict[str, Any], message: str) -> None:
+    with pytest.raises(SourceError, match=message):
+        client(lambda _: page([{**CAPACITY, **override}])).capacity_market(
+            ReserveProduct.AFRR, START, END
+        )
+
+
+@pytest.mark.parametrize("column", list(CAPACITY))
+def test_capacity_rejects_missing_columns(column: str) -> None:
+    row = {key: value for key, value in CAPACITY.items() if key != column}
+    with pytest.raises(SourceError, match=f"missing capacity columns.*{column}"):
+        client(lambda _: page([row])).capacity_market(ReserveProduct.AFRR, HOUR_START, END)
+
+
+@pytest.mark.parametrize("column", CAPACITY_NUMBERS)
+@pytest.mark.parametrize(
+    "value", [True, "1.0", [], {}, float("nan"), float("inf"), -float("inf"), 10**400]
+)
+def test_capacity_rejects_invalid_numbers_including_raw_columns(column: str, value: Any) -> None:
+    body = json.dumps({"total": 1, "records": [{**CAPACITY, column: value}]})
+    with pytest.raises(SourceError, match=f"{column} is not (a number|finite)"):
+        client(lambda _: httpx.Response(200, text=body)).capacity_market(
+            ReserveProduct.AFRR, HOUR_START, END
+        )
+
+
+def test_capacity_accepts_all_null_numbers() -> None:
+    row = {**CAPACITY, **dict.fromkeys(CAPACITY_NUMBERS)}
+    result = client(lambda _: page([row])).capacity_market(ReserveProduct.MFRR, HOUR_START, END)
+    assert len(result) == 8
+    assert all(r.price_eur_per_mw is None and r.volume_mw is None for r in result)
+    assert all(r.raw[column] is None for r in result for column in CAPACITY_NUMBERS)
+
+
+def test_capacity_accepts_negative_numbers_without_sign_checks() -> None:
+    row = {**CAPACITY, **dict.fromkeys(CAPACITY_NUMBERS, -1.25)}
+    result = client(lambda _: page([row])).capacity_market(ReserveProduct.MFRR, HOUR_START, END)
+    assert len(result) == 8
+    assert all(r.price_eur_per_mw == -1.25 and r.volume_mw == -1.25 for r in result)
+
+
+@pytest.mark.parametrize("suffix", ["", "Z", "+00:00"])
+def test_capacity_accepts_naive_utc_and_explicit_utc_timestamps(suffix: str) -> None:
+    row = {**CAPACITY, "TimeUTC": CAPACITY["TimeUTC"] + suffix}
+    result = client(lambda _: page([row])).capacity_market(ReserveProduct.AFRR, HOUR_START, END)
+    assert len(result) == 8
+    assert result[0].start == HOUR_START
+
+
+@pytest.mark.parametrize("record", [None, [], "bad", 1])
+def test_capacity_rejects_non_object_record(record: Any) -> None:
+    body = {"total": 1, "records": [record]}
+    with pytest.raises(SourceError, match="not a JSON object"):
+        client(lambda _: httpx.Response(200, json=body)).capacity_market(
+            ReserveProduct.AFRR, HOUR_START, END
+        )
+
+
+def test_capacity_rejects_duplicate_hour_zone_even_when_trimmed_out() -> None:
+    with pytest.raises(SourceError, match="duplicate record"):
+        client(lambda _: page([CAPACITY, CAPACITY])).capacity_market(
+            ReserveProduct.AFRR, END - timedelta(seconds=1), END
+        )
+
+
+def test_capacity_raw_is_private_to_each_direction_and_quarter() -> None:
+    row = {**CAPACITY, "metadata": {"values": [1]}}
+    result = client(lambda _: page([row])).capacity_market(ReserveProduct.AFRR, HOUR_START, END)
+    result[0].raw["metadata"]["values"].append(2)
+    assert all(r.raw["metadata"]["values"] == [1] for r in result[1:])
+    assert row["metadata"]["values"] == [1]
+
+
+@pytest.mark.parametrize(
+    ("product", "start", "end", "zones", "message"),
+    [
+        ("aFRR", START, END, [BiddingZone.DK1], "ReserveProduct"),
+        (ReserveProduct.AFRR, START.replace(tzinfo=None), END, [BiddingZone.DK1], "timezone-aware"),
+        (ReserveProduct.AFRR, START, END.replace(tzinfo=None), [BiddingZone.DK1], "timezone-aware"),
+        (ReserveProduct.AFRR, END, START, [BiddingZone.DK1], "end must be after start"),
+        (ReserveProduct.AFRR, START, START, [BiddingZone.DK1], "end must be after start"),
+        (ReserveProduct.AFRR, START, END, [], "zones must not be empty"),
+        (ReserveProduct.AFRR, START, END, ["DK1"], "BiddingZone"),
+        (ReserveProduct.AFRR, START, END, [None], "BiddingZone"),
+        *[
+            (ReserveProduct.MFRR, START, END, [zone], "only DK1 and DK2")
+            for zone in BiddingZone
+            if zone not in (BiddingZone.DK1, BiddingZone.DK2)
+        ],
+    ],
+)
+def test_capacity_rejects_bad_arguments_before_http(
+    product: Any, start: datetime, end: datetime, zones: Any, message: str
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        pytest.fail("bad arguments must not send an HTTP request")
+
+    with pytest.raises(ValueError, match=message):
+        client(handler).capacity_market(product, start, end, zones=zones)
+
+
+def test_capacity_pages_until_total_and_rejects_cross_page_duplicates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("nordic_balancing.sources.energidataservice.PAGE_SIZE", 1)
+    offsets: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = request.url.params["offset"]
+        offsets.append(offset)
+        return page([{**CAPACITY, "PriceArea": "DK1" if offset == "0" else "DK2"}], total=2)
+
+    result = client(handler).capacity_market(ReserveProduct.MFRR, HOUR_START, END)
+    assert len(result) == 16
+    assert offsets == ["0", "1"]
+    with pytest.raises(SourceError, match="duplicate record"):
+        client(lambda _: page([CAPACITY], total=2)).capacity_market(
+            ReserveProduct.MFRR, HOUR_START, END
+        )
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ({"records": []}, "invalid total"),
+        ({"total": True, "records": []}, "invalid total"),
+        ({"total": 0}, "no 'records' list"),
+        ({"total": 2, "records": [CAPACITY]}, "before total"),
+        ({"total": 1, "records": []}, "before total"),
+        ({"total": 0, "records": [CAPACITY]}, "exceeds total"),
+    ],
+)
+def test_capacity_reuses_pagination_guards(body: dict[str, Any], message: str) -> None:
+    with pytest.raises(SourceError, match=message):
+        client(lambda _: httpx.Response(200, json=body)).capacity_market(
+            ReserveProduct.AFRR, HOUR_START, END
+        )
+
+
+def test_capacity_rejects_total_changing_across_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("nordic_balancing.sources.energidataservice.PAGE_SIZE", 1)
+    responses = iter([page([CAPACITY], total=2), page([], total=1)])
+    with pytest.raises(SourceError, match="changed from 2 to 1"):
+        client(lambda _: next(responses)).capacity_market(ReserveProduct.AFRR, HOUR_START, END)
+
+
+@pytest.fixture
+def capacity_validation(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    def forbid_network(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("capacity validation import must not open a connection")
+
+    monkeypatch.setattr("socket.socket.connect", forbid_network)
+    path = Path(__file__).parents[1] / "examples" / "eds_capacity" / "validate.py"
+    spec = importlib.util.spec_from_file_location("eds_capacity_validation", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def se3_capacity() -> list[ReserveCapacity]:
+    row = {**CAPACITY, "PriceArea": "SE3"}
+    return client(lambda _: page([row])).capacity_market(
+        ReserveProduct.AFRR, HOUR_START, END, zones=[BiddingZone.SE3]
+    )
+
+
+def test_capacity_comparison_counts_hours_once_and_explains_zero_volume_omissions(
+    capacity_validation: ModuleType, se3_capacity: list[ReserveCapacity]
+) -> None:
+    svk = [replace(r, source="svk") for r in se3_capacity if r.direction is Direction.UP]
+    report = capacity_validation.compare(se3_capacity, svk)
+    assert report.matches == 1
+    assert report.shared_hours == 1
+    assert report.differences == []
+    assert len(report.eds_only) == 1
+    assert report.eds_only[0].direction == "DOWN"
+    assert report.eds_only[0].volume_mw == 0.0
+    assert report.svk_only == []
+    assert report.errors == []
+
+
+@pytest.mark.parametrize("change_price", [True, False], ids=["price_eur_per_mw", "volume_mw"])
+def test_capacity_comparison_reports_exact_differences(
+    capacity_validation: ModuleType, se3_capacity: list[ReserveCapacity], change_price: bool
+) -> None:
+    svk = [
+        replace(
+            r,
+            source="svk",
+            price_eur_per_mw=0.001 if change_price else r.price_eur_per_mw,
+            volume_mw=r.volume_mw if change_price else 0.001,
+        )
+        for r in se3_capacity
+    ]
+    report = capacity_validation.compare(se3_capacity, svk)
+    assert report.matches == 0
+    assert len(report.differences) == 2
+    assert report.differences[0].start == HOUR_START.isoformat()
+    assert report.differences[0].eds != report.differences[0].svk
+
+
+def test_capacity_comparison_rejects_incomplete_or_inconsistent_quarters(
+    capacity_validation: ModuleType, se3_capacity: list[ReserveCapacity]
+) -> None:
+    with pytest.raises(SourceError, match="four equal quarters"):
+        capacity_validation.compare(se3_capacity[:-1], se3_capacity)
+    changed = [replace(se3_capacity[0], volume_mw=1.0), *se3_capacity[1:]]
+    with pytest.raises(SourceError, match="four equal quarters"):
+        capacity_validation.compare(changed, se3_capacity)
+
+
+def test_capacity_comparison_does_not_hide_missing_eds_or_nonzero_eds_only(
+    capacity_validation: ModuleType, se3_capacity: list[ReserveCapacity]
+) -> None:
+    down = [r for r in se3_capacity if r.direction is Direction.DOWN]
+    eds_only_report = capacity_validation.compare(se3_capacity, down)
+    assert eds_only_report.errors
+    missing_report = capacity_validation.compare(down, se3_capacity)
+    assert len(missing_report.svk_only) == 1
+    assert missing_report.errors
+
+
+def test_capacity_comparison_requires_live_flag_before_fetch(
+    capacity_validation: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("the script must not fetch without --live")
+
+    monkeypatch.setattr(EnergiDataServiceClient, "capacity_market", forbidden)
+    with pytest.raises(SystemExit) as caught:
+        capacity_validation.main([])
+    assert caught.value.code == 2
+
+
+def test_capacity_comparison_matches_both_directions_without_counting_quarters(
+    capacity_validation: ModuleType, se3_capacity: list[ReserveCapacity]
+) -> None:
+    report = capacity_validation.compare(se3_capacity, se3_capacity)
+    assert report.matches == 2
+    assert report.shared_hours == 1
+    assert not (report.differences or report.eds_only or report.svk_only or report.errors)
+
+
+def test_capacity_comparison_refuses_to_pass_without_shared_hours(
+    capacity_validation: ModuleType,
+) -> None:
+    report = capacity_validation.compare([], [])
+    assert report.matches == 0
+    assert report.shared_hours == 0
+    assert report.errors == ["no shared hour/directions; exact equality is unverified"]

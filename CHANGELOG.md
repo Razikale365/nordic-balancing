@@ -6,7 +6,18 @@ the project is in beta: the public API is defined in
 
 ## Unreleased
 
+### Added
+- **Energi Data Service:** `EnergiDataServiceClient.capacity_market(product, start, end, *,
+  zones=(DK1, DK2))` returns `ReserveCapacity` records: aFRR for all 12 Nordic zones (from
+  2022-12-07T23:00Z) and mFRR for DK1 and DK2 (from 2023-06-20T22:00Z). Each hourly source row
+  gives an up and a down record with the marginal price in EUR per MW and the procured MW,
+  repeated over four quarters. Demand, DKK prices and Danish time stay in `raw`. On SE3 aFRR
+  hours that both publish, the values equal `SvKClient.capacity_market`
+  (`examples/eds_capacity/`).
+
 ### Documentation
+- README names the CC BY 4.0 data sources (Energinet, Svenska kraftnät, Fingrid) and
+  Energinet's suggested attribution.
 - `docs/API_CONTRACT.md` now states how a deprecation is announced (`DeprecationWarning` pointing
   at the caller, naming the version that removes it) and that the API snapshot test defines the
   public surface. The known limitations moved there from `docs/RELEASE_EVIDENCE.md`; each is

@@ -125,14 +125,14 @@ status, observed API behaviour and known limitations.
 
 | Source | Client | Data | Access | Verified against the live API |
 |---|---|---|---|---|
-| Energinet — Energi Data Service | `EnergiDataServiceClient` | DK1/DK2 imbalance prices and components, from 2025-03-04 | free, no key | yes |
+| Energinet — Energi Data Service | `EnergiDataServiceClient` | DK1/DK2 imbalance prices and components, from 2025-03-04; aFRR capacity for all 12 Nordic zones from 2022-12-07T23:00Z; mFRR capacity for DK1/DK2 from 2023-06-20T22:00Z (hourly, expanded to 15 minutes) | free, no key (CC BY 4.0) | yes |
 | Fingrid | `FingridClient` | FI imbalance prices, mFRR up/down prices, dominating direction; any 15-minute dataset via `series()` | free API key | yes |
 | Svenska kraftnät | `SvKClient` | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) | free (CC-BY-4.0) | yes |
 | eSett | `ESettClient` | Imbalance prices, all 12 Nordic zones, from 2021-10-31T23:00Z | free, no key | yes |
 | ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones, from 2021-10-31T23:00Z (FI 22:00Z) | free token (`ENTSOE_API_KEY`) | yes |
 
-Not covered yet: Energi Data Service mFRR/aFRR datasets, and activated balancing energy
-volumes. Out of scope: generic day-ahead price clients and mFRR bid submission — other
+Not covered yet: activated balancing energy volumes. Out of scope: generic day-ahead
+price clients and mFRR bid submission — other
 projects already cover those.
 
 ## Development
@@ -152,6 +152,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and [SECURI
 
 MIT — see [LICENSE](LICENSE). Data retrieved through this library remains subject to each
 source's own terms of use.
+
+Energinet, Svenska kraftnät and Fingrid publish data under CC BY 4.0. Users who
+republish data must follow the source's attribution terms. Energinet suggests:
+"Source: Energinet (www.energidataservice.dk)". Attribution must not imply endorsement.
 
 This is an independent project. It is not affiliated with, endorsed by or supported by
 Energinet, Fingrid, Svenska kraftnät, eSett, ENTSO-E or any other data provider.

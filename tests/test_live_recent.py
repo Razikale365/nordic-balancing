@@ -7,6 +7,7 @@ import pytest
 from nordic_balancing import (
     INTERVAL,
     BiddingZone,
+    Direction,
     EnergiDataServiceClient,
     EntsoeClient,
     ESettClient,
@@ -52,6 +53,46 @@ def test_live_recent_energidataservice_dk1() -> None:
     with EnergiDataServiceClient() as eds:
         prices = eds.imbalance_prices(start, end, [BiddingZone.DK1])
     _assert_recent_imbalance_prices(prices, start, end, BiddingZone.DK1)
+
+
+@pytest.mark.live
+def test_live_recent_energidataservice_afrr_capacity() -> None:
+    start, end = _recent_day()
+    with EnergiDataServiceClient() as eds:
+        records = eds.capacity_market(ReserveProduct.AFRR, start, end, zones=list(BiddingZone))
+    expected = {
+        (start + quarter * INTERVAL, zone, direction)
+        for quarter in range(96)
+        for zone in BiddingZone
+        for direction in (Direction.UP, Direction.DOWN)
+    }
+    assert len(records) == len(expected)
+    assert {(r.start, r.zone, r.direction) for r in records} == expected
+    assert all(r.product is ReserveProduct.AFRR for r in records)
+    assert all(r.resolution == timedelta(hours=1) for r in records)
+    assert all(r.source == "energidataservice" for r in records)
+    assert all(r.price_eur_per_mw is not None and r.volume_mw is not None for r in records)
+    assert all(_on_grid_in_window(r.start, start, end) for r in records)
+
+
+@pytest.mark.live
+def test_live_recent_energidataservice_mfrr_capacity() -> None:
+    start, end = _recent_day()
+    with EnergiDataServiceClient() as eds:
+        records = eds.capacity_market(ReserveProduct.MFRR, start, end)
+    expected = {
+        (start + quarter * INTERVAL, zone, direction)
+        for quarter in range(96)
+        for zone in (BiddingZone.DK1, BiddingZone.DK2)
+        for direction in (Direction.UP, Direction.DOWN)
+    }
+    assert len(records) == len(expected)
+    assert {(r.start, r.zone, r.direction) for r in records} == expected
+    assert all(r.product is ReserveProduct.MFRR for r in records)
+    assert all(r.resolution == timedelta(hours=1) for r in records)
+    assert all(r.source == "energidataservice" for r in records)
+    assert all(r.price_eur_per_mw is not None and r.volume_mw is not None for r in records)
+    assert all(_on_grid_in_window(r.start, start, end) for r in records)
 
 
 @pytest.mark.live

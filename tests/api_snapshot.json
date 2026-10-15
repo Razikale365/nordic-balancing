@@ -111,6 +111,7 @@
         "__enter__": "(self) -> Self",
         "__exit__": "(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: traceback | None) -> None",
         "__init__": "(self, http: httpx.Client | None = None, *, base_url: str = 'https://api.energidataservice.dk', max_retries: int = 3, sleep: collections.abc.Callable[[float], None] = <built-in function sleep>) -> None",
+        "capacity_market": "(self, product: nordic_balancing.models.ReserveProduct, start: datetime.datetime, end: datetime.datetime, *, zones: collections.abc.Iterable[nordic_balancing.models.BiddingZone] = (<BiddingZone.DK1: 'DK1'>, <BiddingZone.DK2: 'DK2'>)) -> list[nordic_balancing.models.ReserveCapacity]",
         "close": "(self) -> None",
         "imbalance_prices": "(self, start: datetime.datetime, end: datetime.datetime, zones: collections.abc.Iterable[nordic_balancing.models.BiddingZone] = (<BiddingZone.DK1: 'DK1'>, <BiddingZone.DK2: 'DK2'>)) -> list[nordic_balancing.models.ImbalancePrice]"
       },
