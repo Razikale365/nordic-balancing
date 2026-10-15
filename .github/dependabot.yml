@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # Python: update uv.lock only. The ranges in pyproject.toml are the supported
+  # versions users install against (the CI floor job tests the lower bounds), so
+  # they change by hand, never automatically.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    versioning-strategy: "lockfile-only"
+    open-pull-requests-limit: 5
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
