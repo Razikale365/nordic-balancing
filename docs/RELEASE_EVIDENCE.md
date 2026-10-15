@@ -275,7 +275,7 @@ Not duplicated here.
 
 ## Test coverage
 
-- Offline suite (default; `addopts` deselects `live`): 646 tests, all passing on
+- Offline suite (default; `addopts` deselects `live`): 660 tests, all passing on
   2026-10-15. `tests/test_properties.py` holds Hypothesis property tests: for every
   client, splitting the window gives the same records, and every start is on the
   15-minute grid in `[start, end)` with none missing; it also checks reconciliation
@@ -288,7 +288,7 @@ Not duplicated here.
 
 ```
 uv run pytest --co -q | tail -1
-646/663 tests collected (17 deselected)
+660/677 tests collected (17 deselected)
 ```
 
 Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in
