@@ -6,6 +6,13 @@ the project is alpha and the API may change between 0.x versions.
 ## Unreleased
 
 ### Fixed
+- **All clients (HTTP):** a redirect, an informational status or HTTP 204 now raises
+  `SourceError` naming the status (for example `HTTP 302`), without the response body. Before,
+  such a response was returned as data, or reported as "not JSON". Redirects are still never
+  followed.
+- **All clients (`Retry-After`):** an HTTP-date with a numeric offset is converted using that
+  offset, and one with an unrecognised zone is treated as malformed (the default 10 s wait).
+  Before, an unrecognised zone was read as UTC, so the wait could be off by hours.
 - **ENTSO-E (secrets):** the token is now redacted before a server message is truncated,
   so a token straddling the cut can no longer leak a prefix. The API key has surrounding
   whitespace stripped, and a key with internal whitespace or characters outside printable
