@@ -17,7 +17,14 @@ the project is in beta: the public API is defined in
   or TimeSeries collapse by `(zone, start, direction)` after A03 filling;
   conflicting repeats and repeated positions within a Period raise. This includes
   early historical documents with identical series pairs. FCR-N duplicate rejection
-  and its error messages are unchanged. Supplied live
+  and its error messages are unchanged. For mFRR only, a one-Point position-1
+  quantity-0/price-0 placeholder Period is ignored only when another non-placeholder
+  TimeSeries in the same response covers the same zone, direction and exact Period.
+  Lone zero series are retained; nonzero one-Point series and malformed series
+  remain subject to the existing validation and conflict rules. This was observed
+  on delivery day 2025-06-05 (starting 2025-06-04T22:00Z) for NO1-NO5 and FI:
+  Opus's FI cross-check matched Fingrid on 24/24 hours for the real series and
+  0/24 for the placeholders. Supplied live
   evidence matched all 48 hour-directions against Fingrid FI and SvK SE3 on 2026-10-08.
 - **Energi Data Service:** `EnergiDataServiceClient.capacity_market(product, start, end, *,
   zones=(DK1, DK2))` returns `ReserveCapacity` records: aFRR for all 12 Nordic zones (from

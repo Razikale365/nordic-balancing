@@ -112,7 +112,19 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   only, identical quantity/price repeats from another document, ZIP member or
   TimeSeries in the same document collapse by `(zone, start, direction)`, comparing
   values after A03 filling. Conflicting repeats raise `SourceError`. Repeated
-  positions within one Period of one series still raise. FCR-N with FI raises
+  positions within one Period of one series still raise.
+  Before this comparison, mFRR-only placeholder Periods are ignored under a narrow
+  rule: exactly one Point, at position 1, with quantity 0 and price 0, and another
+  non-placeholder TimeSeries in the **same response** must provide values for the
+  same zone, direction and exact Period start/end. Without that counterpart, the
+  zero/zero series is kept as real data. Nonzero one-Point series, multiple-Point
+  series and malformed series are not exempted. All source metadata and points
+  are validated before filtering, independent of document/member order.
+  Observed on delivery day **2025-06-05** (Period starts **2025-06-04T22:00Z**)
+  for NO1-NO5 and FI: Opus's live FI cross-check found the real series matched
+  Fingrid **24/24 hours**, while the placeholder series matched **0/24**.
+  After filtering, identical repeats collapse and differing values raise as above.
+  FCR-N and its duplicate rejection are unchanged. FCR-N with FI raises
   `ValueError`: ENTSO-E has no Finnish FCR. The mFRR product was verified live
   against Fingrid (FI) and SvK
   (SE3), matching all 48 hour-directions per source on 2026-10-08, per the supplied

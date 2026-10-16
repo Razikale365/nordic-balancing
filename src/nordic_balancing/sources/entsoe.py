@@ -88,6 +88,9 @@ class _Point:
     curve_type: str
     namespace: str
     quantity: float | None = None
+    capacity_period: tuple[datetime, datetime] | None = None
+    capacity_series: object | None = None
+    capacity_placeholder: bool = False
 
 
 class EntsoeClient:
@@ -215,7 +218,9 @@ class EntsoeClient:
         For mFRR only, identical quantity/price repeats across documents, members
         or series collapse after A03 filling. Conflicting mFRR repeats and all
         FCR-N repeats raise ``SourceError``. Repeated positions within a Period
-        always raise.
+        always raise. For mFRR, a one-Point position-1 zero/zero Period is ignored
+        only when another non-placeholder series in the response covers the same
+        direction and exact Period.
         """
         if not isinstance(product, ReserveProduct) or product not in (
             ReserveProduct.FCR_N,
@@ -284,12 +289,11 @@ class EntsoeClient:
     ) -> list[ReserveCapacity]:
         records: list[ReserveCapacity] = []
         process = "A47" if product is ReserveProduct.MFRR else "A52"
-        for member in self._request_members(
-            zone, chunk_start, chunk_end, capacity=True, capacity_process=process
-        ):
-            # _points fills each series independently. Compare filled values in
-            # capacity_market's merge, where mFRR repeats may collapse and FCR-N
-            # repeats always raise, including repeats within one document.
+        points = [
+            point
+            for member in self._request_members(
+                zone, chunk_start, chunk_end, capacity=True, capacity_process=process
+            )
             for point in _points(
                 member,
                 _EIC_CODES[zone],
@@ -298,40 +302,63 @@ class EntsoeClient:
                 api_key=self._api_key,
                 capacity=True,
                 capacity_process=process,
-            ):
-                if point.flow_direction is None:
-                    raise SourceError(f"{SOURCE}: missing flowDirection.direction")
-                direction = (
-                    _MFRR_DIRECTIONS[point.flow_direction]
-                    if product is ReserveProduct.MFRR
-                    else Direction.NONE
+            )
+        ]
+        if product is ReserveProduct.MFRR:
+            # Validate all members before filtering: a placeholder may precede
+            # its real counterpart, even in a different member of this response.
+            real_series: dict[
+                tuple[str | None, tuple[datetime, datetime] | None], set[object | None]
+            ] = {}
+            for point in points:
+                if not point.capacity_placeholder:
+                    key = (point.flow_direction, point.capacity_period)
+                    real_series.setdefault(key, set()).add(point.capacity_series)
+            points = [
+                point
+                for point in points
+                if not point.capacity_placeholder
+                or not any(
+                    series is not point.capacity_series
+                    for series in real_series.get((point.flow_direction, point.capacity_period), ())
                 )
-                for quarter in range(4):
-                    records.append(
-                        ReserveCapacity(
-                            start=point.start + quarter * INTERVAL,
-                            zone=zone,
-                            product=product,
-                            direction=direction,
-                            price_eur_per_mw=point.amount,
-                            volume_mw=point.quantity,
-                            source=SOURCE,
-                            resolution=_HOUR,
-                            raw={
-                                "zone": zone.value,
-                                "start": point.start.isoformat(),
-                                "resolution": point.resolution,
-                                "curveType": point.curve_type,
-                                "namespace": point.namespace,
-                                "quantity": point.quantity,
-                                "procurement_Price.amount": point.amount,
-                                "flow_direction": point.flow_direction,
-                                "businessType": "B95",
-                                "currency_Unit.name": "EUR",
-                                "quantity_Measure_Unit.name": "MAW",
-                            },
-                        )
+            ]
+        # Filled values then use the existing product-specific duplicate rules
+        # in capacity_market's merge, including repeats within one document.
+        for point in points:
+            if point.flow_direction is None:
+                raise SourceError(f"{SOURCE}: missing flowDirection.direction")
+            direction = (
+                _MFRR_DIRECTIONS[point.flow_direction]
+                if product is ReserveProduct.MFRR
+                else Direction.NONE
+            )
+            for quarter in range(4):
+                records.append(
+                    ReserveCapacity(
+                        start=point.start + quarter * INTERVAL,
+                        zone=zone,
+                        product=product,
+                        direction=direction,
+                        price_eur_per_mw=point.amount,
+                        volume_mw=point.quantity,
+                        source=SOURCE,
+                        resolution=_HOUR,
+                        raw={
+                            "zone": zone.value,
+                            "start": point.start.isoformat(),
+                            "resolution": point.resolution,
+                            "curveType": point.curve_type,
+                            "namespace": point.namespace,
+                            "quantity": point.quantity,
+                            "procurement_Price.amount": point.amount,
+                            "flow_direction": point.flow_direction,
+                            "businessType": "B95",
+                            "currency_Unit.name": "EUR",
+                            "quantity_Measure_Unit.name": "MAW",
+                        },
                     )
+                )
         return records
 
     def _request_members(
@@ -650,8 +677,9 @@ def _series_points(
     # blocks, not a fixed-resolution series) and must not be guessed.
     if curve_type not in ("A01", "A03"):
         raise SourceError(f"{SOURCE}: curveType {curve_type} is not supported")
+    series_id = object() if capacity else None
     return [
-        point
+        replace(point, capacity_series=series_id) if capacity else point
         for period in _children(series, "Period")
         for point in _period_points(
             period,
@@ -753,6 +781,15 @@ def _period_points(
         # Category publications must use separate series. Combining them
         # before A03 filling would lose each category's omitted positions.
         raise SourceError(f"{SOURCE}: duplicate position {position} in Period")
+    first = explicit.get(1)
+    placeholder = (
+        capacity
+        and capacity_flow in ("A01", "A02")
+        and len(explicit) == 1
+        and first is not None
+        and first.quantity == 0
+        and first.amount == 0
+    )
     points: list[_Point] = []
     previous: _Point | None = None
     for index in range(1, count + 1):
@@ -771,7 +808,14 @@ def _period_points(
         else:
             previous = current
         if not capacity or window_start <= start < window_end:
-            points.append(replace(current, start=start))
+            points.append(
+                replace(
+                    current,
+                    start=start,
+                    capacity_period=(period_start, period_end) if capacity else None,
+                    capacity_placeholder=placeholder,
+                )
+            )
     return points
 
 

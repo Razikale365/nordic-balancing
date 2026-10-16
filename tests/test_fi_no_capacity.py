@@ -810,3 +810,282 @@ def test_entsoe_mfrr_sorts_zones_before_directions() -> None:
     # Two zones x two directions x four quarters give 16 records in the first hour.
     assert keys[:16] == expected_first_hour
     assert keys == sorted(keys)
+
+
+PLACEHOLDER_START = datetime(2025, 6, 4, 22, tzinfo=UTC)
+PLACEHOLDER_END = PLACEHOLDER_START + 24 * HOUR
+
+
+def placeholder_archive(zone: BiddingZone) -> bytes:
+    return (
+        FIXTURES / f"entsoe-a81-a47-{zone.value.lower()}-2025-06-05-placeholder-series.zip"
+    ).read_bytes()
+
+
+def real_placeholder_document(zone: BiddingZone) -> ET.Element:
+    with zipfile.ZipFile(io.BytesIO(placeholder_archive(zone))) as source:
+        # Each capture has a clean member with just the real UP/DOWN series.
+        for name in source.namelist():
+            root = ET.fromstring(source.read(name))
+            if len(root.findall("{*}TimeSeries")) == 2:
+                return root
+    raise AssertionError("fixture has no clean two-series member")
+
+
+def placeholder_case(zone: BiddingZone) -> tuple[ET.Element, ET.Element, ET.Element]:
+    root = real_placeholder_document(zone)
+    for series in list(root.findall("{*}TimeSeries")):
+        if series.findtext("{*}flowDirection.direction") != "A01":
+            root.remove(series)
+    real = root.find("{*}TimeSeries")
+    assert real is not None
+    placeholder = ET.fromstring(ET.tostring(real))
+    period = placeholder.find("{*}Period")
+    assert period is not None
+    points = period.findall("{*}Point")
+    first = points[0]
+    for point in points[1:]:
+        period.remove(point)
+    for tag in ("quantity", "procurement_Price.amount"):
+        value = first.find(f"{{*}}{tag}")
+        assert value is not None
+        value.text = "0"
+    root.append(placeholder)
+    return root, real, placeholder
+
+
+def fetch_placeholder_case(content: bytes, zone: BiddingZone) -> list[ReserveCapacity]:
+    return entsoe_fetch(content, zone=zone, start=PLACEHOLDER_START, end=PLACEHOLDER_END)
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
+@pytest.mark.parametrize("reverse_members", [False, True])
+def test_entsoe_placeholder_fixtures_match_real_series(
+    zone: BiddingZone,
+    reverse_members: bool,
+) -> None:
+    content = placeholder_archive(zone)
+    if reverse_members:
+        with zipfile.ZipFile(io.BytesIO(content)) as source:
+            content = zip_members(*(source.read(name) for name in reversed(source.namelist())))
+    result = fetch_placeholder_case(content, zone)
+    assert len(result) == 192
+    expected: dict[tuple[datetime, Direction], tuple[float, float]] = {}
+    root = real_placeholder_document(zone)
+    for series in root.findall("{*}TimeSeries"):
+        direction = (
+            Direction.UP
+            if series.findtext("{*}flowDirection.direction") == "A01"
+            else Direction.DOWN
+        )
+        explicit = {}
+        for point in series.findall("{*}Period/{*}Point"):
+            position, price_text, quantity_text = (
+                point.findtext(f"{{*}}{tag}")
+                for tag in ("position", "procurement_Price.amount", "quantity")
+            )
+            assert position is not None and price_text is not None and quantity_text is not None
+            explicit[int(position)] = float(price_text), float(quantity_text)
+        previous: tuple[float, float] | None = None
+        for hour in range(24):
+            previous = explicit.get(hour + 1, previous)
+            assert previous is not None
+            for quarter in range(4):
+                expected[(PLACEHOLDER_START + hour * HOUR + quarter * INTERVAL, direction)] = (
+                    previous
+                )
+    assert {(r.start, r.direction): (r.price_eur_per_mw, r.volume_mw) for r in result} == expected
+    assert result == fetch_placeholder_case(ET.tostring(root), zone)
+    assert all(r.zone is zone and r.product is ReserveProduct.MFRR for r in result)
+    assert all(r.source == "entsoe" and r.resolution == HOUR for r in result)
+    samples = (
+        [
+            (0, Direction.UP, 6.1, 35.0),
+            (1, Direction.UP, 6.0, 35.0),
+            (0, Direction.DOWN, 10.0, 358.0),
+            (3, Direction.DOWN, 18.86, 358.0),
+        ]
+        if zone is BiddingZone.NO1
+        else [
+            (0, Direction.UP, 20.8, 380.0),
+            (2, Direction.UP, 26.5, 370.0),
+            (0, Direction.DOWN, 3.5, 402.0),
+            (2, Direction.DOWN, 3.9, 482.0),
+        ]
+    )
+    for hour, direction, price, volume in samples:
+        records = [
+            r
+            for r in result
+            if r.direction is direction
+            and PLACEHOLDER_START + hour * HOUR <= r.start < PLACEHOLDER_START + (hour + 1) * HOUR
+        ]
+        assert len(records) == 4
+        assert {(r.price_eur_per_mw, r.volume_mw) for r in records} == {(price, volume)}
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
+@pytest.mark.parametrize("copies", [1, 2])
+def test_entsoe_lone_placeholders_are_kept(zone: BiddingZone, copies: int) -> None:
+    root, real, _ = placeholder_case(zone)
+    root.remove(real)
+    xml = ET.tostring(root)
+    result = fetch_placeholder_case(zip_members(*(xml for _ in range(copies))), zone)
+    assert len(result) == 96
+    assert {r.start for r in result} == {PLACEHOLDER_START + q * INTERVAL for q in range(96)}
+    assert all(r.direction is Direction.UP and r.product is ReserveProduct.MFRR for r in result)
+    assert all(r.price_eur_per_mw == 0.0 and r.volume_mw == 0.0 for r in result)
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
+@pytest.mark.parametrize("field", ["quantity", "procurement_Price.amount"])
+def test_entsoe_one_point_nonzero_series_still_conflicts(zone: BiddingZone, field: str) -> None:
+    root, _, placeholder = placeholder_case(zone)
+    node = placeholder.find(f"{{*}}Period/{{*}}Point/{{*}}{field}")
+    assert node is not None
+    node.text = "0.25"
+    with pytest.raises(SourceError, match="duplicate capacity with differing values for mFRR"):
+        fetch_placeholder_case(ET.tostring(root), zone)
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
+def test_entsoe_multiple_zero_points_still_conflict(zone: BiddingZone) -> None:
+    root, _, placeholder = placeholder_case(zone)
+    period = placeholder.find("{*}Period")
+    assert period is not None
+    first = period.find("{*}Point")
+    assert first is not None
+    second = ET.fromstring(ET.tostring(first))
+    position = second.find("{*}position")
+    assert position is not None
+    position.text = "2"
+    period.append(second)
+    with pytest.raises(SourceError, match="duplicate capacity with differing values for mFRR"):
+        fetch_placeholder_case(ET.tostring(root), zone)
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
+def test_entsoe_matching_zero_real_series_is_unchanged(zone: BiddingZone) -> None:
+    root, real, placeholder = placeholder_case(zone)
+    for point in real.findall("{*}Period/{*}Point"):
+        for field in ("quantity", "procurement_Price.amount"):
+            node = point.find(f"{{*}}{field}")
+            assert node is not None
+            node.text = "0"
+    with_placeholder = fetch_placeholder_case(ET.tostring(root), zone)
+    root.remove(placeholder)
+    assert with_placeholder == fetch_placeholder_case(ET.tostring(root), zone)
+    assert len(with_placeholder) == 96
+    assert all(r.price_eur_per_mw == r.volume_mw == 0.0 for r in with_placeholder)
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
+def test_entsoe_placeholder_needs_real_series_in_same_direction(zone: BiddingZone) -> None:
+    root, real, _ = placeholder_case(zone)
+    flow = real.find("{*}flowDirection.direction")
+    assert flow is not None
+    flow.text = "A02"
+    result = fetch_placeholder_case(ET.tostring(root), zone)
+    assert len(result) == 192
+    assert all(
+        r.price_eur_per_mw == r.volume_mw == 0.0 for r in result if r.direction is Direction.UP
+    )
+    assert any(r.volume_mw != 0 for r in result if r.direction is Direction.DOWN)
+
+
+@pytest.mark.parametrize("boundary", ["start", "end"])
+def test_entsoe_placeholder_needs_exact_period(boundary: str) -> None:
+    root, real, _ = placeholder_case(BiddingZone.NO1)
+    stamp = real.find(f"{{*}}Period/{{*}}timeInterval/{{*}}{boundary}")
+    assert stamp is not None
+    stamp.text = (
+        PLACEHOLDER_START - HOUR if boundary == "start" else PLACEHOLDER_END + HOUR
+    ).isoformat()
+    with pytest.raises(SourceError, match="duplicate capacity with differing values for mFRR"):
+        fetch_placeholder_case(ET.tostring(root), BiddingZone.NO1)
+
+
+def test_entsoe_placeholder_needs_another_series() -> None:
+    root, real, placeholder = placeholder_case(BiddingZone.NO1)
+    period = placeholder.find("{*}Period")
+    assert period is not None
+    real.append(period)
+    root.remove(placeholder)
+    with pytest.raises(SourceError, match="duplicate capacity with differing values for mFRR"):
+        fetch_placeholder_case(ET.tostring(root), BiddingZone.NO1)
+
+
+def test_entsoe_placeholder_filter_does_not_cross_responses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(entsoe, "_CHUNK", 12 * HOUR)
+    root, real, placeholder = placeholder_case(BiddingZone.NO1)
+    root.remove(real)
+    first = ET.tostring(root)
+    root.remove(placeholder)
+    root.append(real)
+    second = ET.tostring(root)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        content = first if request.url.params["periodStart"] == "202506042200" else second
+        return httpx.Response(200, content=content)
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        EntsoeClient("test-token", http, max_workers=1) as client,
+    ):
+        result = client.capacity_market(
+            ReserveProduct.MFRR, PLACEHOLDER_START, PLACEHOLDER_END, zones=[BiddingZone.NO1]
+        )
+    assert len(result) == 96
+    assert all(
+        r.price_eur_per_mw == r.volume_mw == 0.0
+        for r in result
+        if r.start < PLACEHOLDER_START + 12 * HOUR
+    )
+    assert all(r.volume_mw != 0 for r in result if r.start >= PLACEHOLDER_START + 12 * HOUR)
+
+
+@pytest.mark.parametrize("malformation", ["duplicate_position", "position_two", "currency"])
+def test_entsoe_placeholder_is_validated_before_filtering(malformation: str) -> None:
+    root, _, placeholder = placeholder_case(BiddingZone.NO1)
+    if malformation == "currency":
+        currency = placeholder.find("{*}currency_Unit.name")
+        assert currency is not None
+        currency.text = "NOK"
+    else:
+        period = placeholder.find("{*}Period")
+        assert period is not None
+        point = period.find("{*}Point")
+        assert point is not None
+        if malformation == "duplicate_position":
+            period.append(ET.fromstring(ET.tostring(point)))
+        else:
+            position = point.find("{*}position")
+            assert position is not None
+            position.text = "2"
+    with pytest.raises(SourceError):
+        fetch_placeholder_case(ET.tostring(root), BiddingZone.NO1)
+
+
+def test_entsoe_fcr_zero_placeholder_stays_strict() -> None:
+    root = ET.fromstring((FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes())
+    real = root.find("{*}TimeSeries")
+    assert real is not None
+    placeholder = ET.fromstring(ET.tostring(real))
+    period = placeholder.find("{*}Period")
+    assert period is not None
+    points = period.findall("{*}Point")
+    for point in points[1:]:
+        period.remove(point)
+    for field in ("quantity", "procurement_Price.amount"):
+        node = points[0].find(f"{{*}}{field}")
+        assert node is not None
+        node.text = "0"
+    root.append(placeholder)
+    start = datetime(2026, 10, 5, 22, tzinfo=UTC)
+    with pytest.raises(SourceError) as exc:
+        entsoe_fetch(
+            ET.tostring(root), start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N
+        )
+    assert str(exc.value) == f"entsoe: duplicate capacity for NO1 at {start}"
