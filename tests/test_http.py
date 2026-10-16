@@ -5,6 +5,7 @@ import pytest
 
 from nordic_balancing._http import _retry_after as retry_after
 from nordic_balancing._http import get_bytes, get_json
+from nordic_balancing._validate import finite_number
 from nordic_balancing.errors import RateLimitError, SourceError
 from nordic_balancing.sources.fingrid import FingridClient
 
@@ -34,6 +35,8 @@ def at_now() -> datetime:
         # The two obsolete HTTP-date formats RFC 9110 still requires recipients to accept.
         ("Monday, 12-Oct-26 12:00:30 GMT", 30.0),
         ("Mon Oct 12 12:00:45 2026", 45.0),
+        # An asctime-style date followed by an explicit zone offset still parses.
+        ("Mon Oct 12 12:00:45 2026 -02:00", 7245.0),
         # A date already past means retry at once.
         ("Mon, 12 Oct 2026 11:00:00 GMT", 0.0),
         ("Mon, 12 Oct 2026 12:10:00 GMT", 600.0),
@@ -73,6 +76,62 @@ def test_http_date_beyond_the_cap_raises_without_sleeping() -> None:
     with pytest.raises(RateLimitError):
         fetch([header("Fri, 31 Dec 2100 23:59:59 GMT")], sleeps)
     assert sleeps == []
+
+
+@pytest.mark.parametrize("value", ["120", "300"])
+def test_retry_after_up_to_and_at_the_cap_is_slept(value: str) -> None:
+    sleeps: list[float] = []
+    body = fetch([header(value), httpx.Response(200, content=b"ok")], sleeps)
+    assert body == b"ok"
+    assert sleeps == [float(value)]
+
+
+def test_retry_after_beyond_the_cap_raises() -> None:
+    sleeps: list[float] = []
+    with pytest.raises(RateLimitError):
+        fetch([header("301"), httpx.Response(200, content=b"ok")], sleeps)
+    assert sleeps == []
+
+
+def test_transient_transport_error_is_retried() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if len(calls) == 1:
+            raise httpx.RemoteProtocolError("Server disconnected", request=request)
+        return httpx.Response(200, content=b"ok")
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    sleeps: list[float] = []
+    body, _ = get_bytes(
+        http, "https://example.test", "/", {}, source="test", max_retries=3, sleep=sleeps.append
+    )
+    assert body == b"ok"
+    assert len(calls) == 2
+    assert sleeps == [10.0]
+
+
+def test_error_detail_includes_the_response_body() -> None:
+    body = "upstream failure detail: request a1b2c3 rejected"
+    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(400, text=body)))
+    with pytest.raises(SourceError) as exc_info:
+        get_bytes(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    assert str(exc_info.value) == f"test: HTTP 400 for /api: {body}"
+
+
+def test_finite_number_coerces_ints_to_float() -> None:
+    number = finite_number(21, source="test", column="value")
+    assert type(number) is float
+    assert number == 21.0
 
 
 @pytest.mark.parametrize("status", [100, 201, 202, 203, 204, 206, 301, 302, 307, 308])
