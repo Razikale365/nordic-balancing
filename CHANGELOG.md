@@ -21,11 +21,11 @@ the project is in beta: the public API is defined in
   - `EnergiDataServiceClient.capacity_market` accepts the three products. FCR-N and FCR-D cover
     DK2 and SE1-SE4 from 2021-11-09T23:00Z, from Energinet's `FcrNdDK2`. Each hour gives one
     record from the source's `Total` row, with the area's procured MW and the price in EUR per MW;
-    the separate auction rows stay in `raw["auctions"]`. FCR covers DK1 (continental FCR, from
+    the separate auction rows stay in `raw["auctions"]`. FCR covers DK1 from 2021-01-18T23:00Z (continental FCR, from
     `FcrDK1`), with the MW procured in Denmark at the Danish settlement price. These products need
     explicit `zones`: the default `(DK1, DK2)` raises `ValueError`, naming the zones to pass.
   - `EntsoeClient.capacity_market(product, start, end, *, zones=(NO1, ..., NO5))` returns FCR-N
-    capacity for the Norwegian zones (ENTSO-E A81). ENTSO-E does not name the product: the series
+    capacity for the Norwegian zones from 2014-09-30T22:00Z (ENTSO-E A81). ENTSO-E does not name the product: the series
     is labelled FCR-N because the identical query returns Energinet's FCR-N figures for SE and DK2.
   - The `Direction` docstring and `docs/API_CONTRACT.md` state the meaning of `NONE` on
     `ReserveCapacity`.

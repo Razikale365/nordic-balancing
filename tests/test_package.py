@@ -21,6 +21,6 @@ def test_python_floor_is_3_12_and_ci_tests_every_classified_version() -> None:
     )
     assert classified[0] == "3.12"
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    matrix = re.search(r"python-version: \[(.*?)\]", ci)
+    matrix = re.search(r"matrix:\s+python-version: \[(.*?)\]", ci)
     assert matrix is not None
     assert sorted(v.strip().strip('"') for v in matrix.group(1).split(",")) == classified

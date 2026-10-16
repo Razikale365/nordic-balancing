@@ -65,7 +65,8 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   `FCR-D ned` to `DOWN`. Before `2024-02-01` prices are average prices; from
   that date each auction has a marginal price and Total is the volume-weighted
   average of the auctions (common to all areas).
-- EDS `ReserveProduct.FCR = "FCR"` uses `FcrDK1` for DK1 only:
+- EDS `ReserveProduct.FCR = "FCR"` uses `FcrDK1` for DK1 only, from
+  `2021-01-18T23:00Z`:
   `FCRdomestic_MW` and `FCRdk_EUR` supply volume and price, with
   `Direction.NONE`; other source columns stay in `raw`. These FCR datasets
   expand hourly records to quarters with hourly `resolution`; null volume or
@@ -73,8 +74,8 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   `zones=(BiddingZone.DK2,)` / covered SE zones for FCR-N/FCR-D; the existing
   default `(DK1, DK2)` raises `ValueError` for all three products.
 - `EntsoeClient.capacity_market(product, start, end, *, zones=(NO1, NO2, NO3, NO4, NO5))`
-  returns only FCR-N for Norwegian zones, using A81/B95/A52 and market agreement
-  A01. Documents must be A81/A52; series must be B95, symmetric flow A03,
+  returns only FCR-N for Norwegian zones from `2014-09-30T22:00Z` (all five zones;
+  checked live 2026-10-16), using A81/B95/A52 and market agreement A01. Documents must be A81/A52; series must be B95, symmetric flow A03,
   quantity unit MAW and currency EUR. `quantity` supplies MW and
   `procurement_Price.amount` supplies EUR/MW per hour; hourly points expand to
   quarters with `Direction.NONE`, retaining hourly `resolution`. A03 omitted
