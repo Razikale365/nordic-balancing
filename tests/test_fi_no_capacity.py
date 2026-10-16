@@ -768,3 +768,45 @@ def test_entsoe_fcr_duplicate_error_text_unchanged(where: str) -> None:
     with pytest.raises(SourceError) as exc:
         entsoe_fetch(content, start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N)
     assert str(exc.value) == f"entsoe: duplicate capacity for NO1 at {start}"
+
+
+def test_entsoe_mfrr_sorts_zones_before_directions() -> None:
+    responses = {
+        "10YNO-1--------2": archive(BiddingZone.NO1),
+        "10YFI-1--------U": archive(BiddingZone.FI),
+    }
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        domain = request.url.params["controlArea_Domain"]
+        requested.append(domain)
+        assert request.url.params["processType"] == "A47"
+        return httpx.Response(200, content=responses[domain])
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        EntsoeClient("test-token", http, max_workers=1) as client,
+    ):
+        result = client.capacity_market(
+            ReserveProduct.MFRR, START, END, zones=[BiddingZone.NO1, BiddingZone.FI]
+        )
+    assert len(requested) == 2
+    assert set(requested) == set(responses)
+    assert len(result) == 384
+    # BiddingZone is a StrEnum: FI precedes NO1. Zone must sort before direction.
+    zone_directions = (
+        (BiddingZone.FI, Direction.DOWN),
+        (BiddingZone.FI, Direction.UP),
+        (BiddingZone.NO1, Direction.DOWN),
+        (BiddingZone.NO1, Direction.UP),
+    )
+    expected_first_hour = [
+        (START + quarter * INTERVAL, zone, direction)
+        for quarter in range(4)
+        for zone, direction in zone_directions
+    ]
+    keys = [(r.start, r.zone, r.direction) for r in result]
+    assert keys[:8] == expected_first_hour[:8]
+    # Two zones x two directions x four quarters give 16 records in the first hour.
+    assert keys[:16] == expected_first_hour
+    assert keys == sorted(keys)
