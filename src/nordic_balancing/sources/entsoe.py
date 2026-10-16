@@ -9,8 +9,9 @@ generated models in entsoe-apy. In that schema a ``Point`` requires only
 all optional. ``Financial_Price`` components are preserved in ``raw`` but not
 interpreted: what they contribute to the published price is not verified.
 The A85 imbalance parser was verified against the live API on 2026-10-12
-(all 12 zones, compared with eSett and entsoe-py). The parser is deliberately strict: any deviation
-from these assumptions raises ``SourceError`` instead of passing silently.
+(all 12 zones, compared with eSett and entsoe-py). The parser is deliberately
+strict: any deviation from these assumptions raises ``SourceError`` instead of
+passing silently.
 """
 
 import io
@@ -223,9 +224,12 @@ class EntsoeClient:
         if not zone_list:
             raise ValueError("zones must not be empty")
         jobs = _jobs(start_utc, end_utc, zone_list)
+        pool = ThreadPoolExecutor(min(self._max_workers, len(jobs)))
         try:
-            with ThreadPoolExecutor(min(self._max_workers, len(jobs))) as pool:
+            try:
                 parts = list(pool.map(lambda job: self._fetch_capacity(*job), jobs))
+            finally:
+                pool.shutdown(cancel_futures=True)
         except SourceError as exc:
             raise SourceError(str(exc).replace(self._api_key, "[REDACTED_SECRET]")) from None
         collected: dict[tuple[BiddingZone, datetime], ReserveCapacity] = {}
@@ -617,17 +621,20 @@ def _period_points(
             raise SourceError(f"{SOURCE}: point is not on a 15-minute boundary")
         if resolution == "PT60M" and start.minute:
             raise SourceError(f"{SOURCE}: hourly point is not on the hour")
-        if not window_start <= start < window_end:
+        if not capacity and not window_start <= start < window_end:
             raise SourceError(f"{SOURCE}: point outside requested window")
         amount_name = "procurement_Price.amount" if capacity else "imbalance_Price.amount"
-        amount_element = _child(element, amount_name)
-        amount = (
-            _amount((amount_element.text or "").strip(), amount_name)
-            if amount_element is not None
-            else None
-        )
+        amount: float | None
         if capacity:
             amount = _amount(_text(element, amount_name), amount_name)
+        else:
+            amount_element = _child(element, amount_name)
+            amount = (
+                _amount((amount_element.text or "").strip(), amount_name)
+                if amount_element is not None
+                else None
+            )
+        if capacity:
             point_flow = _code(element, "flowDirection.direction")
             if point_flow is not None and point_flow != "A03":
                 raise SourceError(f"{SOURCE}: capacity flowDirection.direction must be A03")
@@ -665,20 +672,21 @@ def _period_points(
     previous: _Point | None = None
     for index in range(1, count + 1):
         start = period_start + (index - 1) * step
-        # Explicit points were checked above; implied A03 positions belong
-        # only to this request, even when the Period continues beyond it.
-        if curve_type == "A03" and start >= window_end:
+        # A81 returns whole delivery days: validate and fill the whole Period
+        # before clipping to the chunk. A85 retains its window-bounded filling.
+        if not capacity and curve_type == "A03" and start >= window_end:
             break
         current = explicit.get(index)
         if current is None:
             if curve_type == "A01" or previous is None:
                 raise SourceError(f"{SOURCE}: missing position {index} in Period")
-            if start < window_start:
+            if not capacity and start < window_start:
                 continue
             current = previous
         else:
             previous = current
-        points.append(replace(current, start=start))
+        if not capacity or window_start <= start < window_end:
+            points.append(replace(current, start=start))
     return points
 
 

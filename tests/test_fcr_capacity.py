@@ -3,6 +3,7 @@
 import io
 import json
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -193,7 +194,13 @@ def test_eds_nd_rejects_bad_groups(failure: str) -> None:
         ]
         message = "missing Total"
     elif failure == "duplicate":
-        rows.append(next(r.copy() for r in rows if r["AuctionType"] == "Total"))
+        rows.append(
+            next(
+                r.copy()
+                for r in rows
+                if r["AuctionType"] == "Total" and r["ProductName"] == "FCR-N"
+            )
+        )
         message = "duplicate"
     else:
         rows[0]["ProductName"] = "future product"
@@ -264,8 +271,20 @@ def test_eds_domestic_query_has_no_price_area_filter() -> None:
     assert len(result) == 4
 
 
-@pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.FCR])
-@pytest.mark.parametrize("bad", ["missing", "time", "zone", "number", "duplicate"])
+@pytest.mark.parametrize(
+    ("product", "bad"),
+    [
+        (product, bad)
+        for product in (ReserveProduct.FCR_N, ReserveProduct.FCR)
+        for bad in (
+            "missing",
+            "time",
+            "out_of_window" if product is ReserveProduct.FCR else "zone",
+            "number",
+            "duplicate",
+        )
+    ],
+)
 def test_eds_fcr_rejects_malformed_rows(product: ReserveProduct, bad: str) -> None:
     domestic = product is ReserveProduct.FCR
     row = (
@@ -284,11 +303,10 @@ def test_eds_fcr_rejects_malformed_rows(product: ReserveProduct, bad: str) -> No
         row.pop("HourDK")
     elif bad == "time":
         row["HourUTC"] = "2026-10-05T22:15:00"
+    elif bad == "out_of_window":
+        row["HourUTC"] = "2026-10-05T21:00:00"
     elif bad == "zone":
-        if domestic:
-            row["HourUTC"] = "2026-10-05T21:00:00"
-        else:
-            row["PriceArea"] = "NO1"
+        row["PriceArea"] = "NO1"
     elif bad == "number":
         row["FCRdk_EUR" if domestic else "PriceTotalEUR"] = True
     rows = [row, row.copy()] if bad == "duplicate" else [row]
@@ -503,3 +521,170 @@ def test_entsoe_capacity_optional_price_unit_is_mw(element: str) -> None:
     assert len(entsoe_fetch(xml.encode())) == 12
     with pytest.raises(SourceError, match="unsupported"):
         entsoe_fetch(xml.replace(f"<{element}>MAW", f"<{element}>MWH").encode())
+
+
+def delivery_day_xml() -> bytes:
+    # Keep the sample's 22:00Z boundary and extend its trimmed Period to a day.
+    # Positions 1 (22:00Z) and 5 (02:00Z) leave midnight implied by the first point.
+    return (
+        (FIXTURES / "entsoe-no1.xml")
+        .read_bytes()
+        .replace(b"2026-10-06T01:00Z", b"2026-10-06T22:00Z")
+        .replace(b"<position>3</position>", b"<position>5</position>")
+        .replace(b"<quantity>14.4</quantity>", b"<quantity>15.4</quantity>", 1)
+    )
+
+
+@pytest.mark.parametrize(
+    ("offset", "length", "prices", "volumes"),
+    [
+        pytest.param(
+            2,
+            4,
+            [17.2] * 8 + [18.9] * 8,
+            [15.4] * 8 + [14.4] * 8,
+            id="midnight_start_with_prior_explicit_point",
+        ),
+        pytest.param(0, 2, [17.2] * 8, [15.4] * 8, id="end_mid_period"),
+        pytest.param(3, 1, [17.2] * 4, [15.4] * 4, id="implied_position_inside_window"),
+    ],
+)
+def test_entsoe_capacity_clips_whole_delivery_day_after_a03_fill(
+    offset: int,
+    length: int,
+    prices: list[float],
+    volumes: list[float],
+) -> None:
+    start, end = START + offset * HOUR, START + (offset + length) * HOUR
+    records = entsoe_fetch(delivery_day_xml(), start=start, end=end)
+    assert [r.start for r in records] == [start + q * INTERVAL for q in range(length * 4)]
+    assert [r.price_eur_per_mw for r in records] == prices
+    assert [r.volume_mw for r in records] == volumes
+    assert all(r.resolution == HOUR for r in records)
+
+
+@pytest.mark.parametrize("offset", [-2, 24])
+def test_entsoe_capacity_accepts_non_overlapping_period(offset: int) -> None:
+    start = START + offset * HOUR
+    assert entsoe_fetch(delivery_day_xml(), start=start, end=start + HOUR) == []
+
+
+def test_entsoe_capacity_two_chunks_clip_same_delivery_day_without_duplicates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(entsoe, "_CHUNK", 12 * HOUR)
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=delivery_day_xml())
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        records = EntsoeClient("test-token", http, max_workers=1).capacity_market(
+            ReserveProduct.FCR_N,
+            START,
+            START + 24 * HOUR,
+            zones=(BiddingZone.NO1,),
+        )
+    assert len(seen) == 2
+    assert {r.url.params["periodStart"] for r in seen} == {"202610052200", "202610061000"}
+    assert [r.start for r in records] == [START + q * INTERVAL for q in range(96)]
+    assert len({(r.zone, r.start) for r in records}) == 96
+    assert [r.price_eur_per_mw for r in records] == [17.2] * 16 + [18.9] * 80
+    assert [r.volume_mw for r in records] == [15.4] * 16 + [14.4] * 80
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (b"<position>1</position>", b"<position>0</position>", "not 1-based"),
+        (b"<position>5</position>", b"<position>25</position>", "beyond Period end"),
+        (b"<quantity>15.4</quantity>", b"<quantity>NaN</quantity>", "quantity is not finite"),
+        (b"<procurement_Price.amount>18.9", b"<procurement_Price.amount>inf", "not finite"),
+        (b"2026-10-05T22:00Z", b"2026-10-05T22:15Z", "whole number"),
+    ],
+)
+@pytest.mark.parametrize("offset", [2, 25])
+def test_entsoe_capacity_validates_explicit_points_outside_window(
+    old: bytes,
+    new: bytes,
+    message: str,
+    offset: int,
+) -> None:
+    xml = delivery_day_xml().replace(old, new)
+    start = START + offset * HOUR
+    with pytest.raises(SourceError, match=message):
+        entsoe_fetch(xml, start=start, end=start + HOUR)
+
+
+@pytest.mark.parametrize("position", [1, 5])
+def test_entsoe_capacity_rejects_duplicate_points_outside_window(position: int) -> None:
+    xml = delivery_day_xml()
+    marker = f"<position>{position}</position>".encode()
+    a = xml.rindex(b"<Point>", 0, xml.index(marker))
+    b = xml.index(b"</Point>", a) + len(b"</Point>")
+    xml = xml[:b] + xml[a:b] + xml[b:]
+    with pytest.raises(SourceError, match="duplicate capacity position"):
+        entsoe_fetch(xml, start=START + 2 * HOUR, end=START + 3 * HOUR)
+
+
+def test_entsoe_capacity_validates_a03_start_even_for_non_overlapping_period() -> None:
+    xml = delivery_day_xml().replace(b"<position>1</position>", b"<position>2</position>")
+    with pytest.raises(SourceError, match="missing position 1"):
+        entsoe_fetch(xml, start=START + 25 * HOUR, end=START + 26 * HOUR)
+
+
+@pytest.mark.parametrize("failure", ["missing", "duplicate"])
+def test_eds_nd_ignores_other_product_total_problems(failure: str) -> None:
+    rows = nd_rows()
+    if failure == "missing":
+        rows = [r for r in rows if r["ProductName"] == "FCR-N" or r["AuctionType"] != "Total"]
+    else:
+        rows.append(
+            next(
+                r.copy()
+                for r in rows
+                if r["ProductName"] == "FCR-D upp" and r["AuctionType"] == "Total"
+            )
+        )
+    result = eds_fetch(rows)
+    assert len(result) == 8 and all(r.product is ReserveProduct.FCR_N for r in result)
+    with pytest.raises(SourceError, match="missing Total" if failure == "missing" else "duplicate"):
+        eds_fetch(rows, ReserveProduct.FCR_D)
+
+
+@pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.FCR])
+@pytest.mark.parametrize(
+    "timestamp", [None, "bad", "2026-10-05", "2026-10-05T22:01:00", "2026-10-06T00:00:00+02:00"]
+)
+def test_eds_fcr_timestamp_errors_name_hour_utc(product: ReserveProduct, timestamp: Any) -> None:
+    rows = dk1_rows() if product is ReserveProduct.FCR else nd_rows()
+    rows = [{**row, "HourUTC": timestamp} for row in rows]
+    zones = (
+        (BiddingZone.DK1,) if product is ReserveProduct.FCR else (BiddingZone.DK2, BiddingZone.SE3)
+    )
+    with pytest.raises(SourceError, match="HourUTC") as exc:
+        eds_fetch(rows, product, zones)
+    assert "TimeUTC" not in str(exc.value)
+
+
+@pytest.mark.parametrize("fail", [True, False])
+def test_entsoe_capacity_shuts_down_pool_with_pending_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+    fail: bool,
+) -> None:
+    cancelled: list[bool] = []
+
+    class RecordingPool(ThreadPoolExecutor):
+        def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+            cancelled.append(cancel_futures)
+            super().shutdown(wait=wait, cancel_futures=cancel_futures)
+
+    monkeypatch.setattr(entsoe, "ThreadPoolExecutor", RecordingPool)
+    xml = b"invalid XML" if fail else delivery_day_xml()
+    if fail:
+        with pytest.raises(SourceError, match="document is not XML"):
+            entsoe_fetch(xml)
+    else:
+        assert entsoe_fetch(xml)
+    assert cancelled == [True]

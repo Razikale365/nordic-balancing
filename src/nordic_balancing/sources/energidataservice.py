@@ -324,7 +324,7 @@ class EnergiDataServiceClient:
             missing = set(columns) - row.keys()
             if missing:
                 raise SourceError(f"{SOURCE}: missing capacity columns {sorted(missing)}")
-            hour = _parse_time(row["HourUTC"])
+            hour = _parse_time(row["HourUTC"], column="HourUTC")
             if hour.minute:
                 raise SourceError(f"{SOURCE}: HourUTC is not on the hour")
             if not query_start <= hour < query_end:
@@ -341,17 +341,17 @@ class EnergiDataServiceClient:
         seen: set[tuple[datetime, BiddingZone, str]] = set()
         for key, rows in groups.items():
             hour, zone, name = key
+            row_product, direction = (
+                (ReserveProduct.FCR, Direction.NONE) if domestic else _FCR_PRODUCTS[name]
+            )
+            if row_product is not product:
+                continue
             totals = rows if domestic else [r for r in rows if r["AuctionType"] == "Total"]
             if not totals:
                 raise SourceError(f"{SOURCE}: missing Total for {hour.isoformat()} {zone} {name}")
             for _ in totals:
                 reject_duplicate(seen, key, source=SOURCE, detail=f"Total for {hour} {zone} {name}")
             row = totals[0]
-            row_product, direction = (
-                (ReserveProduct.FCR, Direction.NONE) if domestic else _FCR_PRODUCTS[name]
-            )
-            if row_product is not product:
-                continue
             raw = dict(row)
             if not domestic:
                 raw["auctions"] = [r for r in rows if r["AuctionType"] != "Total"]
@@ -431,23 +431,23 @@ def _format(value: datetime) -> str:
     return value.strftime("%Y-%m-%dT%H:%M")
 
 
-def _parse_time(value: object) -> datetime:
+def _parse_time(value: object, *, column: str = "TimeUTC") -> datetime:
     if not isinstance(value, str):
-        raise SourceError(f"{SOURCE}: TimeUTC is missing or not a string: {value!r}")
+        raise SourceError(f"{SOURCE}: {column} is missing or not a string: {value!r}")
     if "T" not in value and "t" not in value and " " not in value:
-        raise SourceError(f"{SOURCE}: unparseable TimeUTC {value!r}")
+        raise SourceError(f"{SOURCE}: unparseable {column} {value!r}")
     try:
         parsed = datetime.fromisoformat(value)
     except (ValueError, OverflowError) as exc:
-        raise SourceError(f"{SOURCE}: unparseable TimeUTC {value!r}") from exc
+        raise SourceError(f"{SOURCE}: unparseable {column} {value!r}") from exc
     if parsed.tzinfo is not None and (
         parsed.utcoffset() != timedelta(0) or not value.endswith(("Z", "z", "+00:00"))
     ):
-        raise SourceError(f"{SOURCE}: TimeUTC must be UTC: {value!r}")
+        raise SourceError(f"{SOURCE}: {column} must be UTC: {value!r}")
     parsed = parsed.replace(tzinfo=UTC)
     # Check every field: int(timestamp()) would drop fractional seconds (00:00:00.5).
     if parsed.minute % 15 or parsed.second or parsed.microsecond:
-        raise SourceError(f"{SOURCE}: TimeUTC {value!r} is not on a 15-minute boundary")
+        raise SourceError(f"{SOURCE}: {column} {value!r} is not on a 15-minute boundary")
     return parsed
 
 

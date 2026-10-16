@@ -80,8 +80,11 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   quarters with `Direction.NONE`, retaining hourly `resolution`. A03 omitted
   positions continue the preceding quantity and price. Duplicate values for a
   zone and hour raise `SourceError`; other products/zones raise `ValueError`.
+  Returned A81 delivery-day Periods are validated and A03-filled in full, then
+  clipped to each query chunk; non-overlapping Periods contribute no records.
   Results sort by `(start, zone, direction)` and are filtered to `[start, end)`.
-  ENTSO-E does not name the product; the series is FCR-N because the identical query returns EDS's FCR-N figures for SE and DK2.
+  ENTSO-E does not name the product; the series is FCR-N because the identical
+  query returns EDS's FCR-N figures for SE and DK2.
 - `SvKClient.capacity_market(product, start, end, zones=(SE1, SE2, SE3, SE4))`
   returns `list[ReserveCapacity]` for Swedish aFRR and mFRR capacity markets.
 
@@ -151,7 +154,11 @@ bidding zone, product, direction, and 15-minute UTC interval:
 - `product: ReserveProduct` — reserve product (`ReserveProduct.MFRR = "mFRR"`,
   `ReserveProduct.AFRR = "aFRR"`, `ReserveProduct.FCR_N = "FCR-N"`,
   `ReserveProduct.FCR_D = "FCR-D"`, or `ReserveProduct.FCR = "FCR"`).
-- `direction: Direction` — `Direction.UP` or `Direction.DOWN` for products procured per direction (aFRR, mFRR, FCR-D). For a symmetric product (FCR-N, FCR) it is `Direction.NONE`: the volume is available in both directions and the price is paid once, so count such a record in both directions when summing volume per direction, and once when summing cost.
+- `direction: Direction` — `Direction.UP` or `Direction.DOWN` for products
+  procured per direction (aFRR, mFRR, FCR-D). For a symmetric product (FCR-N,
+  FCR) it is `Direction.NONE`: the volume is available in both directions and
+  the price is paid once, so count such a record in both directions when summing
+  volume per direction, and once when summing cost.
 - `price_eur_per_mw: float | None` — capacity price in EUR per MW per hour.
 - `volume_mw: float | None` — procured capacity volume in MW.
 - `source: str` — provider identifier (`"svk"`, `"energidataservice"`, or `"entsoe"`).
@@ -170,8 +177,9 @@ bidding zone, product, direction, and 15-minute UTC interval:
 - **Pagination and duplicates**: paginated fetches must match the total row count
   reported by the source. Duplicate source records for the same series key raise
   `SourceError`, with two documented exceptions:
-  - ENTSO-E imbalance prices (A85): an interval published under distinct price categories (`A04` and
-    `A05`) at the same resolution with an equal price collapses to one record,
+  - ENTSO-E imbalance prices (A85): an interval published under distinct price
+    categories (`A04` and `A05`) at the same resolution with an equal price
+    collapses to one record,
     keeping all categories in `raw["categories"]`.
   - Fingrid: where hourly and 15-minute records overlap around the March 2025
     transition (datasets 319, 244, 106, 369), the hourly value is kept before

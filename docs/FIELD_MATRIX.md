@@ -77,6 +77,7 @@ ENTSO-E FCR-N (NO1–NO5, A81/B95/A52) maps `quantity` (MAW) to `volume_mw`
 and `procurement_Price.amount` (EUR/MW per hour) to `price_eur_per_mw`.
 Flow A03 maps to `Direction.NONE`; both point values continue across omitted
 positions in an A03 curve. Hourly resolution is retained after expansion.
-ENTSO-E does not name the product; the series is FCR-N because the identical query returns EDS's FCR-N figures for SE and DK2.
+ENTSO-E does not name the product; the series is FCR-N because the identical
+query returns EDS's FCR-N figures for SE and DK2.
 Symmetric FCR-N/FCR volume counts in both regulation directions, while its
 capacity cost counts once. FCR-D capacity and cost count per direction.

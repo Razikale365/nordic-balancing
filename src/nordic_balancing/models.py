@@ -41,7 +41,8 @@ class Direction(IntEnum):
 
     On ``ReserveCapacity`` this is the regulation direction of the procured
     capacity; ``NONE`` marks a symmetric product whose volume is available
-    both up and down.
+    both up and down; count it in both directions when summing volume per
+    direction, and once when summing cost.
     """
 
     DOWN = -1
