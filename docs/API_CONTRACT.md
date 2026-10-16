@@ -312,10 +312,16 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
 - **Accepted (part of the contract).** ENTSO-E checks that never triggered on live
   data (60 zone-windows and all 12 zones for 2025, checked 2026-10-12) stay
   strict so they fail loudly if the API changes:
-  - A point outside the requested window raises `SourceError` (`entsoe-py`
-    truncates its A85 results to the window; no extra points were observed).
-    Covered by `tests/test_entsoe.py::test_rejects_malformed_documents` and
-    `tests/test_entsoe.py::test_a03_fill_still_rejects_explicit_point_outside_chunk_window`.
+  - In an A85 imbalance-price document, a point outside the requested window
+    raises `SourceError` (`entsoe-py` truncates its A85 results to the window; no
+    extra points were observed). A81 FCR capacity documents always cover whole
+    delivery days, so `capacity_market` validates the whole Period and keeps only
+    the points inside the window. Covered by
+    `tests/test_entsoe.py::test_rejects_malformed_documents`,
+    `tests/test_entsoe.py::test_a03_fill_still_rejects_explicit_point_outside_chunk_window`,
+    `tests/test_fcr_capacity.py::test_entsoe_capacity_clips_whole_delivery_day_after_a03_fill`
+    and
+    `tests/test_fcr_capacity.py::test_entsoe_capacity_two_chunks_clip_same_delivery_day_without_duplicates`.
   - A `TimeSeries` without `curveType` raises `SourceError`, although the element
     is optional in the XSD (every observed `TimeSeries` had `A03`). Covered by
     `tests/test_entsoe.py::test_rejects_malformed_documents`.
