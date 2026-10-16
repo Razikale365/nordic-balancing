@@ -1,7 +1,6 @@
-"""Regression tests planted by the WO-B14 mutation pass (group m1).
+"""ENTSO-E edge cases: limits, namespaces, flow directions, redaction and pool shutdown.
 
-Each test was added because a deliberate mutant in
-``nordic_balancing.sources.entsoe`` survived the whole offline suite.
+Each test covers a behaviour that no other test pinned (found by a mutation-testing pass).
 """
 
 import io
@@ -117,7 +116,7 @@ def capacity_prices(body: str) -> list[Any]:
     )
 
 
-# m10: the imbalance pool must also cancel pending jobs when one fails.
+# the imbalance pool must also cancel pending jobs when one fails.
 @pytest.mark.parametrize("fail", [True, False])
 def test_imbalance_pool_shuts_down_with_pending_cancellation(
     monkeypatch: pytest.MonkeyPatch, fail: bool
@@ -148,7 +147,7 @@ def test_imbalance_pool_shuts_down_with_pending_cancellation(
     assert cancelled == [True]
 
 
-# m31: an overlong but well-formed exception class name is dropped, not echoed.
+# an overlong but well-formed exception class name is dropped, not echoed.
 def test_overlong_exception_class_name_is_not_echoed() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise type("x" * 70, (Exception,), {})()
@@ -158,7 +157,7 @@ def test_overlong_exception_class_name_is_not_echoed() -> None:
     assert str(caught.value) == "entsoe: request failed (Exception)"
 
 
-# m34: an explicit empty key must raise, not silently use the environment.
+# an explicit empty key must raise, not silently use the environment.
 def test_explicit_empty_key_does_not_fall_back_to_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -167,7 +166,7 @@ def test_explicit_empty_key_does_not_fall_back_to_env(
         EntsoeClient("")
 
 
-# m35: max_retries=0 is valid and makes exactly one attempt.
+# max_retries=0 is valid and makes exactly one attempt.
 def test_zero_retry_budget_makes_a_single_attempt() -> None:
     calls: list[httpx.Request] = []
     sleeps: list[float] = []
@@ -182,7 +181,7 @@ def test_zero_retry_budget_makes_a_single_attempt() -> None:
     assert sleeps == []
 
 
-# m40: the outer redaction is the last line of defence for tokens echoed back
+# the outer redaction is the last line of defence for tokens echoed back
 # inside parsed remote fields (here area_Domain.mRID).
 def test_source_error_redacts_token_echoed_in_remote_fields() -> None:
     body = document(
@@ -197,7 +196,7 @@ def test_source_error_redacts_token_echoed_in_remote_fields() -> None:
     assert "[REDACTED_SECRET]" in str(caught.value)
 
 
-# m41 + m44: a body or uncompressed ZIP members totalling exactly _LIMIT pass.
+# a body or uncompressed ZIP members totalling exactly _LIMIT pass.
 def test_body_and_zip_members_exactly_at_the_limit_parse(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -217,7 +216,7 @@ def test_body_and_zip_members_exactly_at_the_limit_parse(
     assert [p.imbalance_price_eur for p in prices] == [21.0]
 
 
-# m43: a member whose extension is uppercase still counts as XML.
+# a member whose extension is uppercase still counts as XML.
 def test_zip_member_with_uppercase_xml_extension_parses() -> None:
     body = document(series(period("2026-01-15T00:00Z", "2026-01-15T00:15Z", point(1))))
     archive = zipped(body, name="PRICES.XML")
@@ -227,7 +226,7 @@ def test_zip_member_with_uppercase_xml_extension_parses() -> None:
     assert [p.imbalance_price_eur for p in prices] == [21.0]
 
 
-# m47: other 451-6 namespaces are not balancing documents.
+# other 451-6 namespaces are not balancing documents.
 def test_rejects_a_non_balancing_451_6_namespace() -> None:
     body = document(
         series(period("2026-01-15T00:00Z", "2026-01-15T00:15Z", point(1))),
@@ -239,7 +238,7 @@ def test_rejects_a_non_balancing_451_6_namespace() -> None:
         )
 
 
-# m58: a zero-length Period is rejected like a negative one.
+# a zero-length Period is rejected like a negative one.
 def test_rejects_a_zero_length_period() -> None:
     body = document(series(period("2026-01-15T00:00Z", "2026-01-15T00:00Z")))
     with pytest.raises(SourceError, match="Period end is not after its start"):
@@ -248,7 +247,7 @@ def test_rejects_a_zero_length_period() -> None:
         )
 
 
-# m66: point-level capacity flowDirection must also be A03.
+# point-level capacity flowDirection must also be A03.
 def test_rejects_point_level_capacity_flow_direction_other_than_a03() -> None:
     body = capacity_document(
         capacity_point(1, head="<flowDirection.direction>A01</flowDirection.direction>")
@@ -257,7 +256,7 @@ def test_rejects_point_level_capacity_flow_direction_other_than_a03() -> None:
         capacity_prices(body)
 
 
-# m76 + m77: merging equal prices keeps an agreeing flow direction, adopts the
+# merging equal prices keeps an agreeing flow direction, adopts the
 # direction from the publication that has one, and rejects a conflict.
 def merged_document(first: str | None, second: str | None) -> str:
     def flow_point(category: str, flow: str | None) -> str:
@@ -275,24 +274,23 @@ def merged_document(first: str | None, second: str | None) -> str:
 
 
 def test_merged_publications_track_flow_direction() -> None:
-    merge = merged_document
-    agreed = client(lambda _: httpx.Response(200, text=merge("A01", "A01"))).imbalance_prices(
-        START, START + INTERVAL, [BiddingZone.SE3]
-    )
+    agreed = client(
+        lambda _: httpx.Response(200, text=merged_document("A01", "A01"))
+    ).imbalance_prices(START, START + INTERVAL, [BiddingZone.SE3])
     assert agreed[0].raw["flow_direction"] == "A01"
 
-    adopted = client(lambda _: httpx.Response(200, text=merge(None, "A02"))).imbalance_prices(
-        START, START + INTERVAL, [BiddingZone.SE3]
-    )
+    adopted = client(
+        lambda _: httpx.Response(200, text=merged_document(None, "A02"))
+    ).imbalance_prices(START, START + INTERVAL, [BiddingZone.SE3])
     assert adopted[0].raw["flow_direction"] == "A02"
 
     with pytest.raises(SourceError, match="conflicting flowDirection"):
-        client(lambda _: httpx.Response(200, text=merge("A01", "A02"))).imbalance_prices(
+        client(lambda _: httpx.Response(200, text=merged_document("A01", "A02"))).imbalance_prices(
             START, START + INTERVAL, [BiddingZone.SE3]
         )
 
 
-# m83: timeInterval times must be UTC, not merely timezone-aware.
+# timeInterval times must be UTC, not merely timezone-aware.
 def test_rejects_a_time_interval_with_non_utc_offset() -> None:
     body = document(
         series(
