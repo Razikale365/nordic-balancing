@@ -95,8 +95,9 @@ Every client enforces the same contracts; a violation raises `SourceError`.
     prices, equal prices at different resolutions, or two points at the same
     position within one Period raise.
   - ENTSO-E mFRR capacity (A81/A47) only: identical quantity/price repeats across
-    documents collapse by zone, interval and direction. Conflicting repeats raise.
-    FCR-N repeats always raise, including identical documents.
+    documents, ZIP members or TimeSeries collapse by zone, interval and direction
+    after A03 filling. Conflicting repeats and repeated positions within a Period
+    raise. FCR-N repeats always raise, including identical documents or series.
   - Fingrid: around its 2025-03 switch an hourly and a 15-minute record can cover
     the same quarter. The hourly value is kept before 2025-03-18T23:00Z and the
     15-minute value from then on; the other stays in `raw["<dataset>_superseded"]`.
@@ -136,7 +137,7 @@ status, observed API behaviour and known limitations.
 | Fingrid | `FingridClient` | FI imbalance prices, mFRR up/down prices, dominating direction; FI hourly-market FCR-N, FCR-D and mFRR capacity prices/volumes via `capacity_market()` (hourly, expanded to quarters); any 15-minute dataset via `series()` | free API key | yes |
 | Svenska kraftnät | `SvKClient` | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) | free (CC-BY-4.0) | yes |
 | eSett | `ESettClient` | Imbalance prices, all 12 Nordic zones, from 2021-10-31T23:00Z | free, no key | yes |
-| ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones, from 2021-10-31T23:00Z (FI 22:00Z); symmetric FCR-N capacity (A81), NO1–NO5, product inferred from SE/DK2 comparisons; mFRR capacity (A81/A47) for NO1–NO5 and FI, product verified against Fingrid/SvK | free token (`ENTSOE_API_KEY`) | yes |
+| ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones, from 2021-10-31T23:00Z (FI 22:00Z); symmetric FCR-N capacity (A81), NO1–NO5, product inferred from SE/DK2 comparisons; mFRR capacity (A81/A47) for NO1–NO5 from 2024-02-11T23:00Z (delivery day 2024-02-12) and FI from 2024-11-12T23:00Z (delivery day 2024-11-13), product verified against Fingrid/SvK | free token (`ENTSOE_API_KEY`) | yes |
 
 Not covered yet: activated balancing energy volumes. Out of scope: generic day-ahead
 price clients and mFRR bid submission — other

@@ -78,8 +78,10 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   default `(DK1, DK2)` raises `ValueError` for all three products.
 - `EntsoeClient.capacity_market(product, start, end, *, zones=(NO1, NO2, NO3, NO4, NO5))`
   returns FCR-N for Norwegian zones from `2014-09-30T22:00Z` (all five zones;
-  checked live 2026-10-16), using A81/B95/A52 and market agreement A01. Documents must be A81/A52; series must be B95, symmetric flow A03,
-  quantity unit MAW and currency EUR. `quantity` supplies MW and
+  checked live 2026-10-16), using A81/B95/A52 and market agreement A01. For
+  FCR-N, documents must be A81/A52; series must be B95 with symmetric flow A03,
+  quantity unit MAW and currency EUR. The mFRR bullet below states its own rules.
+  `quantity` supplies MW and
   `procurement_Price.amount` supplies EUR/MW per hour; hourly points expand to
   quarters with `Direction.NONE`, retaining hourly `resolution`. A03 omitted
   positions continue the preceding quantity and price. Every repeated FCR-N
@@ -107,17 +109,18 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   and FI, keeping the NO1–NO5 default. It queries A81/B95/A47 with market agreement
   A01; requires EUR, MAW and PT60M; and maps flow A01 to UP and A02 to DOWN.
   A03 continuation, whole-day validation/clipping and expansion apply. For mFRR
-  only, identical quantity/price repeats across documents/members collapse by
-  `(zone, start, direction)`; conflicting repeats raise `SourceError`. Repeated
-  positions or series inside one document still raise. FCR-N with FI raises
-  `ValueError`: ENTSO-E has no
-  Finnish FCR. The mFRR product was verified live against Fingrid (FI) and SvK
+  only, identical quantity/price repeats from another document, ZIP member or
+  TimeSeries in the same document collapse by `(zone, start, direction)`, comparing
+  values after A03 filling. Conflicting repeats raise `SourceError`. Repeated
+  positions within one Period of one series still raise. FCR-N with FI raises
+  `ValueError`: ENTSO-E has no Finnish FCR. The mFRR product was verified live
+  against Fingrid (FI) and SvK
   (SE3), matching all 48 hour-directions per source on 2026-10-08, per the supplied
   work-order evidence. Reproduce with `examples/fi_no_capacity/cross_check.py`.
-  A47 NO/FI data are captured from 2026-10-07T22:00Z in the supplied fixtures;
-  the first historical day is **UNKNOWN**, pending the reviewer's permitted live
-  binary search (`cross_check.py --live --find-coverage`). This worker was forbidden
-  network access, so this capture date is not claimed as the coverage start.
+  ENTSO-E mFRR coverage starts at delivery day **2024-02-12** for NO1-NO5
+  (first interval **2024-02-11T23:00Z**) and delivery day **2024-11-13** for FI
+  (first interval **2024-11-12T23:00Z**), from Opus's historical search.
+  Early documents repeat identical TimeSeries; the same mFRR collapse rule applies.
 - `SvKClient.capacity_market(product, start, end, zones=(SE1, SE2, SE3, SE4))`
   returns `list[ReserveCapacity]` for Swedish aFRR and mFRR capacity markets.
 
@@ -216,8 +219,9 @@ bidding zone, product, direction, and 15-minute UTC interval:
     collapses to one record,
     keeping all categories in `raw["categories"]`.
   - ENTSO-E mFRR capacity (A81/A47) only: identical quantity/price repeats across
-    documents collapse by zone, quarter and direction; conflicting values raise.
-    FCR-N repeats always raise, including identical documents.
+    documents, ZIP members or TimeSeries collapse by zone, quarter and direction
+    after A03 filling; conflicting values and repeated positions within a Period
+    raise. FCR-N repeats always raise, including identical documents or series.
   - Fingrid: where hourly and 15-minute records overlap around the March 2025
     transition (datasets 319, 244, 106, 369), the hourly value is kept before
     `2025-03-18T23:00Z` and the 15-minute value from then on, with the other

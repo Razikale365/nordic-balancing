@@ -92,6 +92,7 @@ Both source rows remain under `raw["price"]` and `raw["volume"]`, including
 
 ENTSO-E mFRR (NO1–NO5 and FI, A81/B95/A47) uses the same quantity/price fields
 as FCR-N; flow A01 is UP and A02 is DOWN. Only mFRR identical quantity/price
-repeats across documents collapse by `(zone, start, direction)`; conflicting repeats
-raise. On 2026-10-08, all 48 FI hour-directions matched Fingrid and all 48
+repeats across documents, ZIP members or TimeSeries collapse by
+`(zone, start, direction)` after A03 filling; conflicting repeats and repeated
+positions within a Period raise. On 2026-10-08, all 48 FI hour-directions matched Fingrid and all 48
 SE3 hour-directions matched SvK (work-order live evidence).

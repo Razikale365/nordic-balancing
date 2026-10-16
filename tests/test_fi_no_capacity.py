@@ -490,13 +490,14 @@ def test_entsoe_mfrr_error_redaction() -> None:
 
 
 @pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
-def test_entsoe_rejects_duplicate_series_in_one_document(zone: BiddingZone) -> None:
+def test_entsoe_mfrr_identical_series_in_one_document_collapse(zone: BiddingZone) -> None:
     root = ET.fromstring(xml_member(zone))
     series = root.find("{*}TimeSeries")
     assert series is not None
     root.append(ET.fromstring(ET.tostring(series)))
-    with pytest.raises(SourceError, match="duplicate capacity"):
-        entsoe_fetch(ET.tostring(root), zone=zone)
+    result = entsoe_fetch(ET.tostring(root), zone=zone)
+    assert len(result) == 192
+    assert result == entsoe_fetch(xml_member(zone), zone=zone)
 
 
 def test_entsoe_rejects_missing_mfrr_direction() -> None:
@@ -598,3 +599,172 @@ def test_evidence_se3_uses_validated_a47_parser() -> None:
     assert all(r.zone is BiddingZone.SE3 and r.product is ReserveProduct.MFRR for r in result)
     assert requests[0].url.params["processType"] == "A47"
     assert requests[0].url.params["controlArea_Domain"] == "10Y1001A1001A46L"
+
+
+EARLY_DUPLICATE_FIXTURES = [
+    (BiddingZone.NO1, "2024-02-15", datetime(2024, 2, 14, 23, tzinfo=UTC)),
+    (BiddingZone.FI, "2024-11-13", datetime(2024, 11, 12, 23, tzinfo=UTC)),
+]
+
+
+def early_archive(zone: BiddingZone, delivery_day: str) -> bytes:
+    return (
+        FIXTURES / f"entsoe-a81-a47-{zone.value.lower()}-{delivery_day}-duplicated-series.zip"
+    ).read_bytes()
+
+
+def early_document(zone: BiddingZone, delivery_day: str) -> ET.Element:
+    with zipfile.ZipFile(io.BytesIO(early_archive(zone, delivery_day))) as archive:
+        assert len(archive.namelist()) == 1
+        return ET.fromstring(archive.read(archive.namelist()[0]))
+
+
+@pytest.mark.parametrize("zone,delivery_day,start", EARLY_DUPLICATE_FIXTURES)
+def test_entsoe_historical_identical_series_exact_values(
+    zone: BiddingZone,
+    delivery_day: str,
+    start: datetime,
+) -> None:
+    result = entsoe_fetch(
+        early_archive(zone, delivery_day), zone=zone, start=start, end=start + 24 * HOUR
+    )
+    expected_keys = {
+        (start + q * INTERVAL, zone, direction)
+        for q in range(96)
+        for direction in (Direction.UP, Direction.DOWN)
+    }
+    assert len(result) == 192
+    assert {(r.start, r.zone, r.direction) for r in result} == expected_keys
+    assert result == sorted(result, key=lambda r: (r.start, r.zone, r.direction))
+    values = (
+        [
+            (0, Direction.UP, 2.0, 10.0),
+            (0, Direction.DOWN, 2.0, 25.0),
+            (5, Direction.UP, 3.0, 10.0),
+            (3, Direction.DOWN, 2.0, 31.0),
+        ]
+        if zone is BiddingZone.NO1
+        else [
+            (0, Direction.UP, 2.0, 196.0),
+            (0, Direction.DOWN, 11.0, 480.0),
+            (2, Direction.UP, 1.5, 191.0),
+            (1, Direction.DOWN, 7.5, 480.0),
+        ]
+    )
+    for hour, direction, price, volume in values:
+        for quarter in range(4):
+            stamp = start + hour * HOUR + quarter * INTERVAL
+            record = next(r for r in result if r.start == stamp and r.direction is direction)
+            assert record.price_eur_per_mw == price
+            assert record.volume_mw == volume
+            assert record.product is ReserveProduct.MFRR
+            assert record.source == "entsoe" and record.resolution == HOUR
+            assert record.raw["quantity"] == volume
+            assert record.raw["procurement_Price.amount"] == price
+            assert record.raw["flow_direction"] == ("A01" if direction is Direction.UP else "A02")
+
+
+@pytest.mark.parametrize("zone,delivery_day,start", EARLY_DUPLICATE_FIXTURES)
+@pytest.mark.parametrize("field", ["quantity", "procurement_Price.amount"])
+def test_entsoe_historical_conflicting_second_series_raises(
+    zone: BiddingZone,
+    delivery_day: str,
+    start: datetime,
+    field: str,
+) -> None:
+    root = early_document(zone, delivery_day)
+    series = root.findall("{*}TimeSeries")
+    assert len(series) == 4
+    assert series[0].findtext("{*}flowDirection.direction") == series[1].findtext(
+        "{*}flowDirection.direction"
+    )
+    node = series[1].find(f"{{*}}Period/{{*}}Point/{{*}}{field}")
+    assert node is not None and node.text is not None
+    node.text = str(float(node.text) + 0.25)
+    with pytest.raises(SourceError, match="duplicate capacity with differing values for mFRR"):
+        entsoe_fetch(ET.tostring(root), zone=zone, start=start, end=start + 24 * HOUR)
+
+
+@pytest.mark.parametrize("zone,delivery_day,start", EARLY_DUPLICATE_FIXTURES)
+def test_entsoe_historical_repeated_position_remains_invalid(
+    zone: BiddingZone,
+    delivery_day: str,
+    start: datetime,
+) -> None:
+    root = early_document(zone, delivery_day)
+    period = root.find("{*}TimeSeries/{*}Period")
+    assert period is not None
+    point = period.find("{*}Point")
+    assert point is not None
+    period.append(ET.fromstring(ET.tostring(point)))
+    with pytest.raises(SourceError) as exc:
+        entsoe_fetch(ET.tostring(root), zone=zone, start=start, end=start + 24 * HOUR)
+    assert str(exc.value) == "entsoe: duplicate capacity position 1 in Period"
+
+
+@pytest.mark.parametrize("zone,delivery_day,start", EARLY_DUPLICATE_FIXTURES)
+def test_entsoe_compares_duplicate_series_after_a03_fill(
+    zone: BiddingZone,
+    delivery_day: str,
+    start: datetime,
+) -> None:
+    root = early_document(zone, delivery_day)
+    # Add a redundant explicit position 2 in the repeated series. Its A03-filled
+    # values match, although its XML and explicit Point list no longer match.
+    period = root.findall("{*}TimeSeries")[1].find("{*}Period")
+    assert period is not None
+    first = period.find("{*}Point")
+    assert first is not None
+    second = ET.fromstring(ET.tostring(first))
+    position = second.find("{*}position")
+    assert position is not None
+    position.text = "2"
+    period.append(second)
+    result = entsoe_fetch(ET.tostring(root), zone=zone, start=start, end=start + 24 * HOUR)
+    assert len(result) == 192
+    assert result == entsoe_fetch(
+        early_archive(zone, delivery_day), zone=zone, start=start, end=start + 24 * HOUR
+    )
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.FI, BiddingZone.SE3, "NO1"])
+def test_entsoe_fcr_zone_error_text_unchanged(zone: Any) -> None:
+    with EntsoeClient("test-token") as client, pytest.raises(ValueError) as exc:
+        client.capacity_market(ReserveProduct.FCR_N, START, END, zones=[zone])
+    assert str(exc.value) == "ENTSO-E FCR-N capacity covers only NO1, NO2, NO3, NO4 and NO5"
+
+
+@pytest.mark.parametrize("where", ["series", "point"])
+def test_entsoe_fcr_flow_error_text_unchanged(where: str) -> None:
+    root = ET.fromstring((FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes())
+    if where == "series":
+        node = root.find("{*}TimeSeries/{*}flowDirection.direction")
+        assert node is not None
+        node.text = "A01"
+    else:
+        point = root.find("{*}TimeSeries/{*}Period/{*}Point")
+        assert point is not None
+        ET.SubElement(point, root.tag.partition("}")[0] + "}flowDirection.direction").text = "A01"
+    start = datetime(2026, 10, 5, 22, tzinfo=UTC)
+    with pytest.raises(SourceError) as exc:
+        entsoe_fetch(
+            ET.tostring(root), start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N
+        )
+    assert str(exc.value) == "entsoe: capacity flowDirection.direction must be A03"
+
+
+@pytest.mark.parametrize("where", ["series", "document"])
+def test_entsoe_fcr_duplicate_error_text_unchanged(where: str) -> None:
+    xml = (FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes()
+    if where == "series":
+        root = ET.fromstring(xml)
+        series = root.find("{*}TimeSeries")
+        assert series is not None
+        root.append(ET.fromstring(ET.tostring(series)))
+        content = ET.tostring(root)
+    else:
+        content = zip_members(xml, xml)
+    start = datetime(2026, 10, 5, 22, tzinfo=UTC)
+    with pytest.raises(SourceError) as exc:
+        entsoe_fetch(content, start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N)
+    assert str(exc.value) == f"entsoe: duplicate capacity for NO1 at {start}"

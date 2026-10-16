@@ -212,8 +212,10 @@ class EntsoeClient:
         ENTSO-E does not name the product; FCR-N is inferred from the identical
         query matching EDS FCR-N for Swedish zones and DK2.
         The mFRR product is verified against Fingrid and SvK (2026-10-08).
-        Identical quantity/price repeats across documents collapse for mFRR only;
-        conflicting mFRR repeats and all FCR-N repeats raise ``SourceError``.
+        For mFRR only, identical quantity/price repeats across documents, members
+        or series collapse after A03 filling. Conflicting mFRR repeats and all
+        FCR-N repeats raise ``SourceError``. Repeated positions within a Period
+        always raise.
         """
         if not isinstance(product, ReserveProduct) or product not in (
             ReserveProduct.FCR_N,
@@ -229,6 +231,8 @@ class EntsoeClient:
         requested = list(zones)
         supported = (*_NO, BiddingZone.FI) if product is ReserveProduct.MFRR else _NO
         if any(not isinstance(z, BiddingZone) or z not in supported for z in requested):
+            if product is ReserveProduct.FCR_N:
+                raise ValueError("ENTSO-E FCR-N capacity covers only NO1, NO2, NO3, NO4 and NO5")
             raise ValueError(
                 f"ENTSO-E {product.value} capacity covers only "
                 + ", ".join(z.value for z in supported)
@@ -259,7 +263,7 @@ class EntsoeClient:
                         or existing.price_eur_per_mw != record.price_eur_per_mw
                     ):
                         raise SourceError(
-                            f"{SOURCE}: duplicate capacity with differing values for "
+                            f"{SOURCE}: duplicate capacity with differing values for mFRR "
                             f"{record.zone} at {record.start} ({record.direction.name})"
                         )
                     collected.setdefault(key, record)
@@ -283,9 +287,9 @@ class EntsoeClient:
         for member in self._request_members(
             zone, chunk_start, chunk_end, capacity=True, capacity_process=process
         ):
-            # Repeated keys inside one document remain invalid; only identical
-            # repeats from separate documents/members may collapse.
-            seen: set[tuple[datetime, str | None]] = set()
+            # _points fills each series independently. Compare filled values in
+            # capacity_market's merge, where mFRR repeats may collapse and FCR-N
+            # repeats always raise, including repeats within one document.
             for point in _points(
                 member,
                 _EIC_CODES[zone],
@@ -295,11 +299,8 @@ class EntsoeClient:
                 capacity=True,
                 capacity_process=process,
             ):
-                key = (point.start, point.flow_direction)
-                if key in seen:
-                    raise SourceError(f"{SOURCE}: duplicate capacity within document")
-                seen.add(key)
-                assert point.flow_direction is not None  # validated series-level capacity flow
+                if point.flow_direction is None:
+                    raise SourceError(f"{SOURCE}: missing flowDirection.direction")
                 direction = (
                     _MFRR_DIRECTIONS[point.flow_direction]
                     if product is ReserveProduct.MFRR
@@ -620,17 +621,20 @@ def _series_points(
 ) -> list[_Point]:
     series_flow: str | None = None
     if capacity:
-        series_flow = _text(series, "flowDirection.direction")
-        allowed = ("A01", "A02") if capacity_process == "A47" else ("A03",)
-        if series_flow not in allowed:
-            raise SourceError(f"{SOURCE}: capacity flowDirection.direction must be {allowed}")
-        for name, expected in (
+        required = [
             ("businessType", "B95"),
             ("quantity_Measure_Unit.name", "MAW"),
             ("currency_Unit.name", "EUR"),
-        ):
+        ]
+        if capacity_process == "A52":
+            # Preserve FCR-N's validation order and exact errors from main.
+            required.insert(1, ("flowDirection.direction", "A03"))
+        for name, expected in required:
             if _text(series, name) != expected:
                 raise SourceError(f"{SOURCE}: capacity {name} must be {expected}")
+        series_flow = _text(series, "flowDirection.direction")
+        if capacity_process == "A47" and series_flow not in ("A01", "A02"):
+            raise SourceError(f"{SOURCE}: mFRR capacity flowDirection.direction must be A01 or A02")
     currency = _child(series, "currency_Unit.name")
     if currency is not None and (currency.text or "").strip() != "EUR":
         raise SourceError(
@@ -714,8 +718,10 @@ def _period_points(
         if capacity:
             point_flow = _code(element, "flowDirection.direction")
             if point_flow is not None and point_flow != capacity_flow:
+                if capacity_flow == "A03":
+                    raise SourceError(f"{SOURCE}: capacity flowDirection.direction must be A03")
                 raise SourceError(
-                    f"{SOURCE}: capacity flowDirection.direction conflicts with series"
+                    f"{SOURCE}: mFRR capacity flowDirection.direction conflicts with series"
                 )
         record = _Point(
             start=start,

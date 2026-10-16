@@ -10,10 +10,14 @@ the project is in beta: the public API is defined in
 - **Fingrid:** `capacity_market(product, start, end)` returns FI hourly-market FCR-N,
   FCR-D and mFRR prices/procured MW as `ReserveCapacity`. Hourly values expand to
   quarters; missing price or volume rows remain `None`. Yearly-market FCR is excluded.
-- **ENTSO-E:** `capacity_market` accepts mFRR (A81/B95/A47) for NO1–NO5 and FI,
-  retaining its Norwegian default. Flow A01/A02 maps to UP/DOWN. Identical mFRR
-  quantity/price repeats across documents collapse by `(zone, start, direction)`;
-  conflicting repeats raise. FCR-N duplicate rejection is unchanged. Supplied live
+- **ENTSO-E:** `capacity_market` accepts mFRR (A81/B95/A47) for NO1-NO5 from
+  2024-02-11T23:00Z (delivery day 2024-02-12) and FI from 2024-11-12T23:00Z
+  (delivery day 2024-11-13), retaining its Norwegian default. Flow A01/A02 maps
+  to UP/DOWN. Identical mFRR quantity/price repeats across documents, ZIP members
+  or TimeSeries collapse by `(zone, start, direction)` after A03 filling;
+  conflicting repeats and repeated positions within a Period raise. This includes
+  early historical documents with identical series pairs. FCR-N duplicate rejection
+  and its error messages are unchanged. Supplied live
   evidence matched all 48 hour-directions against Fingrid FI and SvK SE3 on 2026-10-08.
 - **Energi Data Service:** `EnergiDataServiceClient.capacity_market(product, start, end, *,
   zones=(DK1, DK2))` returns `ReserveCapacity` records: aFRR for all 12 Nordic zones (from
