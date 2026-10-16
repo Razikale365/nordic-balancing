@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 import struct
 import traceback
@@ -682,6 +683,19 @@ def test_rejects_conflicting_duplicate_positions() -> None:
                 )
             ),
             "curveType A05 is not supported",
+        ),
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:15Z",
+                        point(1, 21.0),
+                    ),
+                    curve="A04",
+                )
+            ),
+            "curveType A04 is not supported",
         ),
         (
             document(
@@ -1595,3 +1609,26 @@ def test_rejects_mixed_no_data_acknowledgements(status: int, other: str, first: 
             START, END, [BiddingZone.SE3]
         )
     assert KEY not in "".join(traceback.format_exception(caught.value))
+
+
+def test_token_reaches_logs_only_through_httpx_info_logging(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def fetch() -> None:
+        client(lambda _: httpx.Response(200, text=ONE_HOUR)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+    # The library configures no logging: httpx keeps its default level and handlers, and
+    # nothing the library itself logs carries the token.
+    httpx_logger = logging.getLogger("httpx")
+    level, handlers = httpx_logger.level, list(httpx_logger.handlers)
+    with caplog.at_level(logging.DEBUG, logger="nordic_balancing"):
+        fetch()
+    assert (httpx_logger.level, httpx_logger.handlers) == (level, handlers)
+    assert KEY not in caplog.text
+    # The documented risk: httpx logs each request URL, token included, at INFO.
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="httpx"):
+        fetch()
+    assert KEY in caplog.text

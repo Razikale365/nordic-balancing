@@ -402,6 +402,13 @@ def test_accepts_exact_dominating_directions(value: float, expected: Direction) 
     assert price.dominating_direction is expected
 
 
+def test_null_dominating_direction_is_none() -> None:
+    record = {**PUBLISHED, "DominatingDirection": None}
+    price = client(lambda _: page([record])).imbalance_prices(START, END)[0]
+    assert price.dominating_direction is None
+    assert price.imbalance_price_eur == PUBLISHED["ImbalancePriceEUR"]
+
+
 # --- Audit 2026-10-09 (baseline v0.1.0a3) -------------------------------------------
 
 

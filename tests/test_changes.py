@@ -62,3 +62,12 @@ def test_nordic_changes_are_observed_and_apply_to_every_zone() -> None:
         )
         == 2
     )
+
+
+def test_unverified_fi_formula_change_has_no_entry() -> None:
+    # API_CONTRACT: a possible FI formula change around 2026-06-01 is unverified,
+    # so CHANGES must not record one until a primary source is found.
+    window = (datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 7, 1, tzinfo=UTC))
+    assert not [
+        c for c in CHANGES if BiddingZone.FI in c.zones and window[0] <= c.effective < window[1]
+    ]
