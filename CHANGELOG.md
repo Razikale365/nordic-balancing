@@ -30,6 +30,14 @@ the project is in beta: the public API is defined in
   - The `Direction` docstring and `docs/API_CONTRACT.md` state the meaning of `NONE` on
     `ReserveCapacity`.
 
+### Behaviour changes to note
+- Three checks are stricter. Data that 0.2.0 accepted now raises `SourceError`: an eSett or
+  Svenska kraftnät record that lacks a value key (a null value is still `None`), and any HTTP
+  status other than 200 on a data request. Valid responses from the five providers parse as
+  before; the live suite was rerun on this version.
+- The ENTSO-E request-failure message now ends with the exception class, for example
+  `entsoe: request failed (ConnectError)`. Code that compared the whole message must allow for it.
+
 ### Fixed
 - **eSett:** a record missing any of `imblSalesPrice`, `imblPurchasePrice`, `upRegPrice`,
   `downRegPrice` or `mainDirRegPowerPerMBA` now raises `SourceError` naming the key. Before, a
@@ -40,8 +48,8 @@ the project is in beta: the public API is defined in
   still `None`.
 - **ENTSO-E:** any error raised while sending a request (for example by a custom `httpx`
   transport) is reported as `SourceError("entsoe: request failed (<exception class>)")`, so the
-  token in the request URL can't appear in the message or the traceback. The library's own errors, including
-  `RateLimitError`, are unchanged.
+  token in the request URL can't appear in the message or the traceback. The library's own
+  errors, including `RateLimitError`, are unchanged.
 - **Energi Data Service:** FCR-N and FCR-D requests filter on `ProductName`, so only the
   requested product's rows are fetched.
 - **All clients:** only HTTP 200 is accepted as data. A 2xx such as 202 (not yet processed) or
