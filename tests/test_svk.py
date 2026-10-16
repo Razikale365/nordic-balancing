@@ -391,6 +391,16 @@ def test_rejects_malformed_records(override: dict[str, Any], message: str) -> No
         )
 
 
+@pytest.mark.parametrize("key", ["price", "volume"])
+def test_rejects_a_record_missing_price_or_volume(key: str) -> None:
+    # A null price or volume is unpublished; a missing key is a schema change.
+    record = {name: value for name, value in RECORD.items() if name != key}
+    with pytest.raises(SourceError, match=f"missing {key}"):
+        client(lambda _: httpx.Response(200, json=search([record]))).capacity_market(
+            ReserveProduct.MFRR, START, END, [BiddingZone.SE3]
+        )
+
+
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
 def test_rejects_non_finite_price_and_volume(value: str) -> None:
     for column in ("price", "volume"):

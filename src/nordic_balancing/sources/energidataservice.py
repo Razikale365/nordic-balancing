@@ -315,7 +315,12 @@ class EnergiDataServiceClient:
             "sort": "HourUTC asc" if domestic else "HourUTC asc,PriceArea asc",
         }
         if not domestic:
-            params["filter"] = json.dumps({"PriceArea": [z.value for z in zones]})
+            names = [
+                name for name, (row_product, _) in _FCR_PRODUCTS.items() if row_product is product
+            ]
+            params["filter"] = json.dumps(
+                {"PriceArea": [z.value for z in zones], "ProductName": names}
+            )
         groups: dict[tuple[datetime, BiddingZone, str], list[dict[str, Any]]] = {}
         dataset = "FcrDK1" if domestic else "FcrNdDK2"
         for row in self._records(dataset, params):

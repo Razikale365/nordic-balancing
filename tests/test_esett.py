@@ -300,9 +300,26 @@ def test_rejects_malformed_records(override: dict[str, Any], message: str) -> No
         client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(START, END)
 
 
+@pytest.mark.parametrize(
+    "key",
+    ["imblSalesPrice", "imblPurchasePrice", "upRegPrice", "downRegPrice", "mainDirRegPowerPerMBA"],
+)
+def test_rejects_a_record_missing_a_value_key(key: str) -> None:
+    # eSett sends every key, null when unpublished; a missing key is a schema change,
+    # which must not be reported as an unpublished value.
+    record = {name: value for name, value in PUBLISHED.items() if name != key}
+    with pytest.raises(SourceError, match=f"missing {key}"):
+        client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(START, END)
+
+
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
 def test_rejects_non_finite_prices(value: str) -> None:
-    body = '[{"timestampUTC":"2026-01-15T00:00:00Z","mba":"SE3","imblSalesPrice":' + value + "}]"
+    body = (
+        '[{"timestampUTC":"2026-01-15T00:00:00Z","mba":"SE3","imblSalesPrice":'
+        + value
+        + ',"imblPurchasePrice":null,"upRegPrice":null,"downRegPrice":null,'
+        '"mainDirRegPowerPerMBA":null}]'
+    )
     with pytest.raises(SourceError, match="not finite"):
         client(lambda _: httpx.Response(200, text=body)).imbalance_prices(START, END)
 

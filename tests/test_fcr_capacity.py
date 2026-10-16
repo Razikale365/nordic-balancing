@@ -250,8 +250,26 @@ def test_eds_fcr_query_columns_dataset_filter_and_pagination(
     assert seen[0].url.path == "/dataset/FcrNdDK2"
     assert params["timezone"] == "UTC"
     assert params["start"] == "2026-10-05T22:00" and params["end"] == "2026-10-05T22:45"
-    assert json.loads(params["filter"]) == {"PriceArea": ["DK2"]}
+    assert json.loads(params["filter"]) == {"PriceArea": ["DK2"], "ProductName": ["FCR-N"]}
     assert set(params["columns"].split(",")) == set(rows[0])
+
+
+def test_eds_fcr_d_query_filters_both_directions() -> None:
+    rows = [
+        r for r in nd_rows() if r["ProductName"].startswith("FCR-D") and r["PriceArea"] == "SE3"
+    ]
+    filters: list[dict[str, list[str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        filters.append(json.loads(request.url.params["filter"]))
+        return httpx.Response(200, json={"total": len(rows), "records": rows})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        result = EnergiDataServiceClient(http).capacity_market(
+            ReserveProduct.FCR_D, START, START + HOUR, zones=(BiddingZone.SE3,)
+        )
+    assert filters == [{"PriceArea": ["SE3"], "ProductName": ["FCR-D upp", "FCR-D ned"]}]
+    assert {r.direction for r in result} == {Direction.UP, Direction.DOWN}
 
 
 def test_eds_domestic_query_has_no_price_area_filter() -> None:

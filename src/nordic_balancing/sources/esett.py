@@ -19,6 +19,15 @@ BASE_URL = "https://api.opendata.esett.com"
 _HOURLY_END = datetime(2023, 5, 21, 22, tzinfo=UTC)
 _HOUR = timedelta(hours=1)
 _CHUNK = timedelta(days=31)
+# eSett sends every column, with null for an unpublished value, so a missing key means
+# the schema changed; reading it as None would report data as unpublished.
+_VALUE_KEYS = (
+    "imblSalesPrice",
+    "imblPurchasePrice",
+    "upRegPrice",
+    "downRegPrice",
+    "mainDirRegPowerPerMBA",
+)
 _EIC_CODES = {
     BiddingZone.DK1: "10YDK-1--------W",
     BiddingZone.DK2: "10YDK-2--------M",
@@ -190,6 +199,9 @@ def _parse_imbalance(record: object) -> ImbalancePrice:
     if not isinstance(area, str) or area not in BiddingZone.__members__:
         raise SourceError(f"{SOURCE}: unknown mba {area!r}")
     start = _parse_time(record.get("timestampUTC"))
+    missing = [key for key in _VALUE_KEYS if key not in record]
+    if missing:
+        raise SourceError(f"{SOURCE}: record is missing {', '.join(missing)}")
     sales = _number(record, "imblSalesPrice")
     purchase = _number(record, "imblPurchasePrice")
     if sales is not None and purchase is not None and sales != purchase:

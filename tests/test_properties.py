@@ -187,6 +187,9 @@ def _esett_record(zone: BiddingZone, stamp: datetime) -> dict[str, Any]:
         "mba": zone.value,
         "imblSalesPrice": value,
         "imblPurchasePrice": value,
+        "upRegPrice": None,
+        "downRegPrice": None,
+        "mainDirRegPowerPerMBA": None,
     }
 
 

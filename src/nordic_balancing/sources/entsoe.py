@@ -32,7 +32,7 @@ from xml.etree import ElementTree
 import httpx
 
 from nordic_balancing._http import _request
-from nordic_balancing.errors import SourceError
+from nordic_balancing.errors import NordicBalancingError, SourceError
 from nordic_balancing.models import (
     INTERVAL,
     BiddingZone,
@@ -322,7 +322,12 @@ class EntsoeClient:
                 # Retain the complete error body so redaction precedes truncation.
                 passthrough_statuses=frozenset(range(400, 600)),
             )
-        except httpx.HTTPError:
+        except NordicBalancingError:
+            # SourceError and RateLimitError carry no URL.
+            raise
+        except Exception:
+            # httpx.HTTPError or any other error from the client or a custom transport:
+            # its message or traceback can hold the request URL, and with it the token.
             raise SourceError(f"{SOURCE}: request failed") from None
         if response.is_error and response.status_code not in _PASSTHROUGH:
             detail = response.text.replace(self._api_key, "[REDACTED_SECRET]")

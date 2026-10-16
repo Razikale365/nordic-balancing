@@ -260,6 +260,10 @@ def _parse_record(
         raise SourceError(f"{SOURCE}: unexpected price_unit {record.get('price_unit')!r}")
     if record.get("volume_unit") != "MW":
         raise SourceError(f"{SOURCE}: unexpected volume_unit {record.get('volume_unit')!r}")
+    # A null price or volume is unpublished; a missing key means the schema changed.
+    missing = [key for key in ("price", "volume") if key not in record]
+    if missing:
+        raise SourceError(f"{SOURCE}: record is missing {', '.join(missing)}")
     reject_duplicate(
         seen,
         (start, zone, direction),

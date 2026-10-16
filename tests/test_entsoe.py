@@ -956,6 +956,16 @@ def test_transport_error_does_not_leak_token_or_url() -> None:
     assert KEY not in "".join(traceback.format_exception(caught.value))
 
 
+def test_non_httpx_transport_error_does_not_leak_token_or_url() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError(f"custom transport failed for {request.url}")
+
+    with pytest.raises(SourceError, match="request failed") as caught:
+        client(handler).imbalance_prices(START, END, [BiddingZone.SE3])
+    assert str(caught.value) == "entsoe: request failed"
+    assert KEY not in "".join(traceback.format_exception(caught.value))
+
+
 @pytest.mark.parametrize("key", [None, "", "  "])
 def test_missing_key_names_env_var(key: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ENTSOE_API_KEY", raising=False)
