@@ -14,6 +14,21 @@ the project is in beta: the public API is defined in
   repeated over four quarters. Demand, DKK prices and Danish time stay in `raw`. On SE3 aFRR
   hours that both publish, the values equal `SvKClient.capacity_market`
   (`examples/eds_capacity/`).
+- **FCR capacity.** New `ReserveProduct` members `FCR_N` ("FCR-N"), `FCR_D` ("FCR-D") and `FCR`
+  ("FCR"). FCR-N and FCR are symmetric: their records use `Direction.NONE`, meaning the MW are
+  available in both directions and paid once. Count such a record in both directions when summing
+  volume per direction, and once when summing cost. FCR-D records are `UP` or `DOWN`.
+  - `EnergiDataServiceClient.capacity_market` accepts the three products. FCR-N and FCR-D cover
+    DK2 and SE1-SE4 from 2021-11-09T23:00Z, from Energinet's `FcrNdDK2`. Each hour gives one
+    record from the source's `Total` row, with the area's procured MW and the price in EUR per MW;
+    the separate auction rows stay in `raw["auctions"]`. FCR covers DK1 (continental FCR, from
+    `FcrDK1`), with the MW procured in Denmark at the Danish settlement price. These products need
+    explicit `zones`: the default `(DK1, DK2)` raises `ValueError`, naming the zones to pass.
+  - `EntsoeClient.capacity_market(product, start, end, *, zones=(NO1, ..., NO5))` returns FCR-N
+    capacity for the Norwegian zones (ENTSO-E A81). ENTSO-E does not name the product: the series
+    is labelled FCR-N because the identical query returns Energinet's FCR-N figures for SE and DK2.
+  - The `Direction` docstring and `docs/API_CONTRACT.md` state the meaning of `NONE` on
+    `ReserveCapacity`.
 
 ### Documentation
 - README names the CC BY 4.0 data sources (Energinet, Svenska kraftnät, Fingrid) and
