@@ -1,4 +1,7 @@
-"""Tests added by the B14 mutation pass for energidataservice and svk."""
+"""Energi Data Service and SvK edge cases: request shape, windows, retries and response types.
+
+Each test covers a behaviour that no other test pinned (found by a mutation-testing pass).
+"""
 
 import json
 from collections.abc import Callable
