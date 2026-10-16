@@ -152,6 +152,7 @@
         "__enter__": "(self) -> Self",
         "__exit__": "(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: traceback | None) -> None",
         "__init__": "(self, api_key: str | None = None, http: httpx.Client | None = None, *, base_url: str = 'https://data.fingrid.fi/api', max_retries: int = 3, sleep: collections.abc.Callable[[float], None] = <built-in function sleep>, min_interval: float = 2.0, clock: collections.abc.Callable[[], float] = <built-in function monotonic>) -> None",
+        "capacity_market": "(self, product: nordic_balancing.models.ReserveProduct, start: datetime.datetime, end: datetime.datetime) -> list[nordic_balancing.models.ReserveCapacity]",
         "close": "(self) -> None",
         "imbalance_prices": "(self, start: datetime.datetime, end: datetime.datetime) -> list[nordic_balancing.models.ImbalancePrice]",
         "series": "(self, dataset_id: int, start: datetime.datetime, end: datetime.datetime) -> list[tuple[datetime.datetime, float | None]]"

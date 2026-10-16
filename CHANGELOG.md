@@ -7,6 +7,26 @@ the project is in beta: the public API is defined in
 ## Unreleased
 
 ### Added
+- **Fingrid:** `capacity_market(product, start, end)` returns FI hourly-market FCR-N,
+  FCR-D and mFRR prices/procured MW as `ReserveCapacity`. Hourly values expand to
+  quarters; missing price or volume rows remain `None`. Yearly-market FCR is excluded.
+- **ENTSO-E:** `capacity_market` accepts mFRR (A81/B95/A47) for NO1-NO5 from
+  2024-02-11T23:00Z (delivery day 2024-02-12) and FI from 2024-11-12T23:00Z
+  (delivery day 2024-11-13), retaining its Norwegian default. Flow A01/A02 maps
+  to UP/DOWN. Identical mFRR quantity/price repeats across documents, ZIP members
+  or TimeSeries collapse by `(zone, start, direction)` after A03 filling;
+  conflicting repeats and repeated positions within a Period raise. This includes
+  early historical documents with identical series pairs. Identical-repeat collapse
+  also applies to FCR-N; differing values still raise with its existing error text.
+  For mFRR only, a one-Point position-1
+  quantity-0/price-0 placeholder Period is ignored only when another non-placeholder
+  TimeSeries in the same response covers the same zone, direction and exact Period.
+  Lone zero series are retained; nonzero one-Point series and malformed series
+  remain subject to the existing validation and conflict rules. This was observed
+  on delivery day 2025-06-05 (starting 2025-06-04T22:00Z) for NO1-NO5 and FI:
+  Opus's FI cross-check matched Fingrid on 24/24 hours for the real series and
+  0/24 for the placeholders. Supplied live
+  evidence matched all 48 hour-directions against Fingrid FI and SvK SE3 on 2026-10-08.
 - **Energi Data Service:** `EnergiDataServiceClient.capacity_market(product, start, end, *,
   zones=(DK1, DK2))` returns `ReserveCapacity` records: aFRR for all 12 Nordic zones (from
   2022-12-07T23:00Z) and mFRR for DK1 and DK2 (from 2023-06-20T22:00Z). Each hourly source row
@@ -39,6 +59,15 @@ the project is in beta: the public API is defined in
   `entsoe: request failed (ConnectError)`. Code that compared the whole message must allow for it.
 
 ### Fixed
+- **ENTSO-E capacity:** long FCR-N and mFRR queries no longer fail solely because
+  the response exceeds ENTSO-E's 100-instance limit. Requests use seven-day chunks;
+  instance-limit acknowledgements trigger recursive halving at the nearest hour,
+  down to one hour. Whole-day clipping, HTTP retries and secret redaction are retained.
+  Imbalance-price request sizing is unchanged.
+- **ENTSO-E FCR-N:** identical repeated TimeSeries or documents now collapse to
+  one set of capacity records, including the observed 2026-09-22 delivery day.
+  Differing quantities or prices and repeated positions within a Period still raise.
+  The zero-placeholder exception remains mFRR-only.
 - **eSett:** a record missing any of `imblSalesPrice`, `imblPurchasePrice`, `upRegPrice`,
   `downRegPrice` or `mainDirRegPowerPerMBA` now raises `SourceError` naming the key. Before, a
   renamed or dropped column would have been read as `None` and reported as unpublished. eSett

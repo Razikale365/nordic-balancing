@@ -13,6 +13,7 @@ from nordic_balancing import (
     ESettClient,
     FingridClient,
     ImbalancePrice,
+    ReserveCapacity,
     ReserveProduct,
     SvKClient,
 )
@@ -242,3 +243,87 @@ def test_live_recent_entsoe_no1_fcr_n_capacity() -> None:
         r.raw["currency_Unit.name"] == "EUR" and r.raw["quantity_Measure_Unit.name"] == "MAW"
         for r in records
     )
+
+
+def _assert_recent_fi_no_capacity(
+    records: list[ReserveCapacity],
+    start: datetime,
+    end: datetime,
+    product: ReserveProduct,
+    zone: BiddingZone,
+    source: str,
+) -> None:
+    directions = (
+        {Direction.NONE} if product is ReserveProduct.FCR_N else {Direction.UP, Direction.DOWN}
+    )
+    expected = {(start + q * INTERVAL, d) for q in range(96) for d in directions}
+    assert len(records) == len(expected)
+    assert {(r.start, r.direction) for r in records} == expected
+    assert all(r.zone is zone and r.product is product and r.source == source for r in records)
+    assert all(r.resolution == timedelta(hours=1) for r in records)
+    assert all(_on_grid_in_window(r.start, start, end) for r in records)
+    assert all(r.price_eur_per_mw is not None and r.volume_mw is not None for r in records)
+
+
+@pytest.mark.live
+@pytest.mark.parametrize(
+    "product", [ReserveProduct.FCR_N, ReserveProduct.FCR_D, ReserveProduct.MFRR]
+)
+def test_live_recent_fingrid_capacity(product: ReserveProduct) -> None:
+    if not os.environ.get("FINGRID_API_KEY"):
+        pytest.skip("FINGRID_API_KEY not set")
+    start, end = _recent_day()
+    with FingridClient() as client:
+        records = client.capacity_market(product, start, end)
+    _assert_recent_fi_no_capacity(records, start, end, product, BiddingZone.FI, "fingrid")
+
+
+@pytest.mark.live
+@pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
+def test_live_recent_entsoe_mfrr_capacity(zone: BiddingZone) -> None:
+    if not os.environ.get("ENTSOE_API_KEY"):
+        pytest.skip("ENTSOE_API_KEY not set")
+    start, end = _recent_day()
+    with EntsoeClient() as client:
+        records = client.capacity_market(ReserveProduct.MFRR, start, end, zones=[zone])
+    _assert_recent_fi_no_capacity(records, start, end, ReserveProduct.MFRR, zone, "entsoe")
+
+
+@pytest.mark.live
+def test_live_recent_fi_mfrr_entsoe_equals_fingrid() -> None:
+    if not all(os.environ.get(key) for key in ("FINGRID_API_KEY", "ENTSOE_API_KEY")):
+        pytest.skip("FINGRID_API_KEY and ENTSOE_API_KEY required")
+    start, end = _recent_day()
+    with FingridClient() as fg, EntsoeClient() as en:
+        fingrid_records = fg.capacity_market(ReserveProduct.MFRR, start, end)
+        entsoe_records = en.capacity_market(ReserveProduct.MFRR, start, end, zones=[BiddingZone.FI])
+    for records, source in ((fingrid_records, "fingrid"), (entsoe_records, "entsoe")):
+        _assert_recent_fi_no_capacity(
+            records, start, end, ReserveProduct.MFRR, BiddingZone.FI, source
+        )
+    assert {(r.start, r.direction): (r.price_eur_per_mw, r.volume_mw) for r in fingrid_records} == {
+        (r.start, r.direction): (r.price_eur_per_mw, r.volume_mw) for r in entsoe_records
+    }
+
+
+@pytest.mark.live
+@pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.MFRR])
+def test_live_entsoe_no1_capacity_sixty_days(product: ReserveProduct) -> None:
+    if not os.environ.get("ENTSOE_API_KEY"):
+        pytest.skip("ENTSOE_API_KEY not set")
+    end, _ = _recent_day()
+    start = end - timedelta(days=60)
+    with EntsoeClient() as client:
+        records = client.capacity_market(product, start, end, zones=[BiddingZone.NO1])
+    directions = (
+        {Direction.NONE} if product is ReserveProduct.FCR_N else {Direction.UP, Direction.DOWN}
+    )
+    expected = 60 * 24 * 4 * len(directions)
+    assert expected * 95 // 100 <= len(records) <= expected, (
+        f"{product.value} NO1 60-day capacity: got {len(records)} records; "
+        f"expected {expected}, require at least 95% ({expected * 95 // 100})"
+    )
+    assert len({(r.start, r.direction) for r in records}) == len(records)
+    assert all(r.zone is BiddingZone.NO1 and r.product is product for r in records)
+    assert all(r.direction in directions and r.resolution == timedelta(hours=1) for r in records)
+    assert all(r.source == "entsoe" and _on_grid_in_window(r.start, start, end) for r in records)

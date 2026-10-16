@@ -14,7 +14,15 @@ import httpx
 from nordic_balancing._http import get_json
 from nordic_balancing._validate import finite_number, reject_duplicate
 from nordic_balancing.errors import SourceError
-from nordic_balancing.models import INTERVAL, BiddingZone, Direction, ImbalancePrice, to_utc
+from nordic_balancing.models import (
+    INTERVAL,
+    BiddingZone,
+    Direction,
+    ImbalancePrice,
+    ReserveCapacity,
+    ReserveProduct,
+    to_utc,
+)
 
 SOURCE = "fingrid"
 BASE_URL = "https://data.fingrid.fi/api"
@@ -31,6 +39,16 @@ _QUARTER_PRICING = datetime(2025, 3, 18, 23, tzinfo=UTC)
 # per hour), where repeating an hourly value would be wrong, so hourly records from
 # them are rejected instead of reshaped.
 _HOURLY_POLICY_DATASETS = frozenset({319, 244, 106, 369})
+
+
+# direction, price dataset, hourly-market procured-volume dataset.
+_CAPACITY_DATASETS = {
+    ReserveProduct.FCR_N: ((Direction.NONE, 317, 316),),
+    ReserveProduct.FCR_D: ((Direction.UP, 318, 315), (Direction.DOWN, 283, 281)),
+    # Dataset 328 is labelled MW/h by Fingrid; its published values are MW,
+    # like dataset 327 (verified against ENTSO-E A47 on 2026-10-08).
+    ReserveProduct.MFRR: ((Direction.UP, 329, 327), (Direction.DOWN, 330, 328)),
+}
 
 
 class _AuthenticatedTransport(httpx.BaseTransport):
@@ -197,6 +215,71 @@ class FingridClient:
             )
         return prices
 
+    def capacity_market(
+        self, product: ReserveProduct, start: datetime, end: datetime
+    ) -> list[ReserveCapacity]:
+        """Return FI FCR-N, FCR-D or mFRR hourly-market capacity.
+
+        Volumes are procured on the hourly market, excluding yearly-market FCR.
+        Each hour expands to four quarters, retaining hourly ``resolution``.
+        Missing price or volume rows remain ``None``; both source rows are kept
+        under ``raw["price"]`` and ``raw["volume"]``.
+        """
+        if not isinstance(product, ReserveProduct) or product not in _CAPACITY_DATASETS:
+            raise ValueError(
+                "Fingrid capacity supports ReserveProduct.FCR_N, ReserveProduct.FCR_D "
+                "and ReserveProduct.MFRR"
+            )
+        start_utc = to_utc(start, "start")
+        end_utc = to_utc(end, "end")
+        if end_utc <= start_utc:
+            raise ValueError("end must be after start")
+        query_start = start_utc.replace(minute=0, second=0, microsecond=0)
+        query_end = end_utc.replace(minute=0, second=0, microsecond=0)
+        if query_end < end_utc:
+            query_end += _HOUR
+        result: list[ReserveCapacity] = []
+        for direction, price_id, volume_id in _CAPACITY_DATASETS[product]:
+            prices = self._capacity_records(price_id, query_start, query_end)
+            volumes = self._capacity_records(volume_id, query_start, query_end)
+            for hour in prices.keys() | volumes.keys():
+                price, volume = prices.get(hour), volumes.get(hour)
+                for quarter in range(4):
+                    stamp = hour + quarter * INTERVAL
+                    if start_utc <= stamp < end_utc:
+                        result.append(
+                            ReserveCapacity(
+                                start=stamp,
+                                zone=BiddingZone.FI,
+                                product=product,
+                                direction=direction,
+                                price_eur_per_mw=price.value if price is not None else None,
+                                volume_mw=volume.value if volume is not None else None,
+                                source=SOURCE,
+                                resolution=_HOUR,
+                                raw={
+                                    "price": price.raw if price is not None else None,
+                                    "volume": volume.raw if volume is not None else None,
+                                },
+                            )
+                        )
+        return sorted(result, key=lambda r: (r.start, r.zone, r.direction))
+
+    def _capacity_records(
+        self, dataset_id: int, query_start: datetime, query_end: datetime
+    ) -> dict[datetime, _Record]:
+        records: dict[datetime, _Record] = {}
+        for row in self._dataset_rows(dataset_id, query_start, query_end):
+            record = _parse_record(row, dataset_id)
+            if record.resolution != _HOUR:
+                raise SourceError(f"{SOURCE}: capacity requires hourly records")
+            if not query_start <= record.start < query_end:
+                raise SourceError(f"{SOURCE}: record outside requested window")
+            if record.start in records:
+                raise SourceError(f"{SOURCE}: duplicate capacity interval start")
+            records[record.start] = record
+        return records
+
     def _pace(self) -> None:
         now = self._clock()
         if self._last_request is not None:
@@ -236,43 +319,7 @@ class FingridClient:
         query_end = end_utc.replace(minute=end_utc.minute // 15 * 15, second=0, microsecond=0)
         if query_end < end_utc:
             query_end += INTERVAL
-        params = {
-            "startTime": query_start.isoformat().replace("+00:00", "Z"),
-            "endTime": query_end.isoformat().replace("+00:00", "Z"),
-            "pageSize": str(PAGE_SIZE),
-        }
-        path = f"/datasets/{dataset_id}/data"
-        first = self._get(path, {**params, "page": "1"})
-        page_rows = _page_rows(first)
-        pagination = first.get("pagination")
-        if not isinstance(pagination, dict):
-            raise SourceError(f"{SOURCE}: page 1 has no pagination object")
-        total = pagination.get("total")
-        last_page = pagination.get("lastPage")
-        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
-            raise SourceError(f"{SOURCE}: page 1 has invalid total")
-        if isinstance(last_page, bool) or not isinstance(last_page, int) or last_page < 1:
-            raise SourceError(f"{SOURCE}: page 1 has invalid lastPage")
-        rows: list[Any] = []
-        for page in range(1, last_page + 1):
-            if page > 1:
-                page_rows = _page_rows(self._get(path, {**params, "page": str(page)}))
-            rows.extend(page_rows)
-            if len(rows) > total:
-                raise SourceError(
-                    f"{SOURCE}: row count {len(rows)} != page-1 total {total}; "
-                    "data changed or truncated"
-                )
-            if (len(page_rows) < PAGE_SIZE and len(rows) < total) or (page > 1 and not page_rows):
-                raise SourceError(
-                    f"{SOURCE}: page {page} ended with row count {len(rows)} != page-1 "
-                    f"total {total}; data changed or truncated"
-                )
-        if len(rows) != total:
-            raise SourceError(
-                f"{SOURCE}: row count {len(rows)} != page-1 total {total}; "
-                "data changed or truncated"
-            )
+        rows = self._dataset_rows(dataset_id, query_start, query_end)
         records = [_parse_record(row, dataset_id) for row in rows]
         if dataset_id not in _HOURLY_POLICY_DATASETS and any(
             record.resolution == _HOUR for record in records
@@ -313,6 +360,48 @@ class FingridClient:
             (r for r in expanded.values() if start_utc <= r.start < end_utc),
             key=lambda r: r.start,
         )
+
+    def _dataset_rows(
+        self, dataset_id: int, query_start: datetime, query_end: datetime
+    ) -> list[Any]:
+        params = {
+            "startTime": query_start.isoformat().replace("+00:00", "Z"),
+            "endTime": query_end.isoformat().replace("+00:00", "Z"),
+            "pageSize": str(PAGE_SIZE),
+        }
+        path = f"/datasets/{dataset_id}/data"
+        first = self._get(path, {**params, "page": "1"})
+        page_rows = _page_rows(first)
+        pagination = first.get("pagination")
+        if not isinstance(pagination, dict):
+            raise SourceError(f"{SOURCE}: page 1 has no pagination object")
+        total = pagination.get("total")
+        last_page = pagination.get("lastPage")
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise SourceError(f"{SOURCE}: page 1 has invalid total")
+        if isinstance(last_page, bool) or not isinstance(last_page, int) or last_page < 1:
+            raise SourceError(f"{SOURCE}: page 1 has invalid lastPage")
+        rows: list[Any] = []
+        for page in range(1, last_page + 1):
+            if page > 1:
+                page_rows = _page_rows(self._get(path, {**params, "page": str(page)}))
+            rows.extend(page_rows)
+            if len(rows) > total:
+                raise SourceError(
+                    f"{SOURCE}: row count {len(rows)} != page-1 total {total}; "
+                    "data changed or truncated"
+                )
+            if (len(page_rows) < PAGE_SIZE and len(rows) < total) or (page > 1 and not page_rows):
+                raise SourceError(
+                    f"{SOURCE}: page {page} ended with row count {len(rows)} != page-1 "
+                    f"total {total}; data changed or truncated"
+                )
+        if len(rows) != total:
+            raise SourceError(
+                f"{SOURCE}: row count {len(rows)} != page-1 total {total}; "
+                "data changed or truncated"
+            )
+        return rows
 
 
 def _page_rows(body: Any) -> list[Any]:

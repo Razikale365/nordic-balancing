@@ -1,0 +1,158 @@
+{
+ "data": [
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-07T22:00:00.000Z",
+   "endTime": "2026-10-07T23:00:00.000Z",
+   "value": 177.3
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-07T23:00:00.000Z",
+   "endTime": "2026-10-08T00:00:00.000Z",
+   "value": 169.9
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T00:00:00.000Z",
+   "endTime": "2026-10-08T01:00:00.000Z",
+   "value": 168.2
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T01:00:00.000Z",
+   "endTime": "2026-10-08T02:00:00.000Z",
+   "value": 179.5
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T02:00:00.000Z",
+   "endTime": "2026-10-08T03:00:00.000Z",
+   "value": 179.5
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T03:00:00.000Z",
+   "endTime": "2026-10-08T04:00:00.000Z",
+   "value": 188.4
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T04:00:00.000Z",
+   "endTime": "2026-10-08T05:00:00.000Z",
+   "value": 188.3
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T05:00:00.000Z",
+   "endTime": "2026-10-08T06:00:00.000Z",
+   "value": 169.4
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T06:00:00.000Z",
+   "endTime": "2026-10-08T07:00:00.000Z",
+   "value": 209.6
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T07:00:00.000Z",
+   "endTime": "2026-10-08T08:00:00.000Z",
+   "value": 195
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T08:00:00.000Z",
+   "endTime": "2026-10-08T09:00:00.000Z",
+   "value": 207.5
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T09:00:00.000Z",
+   "endTime": "2026-10-08T10:00:00.000Z",
+   "value": 210.4
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T10:00:00.000Z",
+   "endTime": "2026-10-08T11:00:00.000Z",
+   "value": 216.1
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T11:00:00.000Z",
+   "endTime": "2026-10-08T12:00:00.000Z",
+   "value": 204.3
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T12:00:00.000Z",
+   "endTime": "2026-10-08T13:00:00.000Z",
+   "value": 213
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T13:00:00.000Z",
+   "endTime": "2026-10-08T14:00:00.000Z",
+   "value": 196.3
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T14:00:00.000Z",
+   "endTime": "2026-10-08T15:00:00.000Z",
+   "value": 200.1
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T15:00:00.000Z",
+   "endTime": "2026-10-08T16:00:00.000Z",
+   "value": 205.5
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T16:00:00.000Z",
+   "endTime": "2026-10-08T17:00:00.000Z",
+   "value": 209.5
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T17:00:00.000Z",
+   "endTime": "2026-10-08T18:00:00.000Z",
+   "value": 235.2
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T18:00:00.000Z",
+   "endTime": "2026-10-08T19:00:00.000Z",
+   "value": 227
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T19:00:00.000Z",
+   "endTime": "2026-10-08T20:00:00.000Z",
+   "value": 230.9
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T20:00:00.000Z",
+   "endTime": "2026-10-08T21:00:00.000Z",
+   "value": 206.8
+  },
+  {
+   "datasetId": 315,
+   "startTime": "2026-10-08T21:00:00.000Z",
+   "endTime": "2026-10-08T22:00:00.000Z",
+   "value": 213.9
+  }
+ ],
+ "pagination": {
+  "total": 24,
+  "lastPage": 1,
+  "nextPage": null,
+  "prevPage": null,
+  "currentPage": 1,
+  "perPage": 100,
+  "from": 0,
+  "to": 24
+ }
+}

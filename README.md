@@ -71,6 +71,9 @@ Call `fingrid.imbalance_prices(start, end)` for FI prices, or `series(dataset_id
 `series()` expands hourly records only for datasets 319, 244, 106 and 369; any other
 dataset must be 15-minute, and an hourly record raises `SourceError`.
 
+Call `FingridClient().capacity_market(ReserveProduct.FCR_N, start, end)` for Finnish hourly-market capacity. FCR-D and mFRR are also supported; volumes exclude yearly-market procurement.
+Use `EntsoeClient().capacity_market(ReserveProduct.MFRR, start, end, zones=[BiddingZone.FI])` for Finnish mFRR, or omit `zones` for NO1–NO5. Finnish FCR is available through Fingrid.
+
 Svenska kraftnät needs no key.
 Call `SvKClient().capacity_market(ReserveProduct.MFRR, start, end)` for SE1–SE4 capacity prices and volumes.
 
@@ -85,12 +88,16 @@ Every client enforces the same contracts; a violation raises `SourceError`.
   or a mismatch is an error.
 - **C3 Duplicates.** Two source records for the same series key (zone and
   interval start, plus product and direction for SvK) are an error, even when
-  the values are equal. Two exceptions:
+  the values are equal. Documented exceptions:
   - ENTSO-E: an interval published under distinct price categories (A04 and
     A05) with one equal price collapses to that price, with every category kept
     in `raw`. The same category twice (or two records without one), unequal
     prices, equal prices at different resolutions, or two points at the same
     position within one Period raise.
+  - ENTSO-E FCR-N and mFRR capacity (A81): identical quantity/price repeats across
+    documents, ZIP members or TimeSeries collapse by zone, interval and direction
+    after A03 filling. Differing values and repeated positions within a Period
+    raise. The documented zero-placeholder exception remains mFRR-only.
   - Fingrid: around its 2025-03 switch an hourly and a 15-minute record can cover
     the same quarter. The hourly value is kept before 2025-03-18T23:00Z and the
     15-minute value from then on; the other stays in `raw["<dataset>_superseded"]`.
@@ -127,10 +134,10 @@ status, observed API behaviour and known limitations.
 | Source | Client | Data | Access | Verified against the live API |
 |---|---|---|---|---|
 | Energinet — Energi Data Service | `EnergiDataServiceClient` | DK1/DK2 imbalance prices and components, from 2025-03-04; aFRR capacity for all 12 Nordic zones from 2022-12-07T23:00Z; mFRR capacity for DK1/DK2 from 2023-06-20T22:00Z; FCR-N/FCR-D capacity for DK2/SE1–SE4 (Total rows only); symmetric FCR capacity for DK1 (hourly, expanded to 15 minutes) | free, no key (CC BY 4.0) | yes |
-| Fingrid | `FingridClient` | FI imbalance prices, mFRR up/down prices, dominating direction; any 15-minute dataset via `series()` | free API key | yes |
+| Fingrid | `FingridClient` | FI imbalance prices, mFRR up/down prices, dominating direction; FI hourly-market FCR-N, FCR-D and mFRR capacity prices/volumes via `capacity_market()` (hourly, expanded to quarters); any 15-minute dataset via `series()` | free API key | yes |
 | Svenska kraftnät | `SvKClient` | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) | free (CC-BY-4.0) | yes |
 | eSett | `ESettClient` | Imbalance prices, all 12 Nordic zones, from 2021-10-31T23:00Z | free, no key | yes |
-| ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones, from 2021-10-31T23:00Z (FI 22:00Z); symmetric FCR-N capacity (A81), NO1–NO5, product inferred from SE/DK2 comparisons | free token (`ENTSOE_API_KEY`) | yes |
+| ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones, from 2021-10-31T23:00Z (FI 22:00Z); symmetric FCR-N capacity (A81), NO1–NO5, product inferred from SE/DK2 comparisons; mFRR capacity (A81/A47) for NO1–NO5 from 2024-02-11T23:00Z (delivery day 2024-02-12) and FI from 2024-11-12T23:00Z (delivery day 2024-11-13), product verified against Fingrid/SvK | free token (`ENTSOE_API_KEY`) | yes |
 
 Not covered yet: activated balancing energy volumes. Out of scope: generic day-ahead
 price clients and mFRR bid submission — other

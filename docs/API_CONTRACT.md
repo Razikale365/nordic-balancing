@@ -77,18 +77,77 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   `zones=(BiddingZone.DK2,)` / covered SE zones for FCR-N/FCR-D; the existing
   default `(DK1, DK2)` raises `ValueError` for all three products.
 - `EntsoeClient.capacity_market(product, start, end, *, zones=(NO1, NO2, NO3, NO4, NO5))`
-  returns only FCR-N for Norwegian zones from `2014-09-30T22:00Z` (all five zones;
-  checked live 2026-10-16), using A81/B95/A52 and market agreement A01. Documents must be A81/A52; series must be B95, symmetric flow A03,
-  quantity unit MAW and currency EUR. `quantity` supplies MW and
+  returns FCR-N for Norwegian zones from `2014-09-30T22:00Z` (all five zones;
+  checked live 2026-10-16), using A81/B95/A52 and market agreement A01. For
+  FCR-N, documents must be A81/A52; series must be B95 with symmetric flow A03,
+  quantity unit MAW and currency EUR. The mFRR bullet below states its own rules.
+  `quantity` supplies MW and
   `procurement_Price.amount` supplies EUR/MW per hour; hourly points expand to
   quarters with `Direction.NONE`, retaining hourly `resolution`. A03 omitted
-  positions continue the preceding quantity and price. Duplicate values for a
-  zone and hour raise `SourceError`; other products/zones raise `ValueError`.
+  positions continue the preceding quantity and price. Identical FCR-N quantity
+  and price repeats collapse after A03 filling, whether from another document,
+  ZIP member or TimeSeries. Differing values raise `SourceError`, retaining the
+  existing FCR-N duplicate message. Repeated positions within one Period still
+  raise. Other products/zones raise `ValueError`.
   Returned A81 delivery-day Periods are validated and A03-filled in full, then
   clipped to each query chunk; non-overlapping Periods contribute no records.
   Results sort by `(start, zone, direction)` and are filtered to `[start, end)`.
   ENTSO-E does not name the product; the series is FCR-N because the identical
-  query returns EDS's FCR-N figures for SE and DK2.
+  query returns EDS's FCR-N figures for SE and DK2. ENTSO-E's FCR-N documents for
+  delivery days 2014-12-15 to 2014-12-19 and 2016-10-26 to 2016-11-03 are malformed
+  (price and quantity in separate series, Periods spanning several days, and a price
+  series scaled by 100), so a query covering those days raises `SourceError` rather
+  than guessing. Every other delivery day from 2014-09-30T22:00Z to 2026-10-15 parses
+  (scanned live 2026-10-16).
+  Both FCR-N and mFRR capacity requests use **7-day chunks**. If an acknowledgement
+  Reason text contains `exceeds the allowed maximum`, that capacity chunk is split
+  at the hour nearest its midpoint (for an odd number of hours, the later hour) and each half is
+  retried recursively, stopping at a minimum of one hour. An instance-limit
+  acknowledgement at that floor raises `SourceError`. Each half reuses full
+  delivery-day validation/A03 filling followed by clipping, preventing gaps and
+  duplicate quarters. Existing HTTP retry and token-redaction rules are unchanged.
+  A85 imbalance requests retain their 366-day chunk policy and do not use this
+  capacity-only halving.
+- `FingridClient.capacity_market(product, start, end)` returns FI `ReserveCapacity`
+  for FCR-N (NONE, price/volume datasets 317/316, from 2014-01-01T00:00Z), FCR-D
+  UP (318/315, from 2014-01-01T00:00Z), FCR-D DOWN (283/281, from
+  2021-04-21T22:00Z), and mFRR UP/DOWN (329/327 and 330/328, from
+  2022-11-30T23:00Z). Volume is hourly-market procured MW, excluding yearly-market
+  FCR. Price and volume join on hour start, retaining an hour present in either
+  dataset with the missing value `None`. Raw rows remain under `price` and `volume`.
+  Each hourly level expands to four quarters with hourly `resolution`, clipped
+  to `[start, end)` and sorted by `(start, zone, direction)`. Duplicate starts,
+  off-hour starts, non-hourly durations and non-finite values raise `SourceError`.
+  Other products raise `ValueError`; there is no `zones` parameter.
+  `series()`, its hourly-policy dataset set and `imbalance_prices()` are unchanged.
+- `EntsoeClient.capacity_market` also accepts `ReserveProduct.MFRR` for NO1–NO5
+  and FI, keeping the NO1–NO5 default. It queries A81/B95/A47 with market agreement
+  A01; requires EUR, MAW and PT60M; and maps flow A01 to UP and A02 to DOWN.
+  A03 continuation, whole-day validation/clipping and expansion apply. As for
+  FCR-N, identical quantity/price repeats from another document, ZIP member or
+  TimeSeries in the same document collapse by `(zone, start, direction)`, comparing
+  values after A03 filling. Conflicting repeats raise `SourceError`. Repeated
+  positions within one Period of one series still raise.
+  Before this comparison, mFRR-only placeholder Periods are ignored under a narrow
+  rule: exactly one Point, at position 1, with quantity 0 and price 0, and another
+  non-placeholder TimeSeries in the **same response** must provide values for the
+  same zone, direction and exact Period start/end. Without that counterpart, the
+  zero/zero series is kept as real data. Nonzero one-Point series, multiple-Point
+  series and malformed series are not exempted. All source metadata and points
+  are validated before filtering, independent of document/member order.
+  Observed on delivery day **2025-06-05** (Period starts **2025-06-04T22:00Z**)
+  for NO1-NO5 and FI: Opus's live FI cross-check found the real series matched
+  Fingrid **24/24 hours**, while the placeholder series matched **0/24**.
+  After filtering, identical repeats collapse and differing values raise as above.
+  This placeholder rule remains mFRR-only; it does not apply to FCR-N. FCR-N with FI raises
+  `ValueError`: ENTSO-E has no Finnish FCR. The mFRR product was verified live
+  against Fingrid (FI) and SvK
+  (SE3), matching all 48 hour-directions per source on 2026-10-08, per the supplied
+  work-order evidence. Reproduce with `examples/fi_no_capacity/cross_check.py`.
+  ENTSO-E mFRR coverage starts at delivery day **2024-02-12** for NO1-NO5
+  (first interval **2024-02-11T23:00Z**) and delivery day **2024-11-13** for FI
+  (first interval **2024-11-12T23:00Z**), from Opus's historical search.
+  Early documents repeat identical TimeSeries; the same mFRR collapse rule applies.
 - `SvKClient.capacity_market(product, start, end, zones=(SE1, SE2, SE3, SE4))`
   returns `list[ReserveCapacity]` for Swedish aFRR and mFRR capacity markets.
 
@@ -154,7 +213,8 @@ bidding zone, product, direction, and 15-minute UTC interval:
 - `start: datetime` — UTC start of the 15-minute interval.
 - `zone: BiddingZone` — Nordic bidding zone (`SE1`–`SE4` for `SvKClient`;
   all 12 zones for EDS aFRR, DK1/DK2 for EDS mFRR, DK2/SE1–SE4 for EDS
-  FCR-N/FCR-D, DK1 for EDS FCR, and NO1–NO5 for ENTSO-E FCR-N).
+  FCR-N/FCR-D, DK1 for EDS FCR, FI for Fingrid, NO1–NO5 for ENTSO-E FCR-N,
+  and NO1–NO5/FI for ENTSO-E mFRR).
 - `product: ReserveProduct` — reserve product (`ReserveProduct.MFRR = "mFRR"`,
   `ReserveProduct.AFRR = "aFRR"`, `ReserveProduct.FCR_N = "FCR-N"`,
   `ReserveProduct.FCR_D = "FCR-D"`, or `ReserveProduct.FCR = "FCR"`).
@@ -180,11 +240,15 @@ bidding zone, product, direction, and 15-minute UTC interval:
   `float` (`bool`, `NaN`, and infinities are rejected with `SourceError`).
 - **Pagination and duplicates**: paginated fetches must match the total row count
   reported by the source. Duplicate source records for the same series key raise
-  `SourceError`, with two documented exceptions:
+  `SourceError`, with the following documented exceptions:
   - ENTSO-E imbalance prices (A85): an interval published under distinct price
     categories (`A04` and `A05`) at the same resolution with an equal price
     collapses to one record,
     keeping all categories in `raw["categories"]`.
+  - ENTSO-E FCR-N and mFRR capacity (A81): identical quantity/price repeats across
+    documents, ZIP members or TimeSeries collapse by zone, quarter and direction
+    after A03 filling; differing values and repeated positions within a Period
+    raise. The separately documented placeholder filter applies only to mFRR.
   - Fingrid: where hourly and 15-minute records overlap around the March 2025
     transition (datasets 319, 244, 106, 369), the hourly value is kept before
     `2025-03-18T23:00Z` and the 15-minute value from then on, with the other
