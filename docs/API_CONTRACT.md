@@ -84,15 +84,25 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   `quantity` supplies MW and
   `procurement_Price.amount` supplies EUR/MW per hour; hourly points expand to
   quarters with `Direction.NONE`, retaining hourly `resolution`. A03 omitted
-  positions continue the preceding quantity and price. Every repeated FCR-N
-  `(zone, start)` raises `SourceError`, including identical documents or members.
-  Repeated positions or series inside a document also raise. Other products/zones
-  raise `ValueError`.
+  positions continue the preceding quantity and price. Identical FCR-N quantity
+  and price repeats collapse after A03 filling, whether from another document,
+  ZIP member or TimeSeries. Differing values raise `SourceError`, retaining the
+  existing FCR-N duplicate message. Repeated positions within one Period still
+  raise. Other products/zones raise `ValueError`.
   Returned A81 delivery-day Periods are validated and A03-filled in full, then
   clipped to each query chunk; non-overlapping Periods contribute no records.
   Results sort by `(start, zone, direction)` and are filtered to `[start, end)`.
   ENTSO-E does not name the product; the series is FCR-N because the identical
   query returns EDS's FCR-N figures for SE and DK2.
+  Both FCR-N and mFRR capacity requests use **7-day chunks**. If an acknowledgement
+  Reason text contains `exceeds the allowed maximum`, that capacity chunk is split
+  at the hour nearest its midpoint (half-hour ties round upward) and each half is
+  retried recursively, stopping at a minimum of one hour. An instance-limit
+  acknowledgement at that floor raises `SourceError`. Each half reuses full
+  delivery-day validation/A03 filling followed by clipping, preventing gaps and
+  duplicate quarters. Existing HTTP retry and token-redaction rules are unchanged.
+  A85 imbalance requests retain their 366-day chunk policy and do not use this
+  capacity-only halving.
 - `FingridClient.capacity_market(product, start, end)` returns FI `ReserveCapacity`
   for FCR-N (NONE, price/volume datasets 317/316, from 2014-01-01T00:00Z), FCR-D
   UP (318/315, from 2014-01-01T00:00Z), FCR-D DOWN (283/281, from
@@ -108,8 +118,8 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
 - `EntsoeClient.capacity_market` also accepts `ReserveProduct.MFRR` for NO1–NO5
   and FI, keeping the NO1–NO5 default. It queries A81/B95/A47 with market agreement
   A01; requires EUR, MAW and PT60M; and maps flow A01 to UP and A02 to DOWN.
-  A03 continuation, whole-day validation/clipping and expansion apply. For mFRR
-  only, identical quantity/price repeats from another document, ZIP member or
+  A03 continuation, whole-day validation/clipping and expansion apply. As for
+  FCR-N, identical quantity/price repeats from another document, ZIP member or
   TimeSeries in the same document collapse by `(zone, start, direction)`, comparing
   values after A03 filling. Conflicting repeats raise `SourceError`. Repeated
   positions within one Period of one series still raise.
@@ -124,7 +134,7 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   for NO1-NO5 and FI: Opus's live FI cross-check found the real series matched
   Fingrid **24/24 hours**, while the placeholder series matched **0/24**.
   After filtering, identical repeats collapse and differing values raise as above.
-  FCR-N and its duplicate rejection are unchanged. FCR-N with FI raises
+  This placeholder rule remains mFRR-only; it does not apply to FCR-N. FCR-N with FI raises
   `ValueError`: ENTSO-E has no Finnish FCR. The mFRR product was verified live
   against Fingrid (FI) and SvK
   (SE3), matching all 48 hour-directions per source on 2026-10-08, per the supplied
@@ -230,10 +240,10 @@ bidding zone, product, direction, and 15-minute UTC interval:
     categories (`A04` and `A05`) at the same resolution with an equal price
     collapses to one record,
     keeping all categories in `raw["categories"]`.
-  - ENTSO-E mFRR capacity (A81/A47) only: identical quantity/price repeats across
+  - ENTSO-E FCR-N and mFRR capacity (A81): identical quantity/price repeats across
     documents, ZIP members or TimeSeries collapse by zone, quarter and direction
-    after A03 filling; conflicting values and repeated positions within a Period
-    raise. FCR-N repeats always raise, including identical documents or series.
+    after A03 filling; differing values and repeated positions within a Period
+    raise. The separately documented placeholder filter applies only to mFRR.
   - Fingrid: where hourly and 15-minute records overlap around the March 2025
     transition (datasets 319, 244, 106, 369), the hourly value is kept before
     `2025-03-18T23:00Z` and the 15-minute value from then on, with the other

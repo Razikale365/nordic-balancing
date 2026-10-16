@@ -397,16 +397,23 @@ def test_entsoe_mfrr_identical_documents_collapse() -> None:
     assert result == entsoe_fetch(product=ReserveProduct.MFRR)
 
 
-def test_entsoe_fcr_identical_documents_still_raise() -> None:
+@pytest.mark.parametrize("where", ["series", "document"])
+def test_entsoe_fcr_identical_repeats_collapse(where: str) -> None:
     xml = (FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes()
-    for second in (xml, xml.replace(b"<quantity>14.4", b"<quantity>15.4", 1)):
-        with pytest.raises(SourceError, match="duplicate capacity"):
-            entsoe_fetch(
-                zip_members(xml, second),
-                start=datetime(2026, 10, 5, 22, tzinfo=UTC),
-                end=datetime(2026, 10, 6, 1, tzinfo=UTC),
-                product=ReserveProduct.FCR_N,
-            )
+    if where == "series":
+        root = ET.fromstring(xml)
+        series = root.find("{*}TimeSeries")
+        assert series is not None
+        root.append(ET.fromstring(ET.tostring(series)))
+        content = ET.tostring(root)
+    else:
+        content = zip_members(xml, xml)
+    start = datetime(2026, 10, 5, 22, tzinfo=UTC)
+    result = entsoe_fetch(content, start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N)
+    expected = entsoe_fetch(xml, start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N)
+    assert len(result) == 12
+    assert result == expected
+    assert [r.raw for r in result] == [r.raw for r in expected]
 
 
 def test_entsoe_whole_day_clips_across_two_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -754,16 +761,20 @@ def test_entsoe_fcr_flow_error_text_unchanged(where: str) -> None:
 
 
 @pytest.mark.parametrize("where", ["series", "document"])
-def test_entsoe_fcr_duplicate_error_text_unchanged(where: str) -> None:
+def test_entsoe_fcr_conflicting_duplicate_error_text_unchanged(where: str) -> None:
     xml = (FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes()
     if where == "series":
         root = ET.fromstring(xml)
         series = root.find("{*}TimeSeries")
         assert series is not None
-        root.append(ET.fromstring(ET.tostring(series)))
+        changed = ET.fromstring(ET.tostring(series))
+        quantity = changed.find("{*}Period/{*}Point/{*}quantity")
+        assert quantity is not None
+        quantity.text = "999.25"
+        root.append(changed)
         content = ET.tostring(root)
     else:
-        content = zip_members(xml, xml)
+        content = zip_members(xml, xml.replace(b"<quantity>14.4", b"<quantity>999.25", 1))
     start = datetime(2026, 10, 5, 22, tzinfo=UTC)
     with pytest.raises(SourceError) as exc:
         entsoe_fetch(content, start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N)
@@ -1088,4 +1099,197 @@ def test_entsoe_fcr_zero_placeholder_stays_strict() -> None:
         entsoe_fetch(
             ET.tostring(root), start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N
         )
+    assert str(exc.value) == f"entsoe: duplicate capacity for NO1 at {start}"
+
+
+def instance_limit_ack(prefix: str = "") -> bytes:
+    root = ET.fromstring((FIXTURES.parent / "entsoe" / "acknowledgement-no-data.xml").read_bytes())
+    text = root.find("{*}Reason/{*}text")
+    assert text is not None
+    text.text = prefix + "The number of instances (106) exceeds the allowed maximum (100)"
+    return ET.tostring(root)
+
+
+def request_window(request: httpx.Request) -> tuple[datetime, datetime]:
+    return (
+        datetime.strptime(request.url.params["periodStart"], "%Y%m%d%H%M").replace(tzinfo=UTC),
+        datetime.strptime(request.url.params["periodEnd"], "%Y%m%d%H%M").replace(tzinfo=UTC),
+    )
+
+
+@pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.MFRR])
+@pytest.mark.parametrize("ack_status", [200, 400])
+@pytest.mark.parametrize("trim", [False, True])
+def test_entsoe_capacity_splits_instance_limit_without_changing_records(
+    product: ReserveProduct,
+    ack_status: int,
+    trim: bool,
+) -> None:
+    if product is ReserveProduct.FCR_N:
+        start = datetime(2026, 10, 5, 22, tzinfo=UTC)
+        end = start + 3 * HOUR
+        content = (FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes()
+        maximum = HOUR
+    else:
+        start, end, content, maximum = START, END, archive(), 6 * HOUR
+    query_start = start + INTERVAL + timedelta(microseconds=1) if trim else start
+    query_end = end - INTERVAL + timedelta(microseconds=1) if trim else end
+    expected = entsoe_fetch(content, start=query_start, end=query_end, product=product)
+    calls: list[tuple[datetime, datetime]] = []
+    # The limit phrase lies after the normal 200-character error truncation.
+    acknowledgement = instance_limit_ack("test-token " + "detail " * 40)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        window = request_window(request)
+        calls.append(window)
+        if window[1] - window[0] > maximum:
+            return httpx.Response(ack_status, content=acknowledgement)
+        # ENTSO-E returns the whole Period, including outside this smaller chunk.
+        return httpx.Response(200, content=content)
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        EntsoeClient("test-token", http, max_workers=1) as client,
+    ):
+        result = client.capacity_market(product, query_start, query_end, zones=[BiddingZone.NO1])
+    assert result == expected
+    assert [r.raw for r in result] == [r.raw for r in expected]
+    assert len(calls) == (5 if product is ReserveProduct.FCR_N else 7)
+    assert calls[0] == (start, end)
+    assert all(a.minute == b.minute == 0 and a < b for a, b in calls)
+    if product is ReserveProduct.FCR_N:
+        assert calls == [
+            (start, end),
+            (start, start + 2 * HOUR),
+            (start, start + HOUR),
+            (start + HOUR, start + 2 * HOUR),
+            (start + 2 * HOUR, end),
+        ]
+
+
+@pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.MFRR])
+def test_entsoe_capacity_instance_limit_at_one_hour_raises(product: ReserveProduct) -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(400, content=instance_limit_ack("test-token "))
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        EntsoeClient("test-token", http, max_workers=1) as client,
+        pytest.raises(SourceError) as exc,
+    ):
+        client.capacity_market(product, START, START + HOUR, zones=[BiddingZone.NO1])
+    assert len(calls) == 1
+    assert type(exc.value) is SourceError
+    assert "exceeds the allowed maximum" in str(exc.value)
+    assert "[REDACTED_SECRET]" in str(exc.value) and "test-token" not in str(exc.value)
+
+
+@pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.MFRR])
+def test_entsoe_capacity_default_chunks_are_seven_days(product: ReserveProduct) -> None:
+    calls: list[tuple[datetime, datetime]] = []
+    no_data = (FIXTURES.parent / "entsoe" / "acknowledgement-no-data.xml").read_bytes()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request_window(request))
+        return httpx.Response(200, content=no_data)
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        EntsoeClient("test-token", http, max_workers=1) as client,
+    ):
+        result = client.capacity_market(
+            product, START, START + timedelta(days=30), zones=[BiddingZone.NO1]
+        )
+    assert result == []
+    assert len(calls) == 5
+    assert calls == [
+        (START + timedelta(days=offset), START + timedelta(days=min(offset + 7, 30)))
+        for offset in (0, 7, 14, 21, 28)
+    ]
+
+
+@pytest.mark.parametrize("days,expected_requests", [(30, 1), (367, 2)])
+def test_entsoe_imbalance_keeps_year_chunks(days: int, expected_requests: int) -> None:
+    calls: list[tuple[datetime, datetime]] = []
+    no_data = (FIXTURES.parent / "entsoe" / "acknowledgement-no-data.xml").read_bytes()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request_window(request))
+        assert request.url.params["documentType"] == "A85"
+        return httpx.Response(200, content=no_data)
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        EntsoeClient("test-token", http, max_workers=1) as client,
+    ):
+        assert client.imbalance_prices(START, START + timedelta(days=days), [BiddingZone.NO1]) == []
+    assert len(calls) == expected_requests
+    assert calls[0][1] - calls[0][0] == timedelta(days=min(days, 366))
+
+
+@pytest.mark.parametrize("kind", ["other_ack", "http_error", "invalid_xml"])
+def test_entsoe_capacity_only_splits_instance_limit_acknowledgements(kind: str) -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if kind == "http_error":
+            return httpx.Response(404, text="exceeds the allowed maximum")
+        if kind == "invalid_xml":
+            return httpx.Response(200, content=b"not XML: exceeds the allowed maximum")
+        root = ET.fromstring(instance_limit_ack())
+        text = root.find("{*}Reason/{*}text")
+        assert text is not None
+        text.text = "permission denied"
+        return httpx.Response(400, content=ET.tostring(root))
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        EntsoeClient("test-token", http, max_workers=1) as client,
+        pytest.raises(SourceError),
+    ):
+        client.capacity_market(ReserveProduct.MFRR, START, END, zones=[BiddingZone.NO1])
+    assert len(calls) == 1
+
+
+def test_entsoe_imbalance_does_not_split_instance_limit_acknowledgements() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(400, content=instance_limit_ack())
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        EntsoeClient("test-token", http, max_workers=1) as client,
+        pytest.raises(SourceError, match="exceeds the allowed maximum"),
+    ):
+        client.imbalance_prices(START, END, [BiddingZone.NO1])
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("where", ["series", "document"])
+@pytest.mark.parametrize("field", ["quantity", "procurement_Price.amount"])
+def test_entsoe_fcr_differing_repeat_values_still_raise(where: str, field: str) -> None:
+    xml = (FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes()
+    root = ET.fromstring(xml)
+    series = root.find("{*}TimeSeries")
+    assert series is not None
+    changed = ET.fromstring(ET.tostring(series))
+    node = changed.find(f"{{*}}Period/{{*}}Point/{{*}}{field}")
+    assert node is not None
+    node.text = "999.25"
+    if where == "series":
+        root.append(changed)
+        content = ET.tostring(root)
+    else:
+        root.remove(series)
+        root.append(changed)
+        content = zip_members(xml, ET.tostring(root))
+    start = datetime(2026, 10, 5, 22, tzinfo=UTC)
+    with pytest.raises(SourceError) as exc:
+        entsoe_fetch(content, start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N)
     assert str(exc.value) == f"entsoe: duplicate capacity for NO1 at {start}"

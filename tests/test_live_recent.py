@@ -304,3 +304,26 @@ def test_live_recent_fi_mfrr_entsoe_equals_fingrid() -> None:
     assert {(r.start, r.direction): (r.price_eur_per_mw, r.volume_mw) for r in fingrid_records} == {
         (r.start, r.direction): (r.price_eur_per_mw, r.volume_mw) for r in entsoe_records
     }
+
+
+@pytest.mark.live
+@pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.MFRR])
+def test_live_entsoe_no1_capacity_sixty_days(product: ReserveProduct) -> None:
+    if not os.environ.get("ENTSOE_API_KEY"):
+        pytest.skip("ENTSOE_API_KEY not set")
+    end, _ = _recent_day()
+    start = end - timedelta(days=60)
+    with EntsoeClient() as client:
+        records = client.capacity_market(product, start, end, zones=[BiddingZone.NO1])
+    directions = (
+        {Direction.NONE} if product is ReserveProduct.FCR_N else {Direction.UP, Direction.DOWN}
+    )
+    expected = 60 * 24 * 4 * len(directions)
+    assert expected * 95 // 100 <= len(records) <= expected, (
+        f"{product.value} NO1 60-day capacity: got {len(records)} records; "
+        f"expected {expected}, require at least 95% ({expected * 95 // 100})"
+    )
+    assert len({(r.start, r.direction) for r in records}) == len(records)
+    assert all(r.zone is BiddingZone.NO1 and r.product is product for r in records)
+    assert all(r.direction in directions and r.resolution == timedelta(hours=1) for r in records)
+    assert all(r.source == "entsoe" and _on_grid_in_window(r.start, start, end) for r in records)

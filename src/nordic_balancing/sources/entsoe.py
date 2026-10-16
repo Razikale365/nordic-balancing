@@ -48,6 +48,8 @@ BASE_URL = "https://web-api.tp.entsoe.eu/api"
 # Observed request latency did not grow with the window (2026-10-12: 2-42 s for one hour,
 # 4-21 s for 31 to 367 days), so ask for a whole (leap) year at a time.
 _CHUNK = timedelta(days=366)
+_CAPACITY_CHUNK = timedelta(days=7)
+_INSTANCE_LIMIT = "exceeds the allowed maximum"
 _HOUR = timedelta(hours=1)
 _NO = (BiddingZone.NO1, BiddingZone.NO2, BiddingZone.NO3, BiddingZone.NO4, BiddingZone.NO5)
 _LIMIT = 64 * 1024 * 1024
@@ -75,6 +77,10 @@ _EIC_CODES = {
     BiddingZone.SE3: "10Y1001A1001A46L",
     BiddingZone.SE4: "10Y1001A1001A47J",
 }
+
+
+class _CapacityInstanceLimit(SourceError):
+    """A capacity acknowledgement that permits retrying a smaller time window."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,10 +221,12 @@ class EntsoeClient:
         ENTSO-E does not name the product; FCR-N is inferred from the identical
         query matching EDS FCR-N for Swedish zones and DK2.
         The mFRR product is verified against Fingrid and SvK (2026-10-08).
-        For mFRR only, identical quantity/price repeats across documents, members
-        or series collapse after A03 filling. Conflicting mFRR repeats and all
-        FCR-N repeats raise ``SourceError``. Repeated positions within a Period
-        always raise. For mFRR, a one-Point position-1 zero/zero Period is ignored
+        Identical quantity/price repeats across documents, members or series
+        collapse after A03 filling for both products; differing values raise
+        ``SourceError``. Repeated positions within a Period always raise.
+        Capacity requests cover at most seven days, halving on the ENTSO-E
+        instance-limit acknowledgement down to one hour. For mFRR only, a
+        one-Point position-1 zero/zero Period is ignored
         only when another non-placeholder series in the response covers the same
         direction and exact Period.
         """
@@ -245,7 +253,7 @@ class EntsoeClient:
         zone_list = sorted(set(requested))
         if not zone_list:
             raise ValueError("zones must not be empty")
-        jobs = _jobs(start_utc, end_utc, zone_list)
+        jobs = _jobs(start_utc, end_utc, zone_list, max_chunk=_CAPACITY_CHUNK)
         pool = ThreadPoolExecutor(min(self._max_workers, len(jobs)))
         try:
             try:
@@ -259,14 +267,14 @@ class EntsoeClient:
                 for record in part:
                     key = (record.zone, record.start, record.direction)
                     existing = collected.get(key)
-                    if existing is not None and product is ReserveProduct.FCR_N:
-                        raise SourceError(
-                            f"{SOURCE}: duplicate capacity for {record.zone} at {record.start}"
-                        )
                     if existing is not None and (
                         existing.volume_mw != record.volume_mw
                         or existing.price_eur_per_mw != record.price_eur_per_mw
                     ):
+                        if product is ReserveProduct.FCR_N:
+                            raise SourceError(
+                                f"{SOURCE}: duplicate capacity for {record.zone} at {record.start}"
+                            )
                         raise SourceError(
                             f"{SOURCE}: duplicate capacity with differing values for mFRR "
                             f"{record.zone} at {record.start} ({record.direction.name})"
@@ -289,21 +297,32 @@ class EntsoeClient:
     ) -> list[ReserveCapacity]:
         records: list[ReserveCapacity] = []
         process = "A47" if product is ReserveProduct.MFRR else "A52"
-        points = [
-            point
-            for member in self._request_members(
-                zone, chunk_start, chunk_end, capacity=True, capacity_process=process
-            )
-            for point in _points(
-                member,
-                _EIC_CODES[zone],
-                chunk_start,
-                chunk_end,
-                api_key=self._api_key,
-                capacity=True,
-                capacity_process=process,
-            )
-        ]
+        try:
+            points = [
+                point
+                for member in self._request_members(
+                    zone, chunk_start, chunk_end, capacity=True, capacity_process=process
+                )
+                for point in _points(
+                    member,
+                    _EIC_CODES[zone],
+                    chunk_start,
+                    chunk_end,
+                    api_key=self._api_key,
+                    capacity=True,
+                    capacity_process=process,
+                )
+            ]
+        except _CapacityInstanceLimit as exc:
+            hours = (chunk_end - chunk_start) // _HOUR
+            if hours <= 1:
+                raise SourceError(str(exc)) from None
+            # Both bounds are whole hours. Round midpoint ties upward, keeping
+            # both halves nonempty and reusing per-response whole-day clipping.
+            midpoint = chunk_start + ((hours + 1) // 2) * _HOUR
+            return self._fetch_capacity(
+                zone, chunk_start, midpoint, product=product
+            ) + self._fetch_capacity(zone, midpoint, chunk_end, product=product)
         if product is ReserveProduct.MFRR:
             # Validate all members before filtering: a placeholder may precede
             # its real counterpart, even in a different member of this response.
@@ -505,6 +524,8 @@ def _jobs(
     start: datetime,
     end: datetime,
     zones: list[BiddingZone],
+    *,
+    max_chunk: timedelta | None = None,
 ) -> list[tuple[BiddingZone, datetime, datetime]]:
     query_start = start.replace(minute=0, second=0, microsecond=0)
     query_end = end.replace(minute=0, second=0, microsecond=0)
@@ -512,8 +533,9 @@ def _jobs(
         query_end += _HOUR
     jobs: list[tuple[BiddingZone, datetime, datetime]] = []
     chunk_start = query_start
+    chunk_size = min(_CHUNK, max_chunk) if max_chunk is not None else _CHUNK
     while chunk_start < query_end:
-        chunk_end = min(chunk_start + _CHUNK, query_end)
+        chunk_end = min(chunk_start + chunk_size, query_end)
         jobs.extend((zone, chunk_start, chunk_end) for zone in zones)
         chunk_start = chunk_end
     return jobs
@@ -587,7 +609,7 @@ def _points(
         raise SourceError(f"{SOURCE}: document is not XML") from exc
     name = _local(root.tag)
     if name == "Acknowledgement_MarketDocument":
-        _acknowledgement(root, api_key)
+        _acknowledgement(root, api_key, capacity=capacity)
         return []
     if name != "Balancing_MarketDocument":
         raise SourceError(f"{SOURCE}: unknown root element {name!r}")
@@ -619,13 +641,18 @@ def _points(
     ]
 
 
-def _acknowledgement(root: ElementTree.Element, api_key: str) -> None:
+def _acknowledgement(root: ElementTree.Element, api_key: str, *, capacity: bool = False) -> None:
     reason_texts = [
         [(text.text or "").strip() for text in _children(reason, "text")]
         for reason in _children(root, "Reason")
     ]
-    if reason_texts and all(
-        texts and all(_NO_DATA in text for text in texts) for texts in reason_texts
+    instance_limit = capacity and any(
+        _INSTANCE_LIMIT in text for texts in reason_texts for text in texts
+    )
+    if (
+        not instance_limit
+        and reason_texts
+        and all(texts and all(_NO_DATA in text for text in texts) for texts in reason_texts)
     ):
         return
     reasons = ["; ".join(texts) for texts in reason_texts]
@@ -634,7 +661,10 @@ def _acknowledgement(root: ElementTree.Element, api_key: str) -> None:
         raise SourceError(f"{SOURCE}: acknowledgement without a reason")
     if api_key:
         detail = detail.replace(api_key, "[REDACTED_SECRET]")
-    raise SourceError(f"{SOURCE}: acknowledgement: {detail[:200]}")
+    message = f"{SOURCE}: acknowledgement: {detail[:200]}"
+    if instance_limit:
+        raise _CapacityInstanceLimit(message)
+    raise SourceError(message)
 
 
 def _series_points(

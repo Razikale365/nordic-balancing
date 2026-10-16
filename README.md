@@ -94,10 +94,10 @@ Every client enforces the same contracts; a violation raises `SourceError`.
     in `raw`. The same category twice (or two records without one), unequal
     prices, equal prices at different resolutions, or two points at the same
     position within one Period raise.
-  - ENTSO-E mFRR capacity (A81/A47) only: identical quantity/price repeats across
+  - ENTSO-E FCR-N and mFRR capacity (A81): identical quantity/price repeats across
     documents, ZIP members or TimeSeries collapse by zone, interval and direction
-    after A03 filling. Conflicting repeats and repeated positions within a Period
-    raise. FCR-N repeats always raise, including identical documents or series.
+    after A03 filling. Differing values and repeated positions within a Period
+    raise. The documented zero-placeholder exception remains mFRR-only.
   - Fingrid: around its 2025-03 switch an hourly and a 15-minute record can cover
     the same quarter. The hourly value is kept before 2025-03-18T23:00Z and the
     15-minute value from then on; the other stays in `raw["<dataset>_superseded"]`.

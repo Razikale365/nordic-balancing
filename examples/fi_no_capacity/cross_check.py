@@ -23,7 +23,7 @@ from nordic_balancing import (
     SourceError,
     SvKClient,
 )
-from nordic_balancing.sources.entsoe import _jobs
+from nordic_balancing.sources.entsoe import _CAPACITY_CHUNK, _jobs
 
 type Key = tuple[datetime, Direction]
 type Value = tuple[float | None, float | None]
@@ -107,7 +107,7 @@ def _entsoe_se3(client: EntsoeClient, start: datetime, end: datetime) -> list[Re
     # SE3 is an evidence-only comparison outside the public NO/FI contract.
     # Use the same validated parser and chunk planning without widening that API.
     records: dict[Key, ReserveCapacity] = {}
-    for job in _jobs(start, end, [BiddingZone.SE3]):
+    for job in _jobs(start, end, [BiddingZone.SE3], max_chunk=_CAPACITY_CHUNK):
         for record in client._fetch_capacity(*job, product=ReserveProduct.MFRR):
             if not start <= record.start < end:
                 continue

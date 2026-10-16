@@ -16,8 +16,9 @@ the project is in beta: the public API is defined in
   to UP/DOWN. Identical mFRR quantity/price repeats across documents, ZIP members
   or TimeSeries collapse by `(zone, start, direction)` after A03 filling;
   conflicting repeats and repeated positions within a Period raise. This includes
-  early historical documents with identical series pairs. FCR-N duplicate rejection
-  and its error messages are unchanged. For mFRR only, a one-Point position-1
+  early historical documents with identical series pairs. Identical-repeat collapse
+  also applies to FCR-N; differing values still raise with its existing error text.
+  For mFRR only, a one-Point position-1
   quantity-0/price-0 placeholder Period is ignored only when another non-placeholder
   TimeSeries in the same response covers the same zone, direction and exact Period.
   Lone zero series are retained; nonzero one-Point series and malformed series
@@ -58,6 +59,15 @@ the project is in beta: the public API is defined in
   `entsoe: request failed (ConnectError)`. Code that compared the whole message must allow for it.
 
 ### Fixed
+- **ENTSO-E capacity:** long FCR-N and mFRR queries no longer fail solely because
+  the response exceeds ENTSO-E's 100-instance limit. Requests use seven-day chunks;
+  instance-limit acknowledgements trigger recursive halving at the nearest hour,
+  down to one hour. Whole-day clipping, HTTP retries and secret redaction are retained.
+  Imbalance-price request sizing is unchanged.
+- **ENTSO-E FCR-N:** identical repeated TimeSeries or documents now collapse to
+  one set of capacity records, including the observed 2026-09-22 delivery day.
+  Differing quantities or prices and repeated positions within a Period still raise.
+  The zero-placeholder exception remains mFRR-only.
 - **eSett:** a record missing any of `imblSalesPrice`, `imblPurchasePrice`, `upRegPrice`,
   `downRegPrice` or `mainDirRegPowerPerMBA` now raises `SourceError` naming the key. Before, a
   renamed or dropped column would have been read as `None` and reported as unpublished. eSett

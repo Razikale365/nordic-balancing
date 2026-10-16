@@ -403,24 +403,29 @@ def test_entsoe_requires_capacity_metadata_and_point_values(tag: str) -> None:
 
 
 @pytest.mark.parametrize("kind", ["series", "document", "point"])
-def test_entsoe_rejects_duplicate_capacity_even_equal_values(kind: str) -> None:
+def test_entsoe_capacity_collapses_identical_repeats_except_period_positions(kind: str) -> None:
     xml = (FIXTURES / "entsoe-no1.xml").read_text()
+    expected = entsoe_fetch(xml.encode())
     if kind == "series":
         a, b = xml.index("<TimeSeries>"), xml.index("</TimeSeries>") + len("</TimeSeries>")
         xml = xml[:b] + xml[a:b] + xml[b:]
+        content = xml.encode()
     elif kind == "point":
         a, b = xml.index("<Point>"), xml.index("</Point>") + len("</Point>")
         xml = xml[:b] + xml[a:b] + xml[b:]
+        with pytest.raises(SourceError, match="duplicate capacity position"):
+            entsoe_fetch(xml.encode())
+        return
     else:
         archive = io.BytesIO()
         with zipfile.ZipFile(archive, "w") as output:
             output.writestr("first.xml", xml)
             output.writestr("second.xml", xml)
-        with pytest.raises(SourceError, match="duplicate"):
-            entsoe_fetch(archive.getvalue())
-        return
-    with pytest.raises(SourceError, match="duplicate"):
-        entsoe_fetch(xml.encode())
+        content = archive.getvalue()
+    result = entsoe_fetch(content)
+    assert len(result) == 12
+    assert result == expected
+    assert [r.raw for r in result] == [r.raw for r in expected]
 
 
 @pytest.mark.parametrize(
