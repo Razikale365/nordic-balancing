@@ -256,6 +256,7 @@ def _fetch_svk_populated() -> list[ReserveCapacity]:
 
 
 # The exact value each provided field takes from the populated fixtures above.
+# ENTSO-E is left out: it provides one value field, so no column can be swapped.
 IMBALANCE_PRICE_VALUES: dict[str, dict[str, object]] = {
     "energidataservice": {
         "zone": BiddingZone.DK2,
@@ -440,3 +441,7 @@ def test_imbalance_price_fields_map_to_their_source_columns(source: str) -> None
     assert len(records) == 1
     actual = {name: getattr(records[0], name) for name in expected}
     assert actual == expected
+    # IntEnum and StrEnum members equal their raw values, so also pin the type.
+    assert {name: type(value) for name, value in actual.items()} == {
+        name: type(value) for name, value in expected.items()
+    }
