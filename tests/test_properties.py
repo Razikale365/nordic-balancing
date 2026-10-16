@@ -457,7 +457,7 @@ def _svk_handler(request: httpx.Request) -> httpx.Response:
         _zones((BiddingZone.SE1, BiddingZone.SE2, BiddingZone.SE3, BiddingZone.SE4), 3),
         end_limit=datetime(2026, 4, 1, tzinfo=UTC),
     ),
-    product=st.sampled_from(ReserveProduct),
+    product=st.sampled_from((ReserveProduct.MFRR, ReserveProduct.AFRR)),
 )
 @settings(max_examples=30, deadline=None)
 def test_svk_same_records_however_the_window_is_split(
@@ -952,7 +952,7 @@ def _svk_response_case(
     length = draw(st.integers(_us(timedelta(minutes=1)), _us(timedelta(hours=6))))
     end = start + timedelta(microseconds=length)
     zones = draw(_zones((BiddingZone.SE1, BiddingZone.SE2, BiddingZone.SE3, BiddingZone.SE4), 3))
-    product = draw(st.sampled_from(ReserveProduct))
+    product = draw(st.sampled_from((ReserveProduct.MFRR, ReserveProduct.AFRR)))
     product_name = "mFRRCapacityMarket" if product is ReserveProduct.MFRR else "aFRRCapacityMarket"
     hours: list[datetime] = []
     hour = _floor_hour(start)

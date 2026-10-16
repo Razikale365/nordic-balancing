@@ -45,3 +45,13 @@ hour with a price and, almost always, 0 MW, which SvK omits. The window ending
 2026-10-15 reports `FAIL` for one such hour with volume: EDS has 1 MW up and down
 for 2026-10-14T11:00Z, and SvK had not published that hour when the script ran.
 Whether SvK publishes it later, or omits it, is not established here.
+
+FCR capacity can also be fetched with an explicit covered zone:
+
+```python
+with EnergiDataServiceClient() as eds:
+    fcr = eds.capacity_market(ReserveProduct.FCR_N, start, end, zones=[BiddingZone.SE3])
+```
+
+FCR-N is symmetric (`Direction.NONE`); only Total rows are emitted and the
+per-auction source rows remain in `raw["auctions"]`.

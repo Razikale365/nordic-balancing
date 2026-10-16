@@ -38,6 +38,11 @@ class Direction(IntEnum):
     ``UP`` means the system was short and needed upward regulation; ``DOWN``
     means it was long. Sign convention follows Energinet's
     ``DominatingDirection`` column.
+
+    On ``ReserveCapacity`` this is the regulation direction of the procured
+    capacity; ``NONE`` marks a symmetric product whose volume is available
+    both up and down; count it in both directions when summing volume per
+    direction, and once when summing cost.
     """
 
     DOWN = -1
@@ -50,6 +55,9 @@ class ReserveProduct(StrEnum):
 
     MFRR = "mFRR"
     AFRR = "aFRR"
+    FCR_N = "FCR-N"
+    FCR_D = "FCR-D"
+    FCR = "FCR"
 
 
 def _copy_raw(value: Any) -> Any:

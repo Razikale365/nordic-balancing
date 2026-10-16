@@ -1,4 +1,4 @@
-"""ENTSO-E Transparency Platform imbalance prices (document type A85).
+"""ENTSO-E Transparency Platform imbalance prices (A85) and FCR-N capacity (A81).
 
 The XML structure handled here was verified against the official IEC
 62325-451-6 balancing document schema, namespace versions 3.0 to 4.5, using
@@ -8,9 +8,10 @@ generated models in entsoe-apy. In that schema a ``Point`` requires only
 ``flowDirection.direction``, ``Financial_Price`` components and ``Reason`` are
 all optional. ``Financial_Price`` components are preserved in ``raw`` but not
 interpreted: what they contribute to the published price is not verified.
-It was verified against the live API on 2026-10-12 (all 12 zones, compared
-with eSett and entsoe-py). The parser is deliberately strict: any deviation
-from these assumptions raises ``SourceError`` instead of passing silently.
+The A85 imbalance parser was verified against the live API on 2026-10-12
+(all 12 zones, compared with eSett and entsoe-py). The parser is deliberately
+strict: any deviation from these assumptions raises ``SourceError`` instead of
+passing silently.
 """
 
 import io
@@ -32,7 +33,15 @@ import httpx
 
 from nordic_balancing._http import _request
 from nordic_balancing.errors import SourceError
-from nordic_balancing.models import INTERVAL, BiddingZone, ImbalancePrice, to_utc
+from nordic_balancing.models import (
+    INTERVAL,
+    BiddingZone,
+    Direction,
+    ImbalancePrice,
+    ReserveCapacity,
+    ReserveProduct,
+    to_utc,
+)
 
 SOURCE = "entsoe"
 BASE_URL = "https://web-api.tp.entsoe.eu/api"
@@ -40,6 +49,7 @@ BASE_URL = "https://web-api.tp.entsoe.eu/api"
 # 4-21 s for 31 to 367 days), so ask for a whole (leap) year at a time.
 _CHUNK = timedelta(days=366)
 _HOUR = timedelta(hours=1)
+_NO = (BiddingZone.NO1, BiddingZone.NO2, BiddingZone.NO3, BiddingZone.NO4, BiddingZone.NO5)
 _LIMIT = 64 * 1024 * 1024
 _NO_DATA = "No matching data found"
 _PASSTHROUGH = frozenset({400})
@@ -76,10 +86,11 @@ class _Point:
     resolution: str
     curve_type: str
     namespace: str
+    quantity: float | None = None
 
 
 class EntsoeClient:
-    """Synchronous ENTSO-E Transparency Platform client for A85 imbalance prices.
+    """Synchronous ENTSO-E client for A85 imbalance prices and A81 FCR-N capacity.
 
     ``api_key`` defaults to ``ENTSOE_API_KEY``. Pass your own ``httpx.Client``
     to control proxies, timeouts or transports; otherwise this instance owns it.
@@ -154,16 +165,7 @@ class EntsoeClient:
         zone_list = sorted(set(requested))
         if not zone_list:
             raise ValueError("zones must not be empty")
-        query_start = start_utc.replace(minute=0, second=0, microsecond=0)
-        query_end = end_utc.replace(minute=0, second=0, microsecond=0)
-        if query_end < end_utc:
-            query_end += _HOUR
-        jobs: list[tuple[BiddingZone, datetime, datetime]] = []
-        chunk_start = query_start
-        while chunk_start < query_end:
-            chunk_end = min(chunk_start + _CHUNK, query_end)
-            jobs.extend((zone, chunk_start, chunk_end) for zone in zone_list)
-            chunk_start = chunk_end
+        jobs = _jobs(start_utc, end_utc, zone_list)
         workers = min(self._max_workers, len(jobs))
         try:
             if workers == 1:
@@ -190,27 +192,124 @@ class EntsoeClient:
             key=lambda p: (p.start, p.zone),
         )
 
-    def _fetch(
-        self, zone: BiddingZone, chunk_start: datetime, chunk_end: datetime
-    ) -> dict[tuple[BiddingZone, datetime], ImbalancePrice]:
-        collected: dict[tuple[BiddingZone, datetime], ImbalancePrice] = {}
-        self._collect(collected, zone, chunk_start, chunk_end)
-        return collected
-
-    def _collect(
+    def capacity_market(
         self,
-        collected: dict[tuple[BiddingZone, datetime], ImbalancePrice],
+        product: ReserveProduct,
+        start: datetime,
+        end: datetime,
+        *,
+        zones: Iterable[BiddingZone] = (
+            BiddingZone.NO1,
+            BiddingZone.NO2,
+            BiddingZone.NO3,
+            BiddingZone.NO4,
+            BiddingZone.NO5,
+        ),
+    ) -> list[ReserveCapacity]:
+        """Return Norwegian FCR-N capacity, hourly values expanded to quarters.
+
+        ENTSO-E does not name the product; FCR-N is inferred from the identical
+        query matching EDS FCR-N for Swedish zones and DK2.
+        """
+        if not isinstance(product, ReserveProduct) or product is not ReserveProduct.FCR_N:
+            raise ValueError("ENTSO-E capacity supports only ReserveProduct.FCR_N")
+        start_utc = to_utc(start, "start")
+        end_utc = to_utc(end, "end")
+        if end_utc <= start_utc:
+            raise ValueError("end must be after start")
+        requested = list(zones)
+        if any(not isinstance(z, BiddingZone) or z not in _NO for z in requested):
+            raise ValueError("ENTSO-E FCR-N capacity covers only NO1, NO2, NO3, NO4 and NO5")
+        zone_list = sorted(set(requested))
+        if not zone_list:
+            raise ValueError("zones must not be empty")
+        jobs = _jobs(start_utc, end_utc, zone_list)
+        pool = ThreadPoolExecutor(min(self._max_workers, len(jobs)))
+        try:
+            try:
+                parts = list(pool.map(lambda job: self._fetch_capacity(*job), jobs))
+            finally:
+                pool.shutdown(cancel_futures=True)
+        except SourceError as exc:
+            raise SourceError(str(exc).replace(self._api_key, "[REDACTED_SECRET]")) from None
+        collected: dict[tuple[BiddingZone, datetime], ReserveCapacity] = {}
+        for part in parts:
+            for record in part:
+                key = (record.zone, record.start)
+                if key in collected:
+                    raise SourceError(
+                        f"{SOURCE}: duplicate capacity for {record.zone} at {record.start}"
+                    )
+                collected[key] = record
+        return sorted(
+            (r for r in collected.values() if start_utc <= r.start < end_utc),
+            key=lambda r: (r.start, r.zone, r.direction),
+        )
+
+    def _fetch_capacity(
+        self, zone: BiddingZone, chunk_start: datetime, chunk_end: datetime
+    ) -> list[ReserveCapacity]:
+        records: list[ReserveCapacity] = []
+        for member in self._request_members(zone, chunk_start, chunk_end, capacity=True):
+            for point in _points(
+                member,
+                _EIC_CODES[zone],
+                chunk_start,
+                chunk_end,
+                api_key=self._api_key,
+                capacity=True,
+            ):
+                for quarter in range(4):
+                    records.append(
+                        ReserveCapacity(
+                            start=point.start + quarter * INTERVAL,
+                            zone=zone,
+                            product=ReserveProduct.FCR_N,
+                            direction=Direction.NONE,
+                            price_eur_per_mw=point.amount,
+                            volume_mw=point.quantity,
+                            source=SOURCE,
+                            resolution=_HOUR,
+                            raw={
+                                "zone": zone.value,
+                                "start": point.start.isoformat(),
+                                "resolution": point.resolution,
+                                "curveType": point.curve_type,
+                                "namespace": point.namespace,
+                                "quantity": point.quantity,
+                                "procurement_Price.amount": point.amount,
+                                "flow_direction": "A03",
+                                "businessType": "B95",
+                                "currency_Unit.name": "EUR",
+                                "quantity_Measure_Unit.name": "MAW",
+                            },
+                        )
+                    )
+        return records
+
+    def _request_members(
+        self,
         zone: BiddingZone,
         chunk_start: datetime,
         chunk_end: datetime,
-    ) -> None:
+        *,
+        capacity: bool = False,
+    ) -> list[bytes]:
         params = [
             ("securityToken", self._api_key),
-            ("documentType", "A85"),
+            ("documentType", "A81" if capacity else "A85"),
             ("controlArea_Domain", _EIC_CODES[zone]),
             ("periodStart", _format(chunk_start)),
             ("periodEnd", _format(chunk_end)),
         ]
+        if capacity:
+            params.extend(
+                [
+                    ("businessType", "B95"),
+                    ("processType", "A52"),
+                    ("Type_MarketAgreement.Type", "A01"),
+                ]
+            )
         try:
             response = _request(
                 self._http,
@@ -228,7 +327,23 @@ class EntsoeClient:
         if response.is_error and response.status_code not in _PASSTHROUGH:
             detail = response.text.replace(self._api_key, "[REDACTED_SECRET]")
             raise SourceError(f"{SOURCE}: HTTP {response.status_code} for : {detail[:200]}")
-        for member in _members(response.content):
+        return _members(response.content)
+
+    def _fetch(
+        self, zone: BiddingZone, chunk_start: datetime, chunk_end: datetime
+    ) -> dict[tuple[BiddingZone, datetime], ImbalancePrice]:
+        collected: dict[tuple[BiddingZone, datetime], ImbalancePrice] = {}
+        self._collect(collected, zone, chunk_start, chunk_end)
+        return collected
+
+    def _collect(
+        self,
+        collected: dict[tuple[BiddingZone, datetime], ImbalancePrice],
+        zone: BiddingZone,
+        chunk_start: datetime,
+        chunk_end: datetime,
+    ) -> None:
+        for member in self._request_members(zone, chunk_start, chunk_end):
             for point in _points(
                 member, _EIC_CODES[zone], chunk_start, chunk_end, api_key=self._api_key
             ):
@@ -301,6 +416,24 @@ class EntsoeClient:
                     collected[key] = replace(existing, raw=merged)
 
 
+def _jobs(
+    start: datetime,
+    end: datetime,
+    zones: list[BiddingZone],
+) -> list[tuple[BiddingZone, datetime, datetime]]:
+    query_start = start.replace(minute=0, second=0, microsecond=0)
+    query_end = end.replace(minute=0, second=0, microsecond=0)
+    if query_end < end:
+        query_end += _HOUR
+    jobs: list[tuple[BiddingZone, datetime, datetime]] = []
+    chunk_start = query_start
+    while chunk_start < query_end:
+        chunk_end = min(chunk_start + _CHUNK, query_end)
+        jobs.extend((zone, chunk_start, chunk_end) for zone in zones)
+        chunk_start = chunk_end
+    return jobs
+
+
 def _format(value: datetime) -> str:
     return value.strftime("%Y%m%d%H%M")
 
@@ -360,6 +493,7 @@ def _points(
     window_end: datetime,
     *,
     api_key: str = "",
+    capacity: bool = False,
 ) -> list[_Point]:
     try:
         root = ElementTree.fromstring(member)
@@ -375,10 +509,12 @@ def _points(
     if "451-6:balancingdocument" not in namespace:
         raise SourceError(f"{SOURCE}: unsupported namespace {namespace!r}")
     document_type = _text(root, "type")
-    if document_type != "A85":
+    if document_type != ("A81" if capacity else "A85"):
         # Other balancing documents (A86 imbalance volumes, ...) carry no prices;
         # parsing one would yield only unpublished intervals.
         raise SourceError(f"{SOURCE}: unexpected document type {document_type!r}")
+    if capacity and _text(root, "process.processType") != "A52":
+        raise SourceError(f"{SOURCE}: capacity process.processType must be A52")
     for element in _AREA_ELEMENTS:
         area = _code(root, element)
         if area is not None and area != eic:
@@ -386,7 +522,7 @@ def _points(
     return [
         point
         for series in _children(root, "TimeSeries")
-        for point in _series_points(series, namespace, window_start, window_end)
+        for point in _series_points(series, namespace, window_start, window_end, capacity=capacity)
     ]
 
 
@@ -413,7 +549,18 @@ def _series_points(
     namespace: str,
     window_start: datetime,
     window_end: datetime,
+    *,
+    capacity: bool = False,
 ) -> list[_Point]:
+    if capacity:
+        for name, expected in (
+            ("businessType", "B95"),
+            ("flowDirection.direction", "A03"),
+            ("quantity_Measure_Unit.name", "MAW"),
+            ("currency_Unit.name", "EUR"),
+        ):
+            if _text(series, name) != expected:
+                raise SourceError(f"{SOURCE}: capacity {name} must be {expected}")
     currency = _child(series, "currency_Unit.name")
     if currency is not None and (currency.text or "").strip() != "EUR":
         raise SourceError(
@@ -421,7 +568,8 @@ def _series_points(
         )
     for element in _PRICE_UNIT_ELEMENTS:
         unit = _child(series, element)
-        if unit is not None and (unit.text or "").strip() != "MWH":
+        expected_unit = "MAW" if capacity else "MWH"
+        if unit is not None and (unit.text or "").strip() != expected_unit:
             raise SourceError(f"{SOURCE}: unsupported {element} {(unit.text or '').strip()!r}")
     curve_type = _text(series, "curveType")
     # A02, A04 and A05 have different semantics (instants or variable-size
@@ -431,7 +579,9 @@ def _series_points(
     return [
         point
         for period in _children(series, "Period")
-        for point in _period_points(period, curve_type, namespace, window_start, window_end)
+        for point in _period_points(
+            period, curve_type, namespace, window_start, window_end, capacity=capacity
+        )
     ]
 
 
@@ -441,6 +591,8 @@ def _period_points(
     namespace: str,
     window_start: datetime,
     window_end: datetime,
+    *,
+    capacity: bool = False,
 ) -> list[_Point]:
     interval = _child(period, "timeInterval")
     if interval is None:
@@ -448,6 +600,8 @@ def _period_points(
     period_start = _time(_text(interval, "start"))
     period_end = _time(_text(interval, "end"))
     resolution = _text(period, "resolution")
+    if capacity and resolution != "PT60M":
+        raise SourceError(f"{SOURCE}: capacity resolution must be PT60M")
     if resolution not in _RESOLUTIONS:
         raise SourceError(f"{SOURCE}: unsupported resolution {resolution!r}")
     if period_end <= period_start:
@@ -467,14 +621,23 @@ def _period_points(
             raise SourceError(f"{SOURCE}: point is not on a 15-minute boundary")
         if resolution == "PT60M" and start.minute:
             raise SourceError(f"{SOURCE}: hourly point is not on the hour")
-        if not window_start <= start < window_end:
+        if not capacity and not window_start <= start < window_end:
             raise SourceError(f"{SOURCE}: point outside requested window")
-        amount_element = _child(element, "imbalance_Price.amount")
-        amount = (
-            _amount((amount_element.text or "").strip(), "imbalance_Price.amount")
-            if amount_element is not None
-            else None
-        )
+        amount_name = "procurement_Price.amount" if capacity else "imbalance_Price.amount"
+        amount: float | None
+        if capacity:
+            amount = _amount(_text(element, amount_name), amount_name)
+        else:
+            amount_element = _child(element, amount_name)
+            amount = (
+                _amount((amount_element.text or "").strip(), amount_name)
+                if amount_element is not None
+                else None
+            )
+        if capacity:
+            point_flow = _code(element, "flowDirection.direction")
+            if point_flow is not None and point_flow != "A03":
+                raise SourceError(f"{SOURCE}: capacity flowDirection.direction must be A03")
         record = _Point(
             start=start,
             amount=amount,
@@ -488,11 +651,14 @@ def _period_points(
             resolution=resolution,
             curve_type=curve_type,
             namespace=namespace,
+            quantity=_amount(_text(element, "quantity"), "quantity") if capacity else None,
         )
         existing = explicit.get(position)
         if existing is None:
             explicit[position] = record
             continue
+        if capacity:
+            raise SourceError(f"{SOURCE}: duplicate capacity position {position} in Period")
         if existing.amount != record.amount:
             raise SourceError(
                 f"{SOURCE}: dual imbalance prices are not supported "
@@ -506,20 +672,21 @@ def _period_points(
     previous: _Point | None = None
     for index in range(1, count + 1):
         start = period_start + (index - 1) * step
-        # Explicit points were checked above; implied A03 positions belong
-        # only to this request, even when the Period continues beyond it.
-        if curve_type == "A03" and start >= window_end:
+        # A81 returns whole delivery days: validate and fill the whole Period
+        # before clipping to the chunk. A85 retains its window-bounded filling.
+        if not capacity and curve_type == "A03" and start >= window_end:
             break
         current = explicit.get(index)
         if current is None:
             if curve_type == "A01" or previous is None:
                 raise SourceError(f"{SOURCE}: missing position {index} in Period")
-            if start < window_start:
+            if not capacity and start < window_start:
                 continue
             current = previous
         else:
             previous = current
-        points.append(replace(current, start=start))
+        if not capacity or window_start <= start < window_end:
+            points.append(replace(current, start=start))
     return points
 
 

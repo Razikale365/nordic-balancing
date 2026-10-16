@@ -1,0 +1,182 @@
+[
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "DK2",
+    "ProductName": "FCR-D ned",
+    "AuctionType": "D-1 early",
+    "PurchasedVolumeLocal": 54.9,
+    "PurchasedVolumeTotal": 483.0,
+    "PriceTotalEUR": 9.95
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "DK2",
+    "ProductName": "FCR-D ned",
+    "AuctionType": "D-1 late",
+    "PurchasedVolumeLocal": 10.2,
+    "PurchasedVolumeTotal": 91.8,
+    "PriceTotalEUR": 1.0
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "DK2",
+    "ProductName": "FCR-D ned",
+    "AuctionType": "Total",
+    "PurchasedVolumeLocal": 65.1,
+    "PurchasedVolumeTotal": 574.8,
+    "PriceTotalEUR": 8.520615
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "DK2",
+    "ProductName": "FCR-D upp",
+    "AuctionType": "D-1 early",
+    "PurchasedVolumeLocal": 36.5,
+    "PurchasedVolumeTotal": 500.0,
+    "PriceTotalEUR": 5.0
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "DK2",
+    "ProductName": "FCR-D upp",
+    "AuctionType": "D-1 late",
+    "PurchasedVolumeLocal": 7.0,
+    "PurchasedVolumeTotal": 94.0,
+    "PriceTotalEUR": 0.97
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "DK2",
+    "ProductName": "FCR-D upp",
+    "AuctionType": "Total",
+    "PurchasedVolumeLocal": 43.5,
+    "PurchasedVolumeTotal": 594.0,
+    "PriceTotalEUR": 4.362255
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "DK2",
+    "ProductName": "FCR-N",
+    "AuctionType": "D-1 early",
+    "PurchasedVolumeLocal": 5.4,
+    "PurchasedVolumeTotal": 208.0,
+    "PriceTotalEUR": 21.0
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "DK2",
+    "ProductName": "FCR-N",
+    "AuctionType": "D-1 late",
+    "PurchasedVolumeLocal": 3.0,
+    "PurchasedVolumeTotal": 38.0,
+    "PriceTotalEUR": 10.0
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "DK2",
+    "ProductName": "FCR-N",
+    "AuctionType": "Total",
+    "PurchasedVolumeLocal": 8.4,
+    "PurchasedVolumeTotal": 246.0,
+    "PriceTotalEUR": 19.300813
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "SE3",
+    "ProductName": "FCR-D ned",
+    "AuctionType": "D-1 early",
+    "PurchasedVolumeLocal": 249.3,
+    "PurchasedVolumeTotal": 483.0,
+    "PriceTotalEUR": 9.95
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "SE3",
+    "ProductName": "FCR-D ned",
+    "AuctionType": "D-1 late",
+    "PurchasedVolumeLocal": 60.5,
+    "PurchasedVolumeTotal": 91.8,
+    "PriceTotalEUR": 1.0
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "SE3",
+    "ProductName": "FCR-D ned",
+    "AuctionType": "Total",
+    "PurchasedVolumeLocal": 309.8,
+    "PurchasedVolumeTotal": 574.8,
+    "PriceTotalEUR": 8.520615
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "SE3",
+    "ProductName": "FCR-D upp",
+    "AuctionType": "D-1 early",
+    "PurchasedVolumeLocal": 303.6,
+    "PurchasedVolumeTotal": 500.0,
+    "PriceTotalEUR": 5.0
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "SE3",
+    "ProductName": "FCR-D upp",
+    "AuctionType": "D-1 late",
+    "PurchasedVolumeLocal": 80.7,
+    "PurchasedVolumeTotal": 94.0,
+    "PriceTotalEUR": 0.97
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "SE3",
+    "ProductName": "FCR-D upp",
+    "AuctionType": "Total",
+    "PurchasedVolumeLocal": 384.3,
+    "PurchasedVolumeTotal": 594.0,
+    "PriceTotalEUR": 4.362255
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "SE3",
+    "ProductName": "FCR-N",
+    "AuctionType": "D-1 early",
+    "PurchasedVolumeLocal": 137.7,
+    "PurchasedVolumeTotal": 208.0,
+    "PriceTotalEUR": 21.0
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "SE3",
+    "ProductName": "FCR-N",
+    "AuctionType": "D-1 late",
+    "PurchasedVolumeLocal": 8.0,
+    "PurchasedVolumeTotal": 38.0,
+    "PriceTotalEUR": 10.0
+  },
+  {
+    "HourUTC": "2026-10-05T22:00:00",
+    "HourDK": "2026-10-06T00:00:00",
+    "PriceArea": "SE3",
+    "ProductName": "FCR-N",
+    "AuctionType": "Total",
+    "PurchasedVolumeLocal": 145.7,
+    "PurchasedVolumeTotal": 246.0,
+    "PriceTotalEUR": 19.300813
+  }
+]

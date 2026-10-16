@@ -37,6 +37,34 @@ BASE_URL = "https://api.energidataservice.dk"
 PAGE_SIZE = 10_000
 _DK = frozenset({BiddingZone.DK1, BiddingZone.DK2})
 _HOUR = timedelta(hours=1)
+_FCR_ND_ZONES = frozenset(
+    {BiddingZone.DK2, BiddingZone.SE1, BiddingZone.SE2, BiddingZone.SE3, BiddingZone.SE4}
+)
+_FCR_PRODUCTS = {
+    "FCR-N": (ReserveProduct.FCR_N, Direction.NONE),
+    "FCR-D upp": (ReserveProduct.FCR_D, Direction.UP),
+    "FCR-D ned": (ReserveProduct.FCR_D, Direction.DOWN),
+}
+_FCR_ND_COLUMNS = (
+    "HourUTC",
+    "HourDK",
+    "PriceArea",
+    "ProductName",
+    "AuctionType",
+    "PurchasedVolumeLocal",
+    "PurchasedVolumeTotal",
+    "PriceTotalEUR",
+)
+_FCR_DK1_COLUMNS = (
+    "HourUTC",
+    "HourDK",
+    "FCRdomestic_MW",
+    "FCRabroad_MW",
+    "FCRcross_EUR",
+    "FCRcross_DKK",
+    "FCRdk_EUR",
+    "FCRdk_DKK",
+)
 _CAPACITY_DATASETS = {
     ReserveProduct.AFRR: "AfrrReservesNordic",
     ReserveProduct.MFRR: "mFRRCapacityMarket",
@@ -177,7 +205,11 @@ class EnergiDataServiceClient:
         aFRR covers all Nordic zones from 2022-12-07T23:00Z; mFRR covers DK1/DK2
         from 2023-06-20T22:00Z. Volumes are procured MW including cross-border
         allocation, not demand. Prices are marginal EUR/MW per hour. Demand and
-        DKK prices remain in ``raw``. Results sort by start, zone and direction.
+        DKK prices remain in ``raw``. FCR-N/FCR-D cover DK2/SE1-SE4, emitting
+        only Total rows with per-auction rows in ``raw["auctions"]``; FCR covers
+        DK1 domestic capacity. FCR-N/FCR are symmetric (``Direction.NONE``).
+        Pass explicit covered zones for FCR products. Results sort by start,
+        zone and direction.
         """
         if not isinstance(product, ReserveProduct):
             raise ValueError("product must be a ReserveProduct")
@@ -193,10 +225,25 @@ class EnergiDataServiceClient:
             raise ValueError("zones must not be empty")
         if product is ReserveProduct.MFRR and any(z not in _DK for z in zone_list):
             raise ValueError("Energi Data Service mFRR capacity covers only DK1 and DK2")
+        if product in (ReserveProduct.FCR_N, ReserveProduct.FCR_D) and any(
+            z not in _FCR_ND_ZONES for z in zone_list
+        ):
+            raise ValueError(
+                f"Energi Data Service {product.value} capacity covers only DK2, SE1, SE2, "
+                "SE3 and SE4; pass zones=(BiddingZone.DK2,) or covered SE zones"
+            )
+        if product is ReserveProduct.FCR and zone_list != [BiddingZone.DK1]:
+            raise ValueError(
+                "Energi Data Service FCR capacity covers only DK1; pass zones=(BiddingZone.DK1,)"
+            )
         query_start = start_utc.replace(minute=0, second=0, microsecond=0)
         query_end = end_utc.replace(second=0, microsecond=0)
         if query_end < end_utc:
             query_end += timedelta(minutes=1)
+        if product in (ReserveProduct.FCR_N, ReserveProduct.FCR_D, ReserveProduct.FCR):
+            return self._fcr_capacity(
+                product, start_utc, end_utc, zone_list, query_start, query_end
+            )
         params = {
             "start": _format(query_start),
             "end": _format(query_end),
@@ -248,6 +295,85 @@ class EnergiDataServiceClient:
                         )
         capacities.sort(key=lambda c: (c.start, c.zone, c.direction))
         return capacities
+
+    def _fcr_capacity(
+        self,
+        product: ReserveProduct,
+        start: datetime,
+        end: datetime,
+        zones: list[BiddingZone],
+        query_start: datetime,
+        query_end: datetime,
+    ) -> list[ReserveCapacity]:
+        domestic = product is ReserveProduct.FCR
+        columns = _FCR_DK1_COLUMNS if domestic else _FCR_ND_COLUMNS
+        params = {
+            "start": _format(query_start),
+            "end": _format(query_end),
+            "timezone": "UTC",
+            "columns": ",".join(columns),
+            "sort": "HourUTC asc" if domestic else "HourUTC asc,PriceArea asc",
+        }
+        if not domestic:
+            params["filter"] = json.dumps({"PriceArea": [z.value for z in zones]})
+        groups: dict[tuple[datetime, BiddingZone, str], list[dict[str, Any]]] = {}
+        dataset = "FcrDK1" if domestic else "FcrNdDK2"
+        for row in self._records(dataset, params):
+            if not isinstance(row, dict):
+                raise SourceError(f"{SOURCE}: record is not a JSON object")
+            missing = set(columns) - row.keys()
+            if missing:
+                raise SourceError(f"{SOURCE}: missing capacity columns {sorted(missing)}")
+            hour = _parse_time(row["HourUTC"], column="HourUTC")
+            if hour.minute:
+                raise SourceError(f"{SOURCE}: HourUTC is not on the hour")
+            if not query_start <= hour < query_end:
+                raise SourceError(f"{SOURCE}: HourUTC outside requested window")
+            area = "DK1" if domestic else row["PriceArea"]
+            zone = BiddingZone.__members__.get(area) if isinstance(area, str) else None
+            if zone is None or zone not in zones:
+                raise SourceError(f"{SOURCE}: unrequested PriceArea {area!r}")
+            name = "FCR" if domestic else row["ProductName"]
+            if not domestic and (not isinstance(name, str) or name not in _FCR_PRODUCTS):
+                raise SourceError(f"{SOURCE}: unknown ProductName {name!r}")
+            groups.setdefault((hour, zone, name), []).append(row)
+        capacities: list[ReserveCapacity] = []
+        seen: set[tuple[datetime, BiddingZone, str]] = set()
+        for key, rows in groups.items():
+            hour, zone, name = key
+            row_product, direction = (
+                (ReserveProduct.FCR, Direction.NONE) if domestic else _FCR_PRODUCTS[name]
+            )
+            if row_product is not product:
+                continue
+            totals = rows if domestic else [r for r in rows if r["AuctionType"] == "Total"]
+            if not totals:
+                raise SourceError(f"{SOURCE}: missing Total for {hour.isoformat()} {zone} {name}")
+            for _ in totals:
+                reject_duplicate(seen, key, source=SOURCE, detail=f"Total for {hour} {zone} {name}")
+            row = totals[0]
+            raw = dict(row)
+            if not domestic:
+                raw["auctions"] = [r for r in rows if r["AuctionType"] != "Total"]
+            volume = _number(row, "FCRdomestic_MW" if domestic else "PurchasedVolumeLocal")
+            price = _number(row, "FCRdk_EUR" if domestic else "PriceTotalEUR")
+            for quarter in range(4):
+                quarter_start = hour + quarter * INTERVAL
+                if start <= quarter_start < end:
+                    capacities.append(
+                        ReserveCapacity(
+                            start=quarter_start,
+                            zone=zone,
+                            product=product,
+                            direction=direction,
+                            price_eur_per_mw=price,
+                            volume_mw=volume,
+                            source=SOURCE,
+                            resolution=_HOUR,
+                            raw=raw,
+                        )
+                    )
+        return sorted(capacities, key=lambda c: (c.start, c.zone, c.direction))
 
     def _records(self, dataset: str, params: dict[str, str]) -> Iterator[dict[str, Any]]:
         offset = 0
@@ -305,23 +431,23 @@ def _format(value: datetime) -> str:
     return value.strftime("%Y-%m-%dT%H:%M")
 
 
-def _parse_time(value: object) -> datetime:
+def _parse_time(value: object, *, column: str = "TimeUTC") -> datetime:
     if not isinstance(value, str):
-        raise SourceError(f"{SOURCE}: TimeUTC is missing or not a string: {value!r}")
+        raise SourceError(f"{SOURCE}: {column} is missing or not a string: {value!r}")
     if "T" not in value and "t" not in value and " " not in value:
-        raise SourceError(f"{SOURCE}: unparseable TimeUTC {value!r}")
+        raise SourceError(f"{SOURCE}: unparseable {column} {value!r}")
     try:
         parsed = datetime.fromisoformat(value)
     except (ValueError, OverflowError) as exc:
-        raise SourceError(f"{SOURCE}: unparseable TimeUTC {value!r}") from exc
+        raise SourceError(f"{SOURCE}: unparseable {column} {value!r}") from exc
     if parsed.tzinfo is not None and (
         parsed.utcoffset() != timedelta(0) or not value.endswith(("Z", "z", "+00:00"))
     ):
-        raise SourceError(f"{SOURCE}: TimeUTC must be UTC: {value!r}")
+        raise SourceError(f"{SOURCE}: {column} must be UTC: {value!r}")
     parsed = parsed.replace(tzinfo=UTC)
     # Check every field: int(timestamp()) would drop fractional seconds (00:00:00.5).
     if parsed.minute % 15 or parsed.second or parsed.microsecond:
-        raise SourceError(f"{SOURCE}: TimeUTC {value!r} is not on a 15-minute boundary")
+        raise SourceError(f"{SOURCE}: {column} {value!r} is not on a 15-minute boundary")
     return parsed
 
 

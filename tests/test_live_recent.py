@@ -182,3 +182,63 @@ def test_svk_may_have_moved_to_15_minute_records() -> None:
     assert not non_hourly, (
         f"SvK may have moved to 15-minute records: non-hourly start_time_utc {non_hourly[:5]!r}"
     )
+
+
+@pytest.mark.live
+@pytest.mark.parametrize(
+    ("product", "zone", "directions"),
+    [
+        (ReserveProduct.FCR_N, BiddingZone.SE3, {Direction.NONE}),
+        (ReserveProduct.FCR_D, BiddingZone.DK2, {Direction.UP, Direction.DOWN}),
+        (ReserveProduct.FCR, BiddingZone.DK1, {Direction.NONE}),
+    ],
+)
+def test_live_recent_eds_fcr_capacity(
+    product: ReserveProduct,
+    zone: BiddingZone,
+    directions: set[Direction],
+) -> None:
+    start, _ = _recent_day()
+    end = start + timedelta(days=2)
+    with EnergiDataServiceClient() as eds:
+        records = eds.capacity_market(product, start, end, zones=[zone])
+    assert records
+    assert {r.direction for r in records} == directions
+    assert all(r.product is product and r.zone is zone for r in records)
+    assert all(
+        r.source == "energidataservice" and r.resolution == timedelta(hours=1) for r in records
+    )
+    assert all(_on_grid_in_window(r.start, start, end) for r in records)
+    assert all(r.price_eur_per_mw is not None and r.volume_mw is not None for r in records)
+    if product is ReserveProduct.FCR:
+        assert all(
+            r.volume_mw == r.raw["FCRdomestic_MW"] and r.price_eur_per_mw == r.raw["FCRdk_EUR"]
+            for r in records
+        )
+    else:
+        assert all(
+            r.raw["AuctionType"] == "Total"
+            and r.volume_mw == r.raw["PurchasedVolumeLocal"]
+            and r.price_eur_per_mw == r.raw["PriceTotalEUR"]
+            for r in records
+        )
+
+
+@pytest.mark.live
+def test_live_recent_entsoe_no1_fcr_n_capacity() -> None:
+    if not os.environ.get("ENTSOE_API_KEY"):
+        pytest.skip("ENTSOE_API_KEY not set")
+    start, _ = _recent_day()
+    end = start + timedelta(days=2)
+    with EntsoeClient() as client:
+        records = client.capacity_market(ReserveProduct.FCR_N, start, end, zones=[BiddingZone.NO1])
+    assert records
+    assert all(r.product is ReserveProduct.FCR_N and r.direction is Direction.NONE for r in records)
+    assert all(r.zone is BiddingZone.NO1 and r.source == "entsoe" for r in records)
+    assert all(r.resolution == timedelta(hours=1) for r in records)
+    assert all(_on_grid_in_window(r.start, start, end) for r in records)
+    assert all(r.price_eur_per_mw is not None and r.volume_mw is not None for r in records)
+    assert all(
+        r.raw["currency_Unit.name"] == "EUR" and r.raw["quantity_Measure_Unit.name"] == "MAW"
+        for r in records
+    )
