@@ -11,7 +11,9 @@ the project is in beta: the public API is defined in
   FCR-D and mFRR prices/procured MW as `ReserveCapacity`. Hourly values expand to
   quarters; missing price or volume rows remain `None`. Yearly-market FCR is excluded.
 - **ENTSO-E:** `capacity_market` accepts mFRR (A81/B95/A47) for NO1–NO5 and FI,
-  retaining its Norwegian default. Flow A01/A02 maps to UP/DOWN. Supplied live
+  retaining its Norwegian default. Flow A01/A02 maps to UP/DOWN. Identical mFRR
+  quantity/price repeats across documents collapse by `(zone, start, direction)`;
+  conflicting repeats raise. FCR-N duplicate rejection is unchanged. Supplied live
   evidence matched all 48 hour-directions against Fingrid FI and SvK SE3 on 2026-10-08.
 - **Energi Data Service:** `EnergiDataServiceClient.capacity_market(product, start, end, *,
   zones=(DK1, DK2))` returns `ReserveCapacity` records: aFRR for all 12 Nordic zones (from
@@ -37,9 +39,6 @@ the project is in beta: the public API is defined in
     `ReserveCapacity`.
 
 ### Behaviour changes to note
-- **ENTSO-E capacity (including FCR-N):** identical quantity/price repeats from separate
-  documents or ZIP members now collapse by `(zone, start, direction)`. Conflicting
-  repeats still raise `SourceError`; repeats within a document still raise.
 - Three checks are stricter. Data that 0.2.0 accepted now raises `SourceError`: an eSett or
   Svenska kraftnät record that lacks a value key (a null value is still `None`), and any HTTP
   status other than 200 on a data request. Valid responses from the five providers parse as

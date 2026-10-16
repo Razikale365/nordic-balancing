@@ -425,7 +425,7 @@ def test_entsoe_rejects_duplicate_capacity_even_equal_values(kind: str) -> None:
 
 @pytest.mark.parametrize(
     "product",
-    [ReserveProduct.AFRR, ReserveProduct.MFRR, ReserveProduct.FCR_D, ReserveProduct.FCR, "FCR-N"],
+    [ReserveProduct.AFRR, ReserveProduct.FCR_D, ReserveProduct.FCR, "FCR-N"],
 )
 def test_entsoe_rejects_other_products(product: Any) -> None:
     with EntsoeClient("test-token") as client, pytest.raises(ValueError, match="FCR_N"):

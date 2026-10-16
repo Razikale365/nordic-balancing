@@ -77,6 +77,7 @@ ENTSO-E FCR-N (NO1–NO5, A81/B95/A52) maps `quantity` (MAW) to `volume_mw`
 and `procurement_Price.amount` (EUR/MW per hour) to `price_eur_per_mw`.
 Flow A03 maps to `Direction.NONE`; both point values continue across omitted
 positions in an A03 curve. Hourly resolution is retained after expansion.
+Every repeated FCR-N zone/start raises, including identical documents or members.
 ENTSO-E does not name the product; the series is FCR-N because the identical
 query returns EDS's FCR-N figures for SE and DK2.
 Symmetric FCR-N/FCR volume counts in both regulation directions, while its
@@ -90,7 +91,7 @@ Both source rows remain under `raw["price"]` and `raw["volume"]`, including
 `None` for an absent row. Dataset 328 is labelled MW/h but represents MW.
 
 ENTSO-E mFRR (NO1–NO5 and FI, A81/B95/A47) uses the same quantity/price fields
-as FCR-N; flow A01 is UP and A02 is DOWN. Identical quantity/price repeats
-across documents collapse by `(zone, start, direction)`; conflicting repeats
+as FCR-N; flow A01 is UP and A02 is DOWN. Only mFRR identical quantity/price
+repeats across documents collapse by `(zone, start, direction)`; conflicting repeats
 raise. On 2026-10-08, all 48 FI hour-directions matched Fingrid and all 48
 SE3 hour-directions matched SvK (work-order live evidence).

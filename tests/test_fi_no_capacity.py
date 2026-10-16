@@ -386,26 +386,27 @@ def test_entsoe_conflicting_document_still_raises(field: str) -> None:
     assert node is not None
     node.text = "999.25"
     with pytest.raises(SourceError, match="duplicate capacity"):
-        entsoe_fetch(zip_members(first, ET.tostring(root)))
+        entsoe_fetch(zip_members(first, ET.tostring(root)), product=ReserveProduct.MFRR)
 
 
-def test_entsoe_fcr_identical_documents_collapse() -> None:
+def test_entsoe_mfrr_identical_documents_collapse() -> None:
+    xml = xml_member()
+    result = entsoe_fetch(zip_members(xml, xml), product=ReserveProduct.MFRR)
+    assert len(result) == 192
+    assert all(r.product is ReserveProduct.MFRR for r in result)
+    assert result == entsoe_fetch(product=ReserveProduct.MFRR)
+
+
+def test_entsoe_fcr_identical_documents_still_raise() -> None:
     xml = (FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes()
-    result = entsoe_fetch(
-        zip_members(xml, xml),
-        start=datetime(2026, 10, 5, 22, tzinfo=UTC),
-        end=datetime(2026, 10, 6, 1, tzinfo=UTC),
-        product=ReserveProduct.FCR_N,
-    )
-    assert len(result) == 12
-    assert all(r.direction is Direction.NONE for r in result)
-    with pytest.raises(SourceError, match="duplicate capacity"):
-        entsoe_fetch(
-            zip_members(xml, xml.replace(b"<quantity>14.4", b"<quantity>15.4", 1)),
-            start=datetime(2026, 10, 5, 22, tzinfo=UTC),
-            end=datetime(2026, 10, 6, 1, tzinfo=UTC),
-            product=ReserveProduct.FCR_N,
-        )
+    for second in (xml, xml.replace(b"<quantity>14.4", b"<quantity>15.4", 1)):
+        with pytest.raises(SourceError, match="duplicate capacity"):
+            entsoe_fetch(
+                zip_members(xml, second),
+                start=datetime(2026, 10, 5, 22, tzinfo=UTC),
+                end=datetime(2026, 10, 6, 1, tzinfo=UTC),
+                product=ReserveProduct.FCR_N,
+            )
 
 
 def test_entsoe_whole_day_clips_across_two_chunks(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -82,9 +82,9 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   quantity unit MAW and currency EUR. `quantity` supplies MW and
   `procurement_Price.amount` supplies EUR/MW per hour; hourly points expand to
   quarters with `Direction.NONE`, retaining hourly `resolution`. A03 omitted
-  positions continue the preceding quantity and price. Identical quantity and price repeats from separate documents/members
-  collapse by `(zone, start, direction)`; conflicting values raise `SourceError`.
-  Repeated positions or series inside a document still raise. Other products/zones
+  positions continue the preceding quantity and price. Every repeated FCR-N
+  `(zone, start)` raises `SourceError`, including identical documents or members.
+  Repeated positions or series inside a document also raise. Other products/zones
   raise `ValueError`.
   Returned A81 delivery-day Periods are validated and A03-filled in full, then
   clipped to each query chunk; non-overlapping Periods contribute no records.
@@ -106,8 +106,11 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
 - `EntsoeClient.capacity_market` also accepts `ReserveProduct.MFRR` for NO1–NO5
   and FI, keeping the NO1–NO5 default. It queries A81/B95/A47 with market agreement
   A01; requires EUR, MAW and PT60M; and maps flow A01 to UP and A02 to DOWN.
-  A03 continuation, whole-day validation/clipping, expansion and the identical-
-  duplicate rule above apply. FCR-N with FI raises `ValueError`: ENTSO-E has no
+  A03 continuation, whole-day validation/clipping and expansion apply. For mFRR
+  only, identical quantity/price repeats across documents/members collapse by
+  `(zone, start, direction)`; conflicting repeats raise `SourceError`. Repeated
+  positions or series inside one document still raise. FCR-N with FI raises
+  `ValueError`: ENTSO-E has no
   Finnish FCR. The mFRR product was verified live against Fingrid (FI) and SvK
   (SE3), matching all 48 hour-directions per source on 2026-10-08, per the supplied
   work-order evidence. Reproduce with `examples/fi_no_capacity/cross_check.py`.
@@ -207,13 +210,14 @@ bidding zone, product, direction, and 15-minute UTC interval:
   `float` (`bool`, `NaN`, and infinities are rejected with `SourceError`).
 - **Pagination and duplicates**: paginated fetches must match the total row count
   reported by the source. Duplicate source records for the same series key raise
-  `SourceError`, with two documented exceptions:
+  `SourceError`, with the following documented exceptions:
   - ENTSO-E imbalance prices (A85): an interval published under distinct price
     categories (`A04` and `A05`) at the same resolution with an equal price
     collapses to one record,
     keeping all categories in `raw["categories"]`.
-  - ENTSO-E capacity (A81): identical quantity/price repeats across documents
-    collapse by zone, quarter and direction; conflicting values raise.
+  - ENTSO-E mFRR capacity (A81/A47) only: identical quantity/price repeats across
+    documents collapse by zone, quarter and direction; conflicting values raise.
+    FCR-N repeats always raise, including identical documents.
   - Fingrid: where hourly and 15-minute records overlap around the March 2025
     transition (datasets 319, 244, 106, 369), the hourly value is kept before
     `2025-03-18T23:00Z` and the 15-minute value from then on, with the other

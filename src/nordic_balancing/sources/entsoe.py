@@ -212,6 +212,8 @@ class EntsoeClient:
         ENTSO-E does not name the product; FCR-N is inferred from the identical
         query matching EDS FCR-N for Swedish zones and DK2.
         The mFRR product is verified against Fingrid and SvK (2026-10-08).
+        Identical quantity/price repeats across documents collapse for mFRR only;
+        conflicting mFRR repeats and all FCR-N repeats raise ``SourceError``.
         """
         if not isinstance(product, ReserveProduct) or product not in (
             ReserveProduct.FCR_N,
@@ -248,6 +250,10 @@ class EntsoeClient:
                 for record in part:
                     key = (record.zone, record.start, record.direction)
                     existing = collected.get(key)
+                    if existing is not None and product is ReserveProduct.FCR_N:
+                        raise SourceError(
+                            f"{SOURCE}: duplicate capacity for {record.zone} at {record.start}"
+                        )
                     if existing is not None and (
                         existing.volume_mw != record.volume_mw
                         or existing.price_eur_per_mw != record.price_eur_per_mw
