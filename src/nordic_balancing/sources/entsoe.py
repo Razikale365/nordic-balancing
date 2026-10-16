@@ -325,10 +325,15 @@ class EntsoeClient:
         except NordicBalancingError:
             # SourceError and RateLimitError carry no URL.
             raise
-        except Exception:
+        except Exception as exc:
             # httpx.HTTPError or any other error from the client or a custom transport:
             # its message or traceback can hold the request URL, and with it the token.
-            raise SourceError(f"{SOURCE}: request failed") from None
+            # A declared class name cannot, so it is kept for diagnosis; a dynamically
+            # built name that is not a short identifier is dropped.
+            name = type(exc).__name__
+            if not (name.isidentifier() and len(name) <= 64):
+                name = "Exception"
+            raise SourceError(f"{SOURCE}: request failed ({name})") from None
         if response.is_error and response.status_code not in _PASSTHROUGH:
             detail = response.text.replace(self._api_key, "[REDACTED_SECRET]")
             raise SourceError(f"{SOURCE}: HTTP {response.status_code} for : {detail[:200]}")

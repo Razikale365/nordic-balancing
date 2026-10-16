@@ -966,7 +966,7 @@ def test_transport_error_does_not_leak_token_or_url() -> None:
 
     with pytest.raises(SourceError, match="request failed") as caught:
         client(handler).imbalance_prices(START, END, [BiddingZone.SE3])
-    assert str(caught.value) == "entsoe: request failed"
+    assert str(caught.value) == "entsoe: request failed (ConnectError)"
     assert KEY not in "".join(traceback.format_exception(caught.value))
 
 
@@ -976,7 +976,7 @@ def test_non_httpx_transport_error_does_not_leak_token_or_url() -> None:
 
     with pytest.raises(SourceError, match="request failed") as caught:
         client(handler).imbalance_prices(START, END, [BiddingZone.SE3])
-    assert str(caught.value) == "entsoe: request failed"
+    assert str(caught.value) == "entsoe: request failed (RuntimeError)"
     assert KEY not in "".join(traceback.format_exception(caught.value))
 
 
@@ -1632,3 +1632,13 @@ def test_token_reaches_logs_only_through_httpx_info_logging(
     with caplog.at_level(logging.INFO, logger="httpx"):
         fetch()
     assert KEY in caplog.text
+
+
+def test_dynamically_named_transport_exception_is_not_echoed() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise type(str(request.url), (Exception,), {})()
+
+    with pytest.raises(SourceError) as caught:
+        client(handler).imbalance_prices(START, END, [BiddingZone.SE3])
+    assert str(caught.value) == "entsoe: request failed (Exception)"
+    assert KEY not in "".join(traceback.format_exception(caught.value))

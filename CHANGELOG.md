@@ -39,11 +39,13 @@ the project is in beta: the public API is defined in
 - **Svenska kraftnät:** a record missing `price` or `volume` raises `SourceError`; a null value is
   still `None`.
 - **ENTSO-E:** any error raised while sending a request (for example by a custom `httpx`
-  transport) is reported as `SourceError("entsoe: request failed")`, so the token in the request
-  URL can't appear in the message or the traceback. The library's own errors, including
+  transport) is reported as `SourceError("entsoe: request failed (<exception class>)")`, so the
+  token in the request URL can't appear in the message or the traceback. The library's own errors, including
   `RateLimitError`, are unchanged.
 - **Energi Data Service:** FCR-N and FCR-D requests filter on `ProductName`, so only the
   requested product's rows are fetched.
+- **All clients:** only HTTP 200 is accepted as data. A 2xx such as 202 (not yet processed) or
+  206 (partial content) raises `SourceError` instead of being parsed as a complete response.
 
 ### Documentation
 - README names the CC BY 4.0 data sources (Energinet, Svenska kraftnät, Fingrid) and
