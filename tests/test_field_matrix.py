@@ -10,6 +10,7 @@ import pytest
 from nordic_balancing import (
     INTERVAL,
     BiddingZone,
+    Direction,
     EnergiDataServiceClient,
     EntsoeClient,
     ESettClient,
@@ -133,17 +134,18 @@ RESERVE_CAPACITY_AVAILABILITY: dict[str, dict[str, str]] = {
 
 def _fetch_energidataservice_populated() -> list[ImbalancePrice]:
     start = datetime(2026, 10, 9, 2, 30, tzinfo=UTC)
+    # Every value is distinct so a column mapped to the wrong field is caught.
     published: dict[str, Any] = {
         "TimeUTC": "2026-10-09T02:30:00",
         "PriceArea": "DK2",
-        "ImbalancePriceEUR": 79.27,
-        "ImbalancePriceDKK": 592.46,
+        "ImbalancePriceEUR": 81.5,
+        "ImbalancePriceDKK": 608.12,
         "SpotPriceEUR": 79.27,
-        "DominatingDirection": 0,
-        "SatisfiedDemand": 0.0,
-        "aFRRVWAUpEUR": 0.0,
+        "DominatingDirection": 1,
+        "SatisfiedDemand": 12.5,
+        "aFRRVWAUpEUR": 95.1,
         "aFRRVWADownEUR": -3.53,
-        "mFRRMarginalPriceUpEUR": 79.27,
+        "mFRRMarginalPriceUpEUR": 88.4,
         "mFRRMarginalPriceDownEUR": 40.14,
     }
     transport = httpx.MockTransport(
@@ -162,7 +164,7 @@ def _fetch_esett_populated() -> list[ImbalancePrice]:
         "imblSalesPrice": 21.0,
         "imblPurchasePrice": 21.0,
         "upRegPrice": 76.32,
-        "downRegPrice": 21.0,
+        "downRegPrice": 20.5,
         "mainDirRegPowerPerMBA": -1.0,
         "imblSpotDifferencePrice": -55.32,
         "upRegPriceFrrA": 80.0,
@@ -251,6 +253,37 @@ def _fetch_svk_populated() -> list[ReserveCapacity]:
         return client.capacity_market(
             ReserveProduct.MFRR, start, start + timedelta(hours=1), [BiddingZone.SE3]
         )
+
+
+# The exact value each provided field takes from the populated fixtures above.
+IMBALANCE_PRICE_VALUES: dict[str, dict[str, object]] = {
+    "energidataservice": {
+        "zone": BiddingZone.DK2,
+        "imbalance_price_eur": 81.5,
+        "imbalance_price_dkk": 608.12,
+        "spot_price_eur": 79.27,
+        "dominating_direction": Direction.UP,
+        "satisfied_demand_mw": 12.5,
+        "afrr_up_vwa_eur": 95.1,
+        "afrr_down_vwa_eur": -3.53,
+        "mfrr_up_price_eur": 88.4,
+        "mfrr_down_price_eur": 40.14,
+    },
+    "esett": {
+        "zone": BiddingZone.SE3,
+        "imbalance_price_eur": 21.0,
+        "dominating_direction": Direction.DOWN,
+        "mfrr_up_price_eur": 76.32,
+        "mfrr_down_price_eur": 20.5,
+    },
+    "fingrid": {
+        "zone": BiddingZone.FI,
+        "imbalance_price_eur": 21.0,
+        "dominating_direction": Direction.DOWN,
+        "mfrr_up_price_eur": 76.32,
+        "mfrr_down_price_eur": -5.0,
+    },
+}
 
 
 IMBALANCE_FETCHERS: dict[str, Callable[[], list[ImbalancePrice]]] = {
@@ -392,3 +425,18 @@ def test_eds_capacity_field_matrix_and_direction_mapping(product: ReserveProduct
         assert record.price_eur_per_mw == row[f"{prefix}PriceEUR"]
         assert record.volume_mw == row[f"{prefix}ProcuredMW"]
         assert record.raw == row
+
+
+@pytest.mark.parametrize("source", tuple(IMBALANCE_PRICE_VALUES))
+def test_imbalance_price_fields_map_to_their_source_columns(source: str) -> None:
+    expected = IMBALANCE_PRICE_VALUES[source]
+    value_fields = {
+        name
+        for name, status in IMBALANCE_PRICE_AVAILABILITY[source].items()
+        if status == "provided" and name not in ("start", "source", "resolution", "raw")
+    }
+    assert set(expected) == value_fields
+    records = IMBALANCE_FETCHERS[source]()
+    assert len(records) == 1
+    actual = {name: getattr(records[0], name) for name in expected}
+    assert actual == expected

@@ -36,7 +36,8 @@ Everything else is private:
 
 `tests/test_public_api.py` compares the public surface against
 `tests/api_snapshot.json` and fails on any unrecorded addition, removal, or
-signature change. Regenerate the snapshot intentionally with:
+signature change. It also records whether each dataclass is frozen and slotted and
+each enum's base class (`StrEnum` or `IntEnum`). Regenerate the snapshot intentionally with:
 
 ```bash
 UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py

@@ -57,6 +57,7 @@ def build_public_api_snapshot() -> dict[str, Any]:
         obj = getattr(nordic_balancing, name)
         if isinstance(obj, type) and issubclass(obj, Enum):
             symbols[name] = {
+                "bases": [base.__name__ for base in obj.__bases__],
                 "kind": "enum",
                 "members": {
                     member_name: member.value for member_name, member in obj.__members__.items()
@@ -65,9 +66,11 @@ def build_public_api_snapshot() -> dict[str, Any]:
         elif dataclasses.is_dataclass(obj) and isinstance(obj, type):
             symbols[name] = {
                 "fields": [_format_field(field) for field in dataclasses.fields(obj)],
+                "frozen": obj.__dataclass_params__.frozen,  # type: ignore[attr-defined]
                 "kind": "dataclass",
                 "methods": _public_methods(obj),
                 "properties": _public_properties(obj),
+                "slots": "__slots__" in obj.__dict__,
             }
         elif isinstance(obj, type):
             symbols[name] = {
@@ -206,3 +209,36 @@ def test_snapshot_detects_kw_only_dataclass_enum_alias_and_classmethod(
         current = build_public_api_snapshot()
         assert current["symbols"]["EnergiDataServiceClient"]["methods"]["from_http"] == "(http)"
         assert "Removed or changed: EnergiDataServiceClient" in _diff_message(baseline, current)
+
+
+def test_snapshot_detects_mutable_unslotted_record_and_enum_base_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline: dict[str, Any] = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    assert baseline["symbols"]["ImbalancePrice"]["frozen"] is True
+    assert baseline["symbols"]["ReserveCapacity"]["slots"] is True
+    assert baseline["symbols"]["BiddingZone"]["bases"] == ["StrEnum"]
+    assert baseline["symbols"]["Direction"]["bases"] == ["IntEnum"]
+
+    original = nordic_balancing.ImbalancePrice
+    fields = [
+        (f.name, f.type, dataclasses.field(default=f.default, default_factory=f.default_factory))
+        for f in dataclasses.fields(original)
+    ]
+    mutable = dataclasses.make_dataclass("ImbalancePrice", fields, slots=True)
+    unslotted = dataclasses.make_dataclass("ImbalancePrice", fields, frozen=True)
+    for replacement, key in ((mutable, "frozen"), (unslotted, "slots")):
+        with monkeypatch.context() as mp:
+            mp.setattr(nordic_balancing, "ImbalancePrice", replacement)
+            current = build_public_api_snapshot()
+            assert current["symbols"]["ImbalancePrice"][key] is False
+            assert "Removed or changed: ImbalancePrice" in _diff_message(baseline, current)
+
+    members = {m.name: m.value for m in nordic_balancing.BiddingZone}
+    plain = Enum("BiddingZone", members)  # type: ignore[misc]
+    with monkeypatch.context() as mp:
+        mp.setattr(nordic_balancing, "BiddingZone", plain)
+        current = build_public_api_snapshot()
+        snapshot_members = current["symbols"]["BiddingZone"]["members"]
+        assert snapshot_members == baseline["symbols"]["BiddingZone"]["members"]
+        assert "Removed or changed: BiddingZone" in _diff_message(baseline, current)
