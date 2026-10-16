@@ -329,7 +329,9 @@ def test_bounded_retry_budget(status: int) -> None:
         ({"startTime": KEY}, "unparseable startTime"),
         ({"startTime": "2026-01-15T00:00:00"}, "must be UTC"),
         ({"startTime": "2026-01-15T01:00:00+01:00"}, "must be UTC"),
+        ({"startTime": "2026-01-15T01:00:00-01:00"}, "must be UTC"),
         ({"startTime": "2026-01-15T00:05:00Z"}, "15-minute boundary"),
+        ({"startTime": "2026-01-15T00:00:30Z"}, "15-minute boundary"),
         ({"startTime": "2026-01-15T00:00:00.000001Z"}, "15-minute boundary"),
         ({"endTime": "invalid"}, "unparseable endTime"),
         ({"endTime": "2026-01-15T00:30:00Z"}, "duration must be 15 or 60 minutes"),
@@ -365,6 +367,7 @@ def test_rejects_non_finite_values(value: int | float) -> None:
         ({"data": [], "pagination": {"total": -1, "lastPage": 1}}, "invalid total"),
         ({"data": [], "pagination": {"total": 0}}, "invalid lastPage"),
         ({"data": [], "pagination": {"total": 0, "lastPage": False}}, "invalid lastPage"),
+        ({"data": [], "pagination": {"total": 0, "lastPage": 0}}, "invalid lastPage"),
         ({"data": [None], "pagination": {"total": 1, "lastPage": 1}}, "not a JSON object"),
     ],
 )
@@ -567,6 +570,15 @@ def test_quarter_record_wins_at_and_after_the_switch() -> None:
     assert values == [(start, 50.0), (start + INTERVAL, 60.0)] + [
         (start + q * INTERVAL, 50.0) for q in (2, 3)
     ]
+
+
+def test_hourly_record_wins_overlap_in_the_hour_before_the_switch() -> None:
+    # 2025-03-18T22:00Z is still inside the hourly era: the hourly value wins
+    # every quarter it covers, even when a 15-minute record was also published.
+    start = datetime(2025, 3, 18, 22, tzinfo=UTC)
+    rows = [_at(319, start, 60, 50), _at(319, start + INTERVAL, 15, 60)]
+    values = client(lambda _: page(rows)).series(319, start, start + timedelta(hours=1))
+    assert values == [(start + q * INTERVAL, 50.0) for q in range(4)]
 
 
 def test_same_start_in_both_resolutions_is_not_a_duplicate() -> None:
@@ -874,6 +886,21 @@ def test_pagination_rejects_empty_short_and_overflowing_pages_without_further_re
     with pytest.raises(SourceError, match=r"row count 2 != page-1 total 1"):
         client(overflow_handler).series(319, START, END)
     assert pages_overflow == ["1"]
+
+
+def test_full_pages_falling_short_of_page_one_total_are_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Every page is full (no short-page signal), yet fewer rows arrive than the
+    # page-1 total: the final count check must still catch the truncation.
+    monkeypatch.setattr("nordic_balancing.sources.fingrid.PAGE_SIZE", 1)
+    pages = iter([[row(quarter=q)] for q in range(3)])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return page(next(pages), total=4, last_page=3)
+
+    with pytest.raises(SourceError, match=r"row count 3 != page-1 total 4"):
+        client(handler).series(319, START, END)
 
 
 @pytest.mark.parametrize("padded_key", [f"  {KEY}  ", f"{KEY}\n"])

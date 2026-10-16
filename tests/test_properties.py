@@ -64,6 +64,11 @@ def _floor_hour(stamp: datetime) -> datetime:
     return stamp.replace(minute=0, second=0, microsecond=0)
 
 
+def _ceil_hour(stamp: datetime) -> datetime:
+    floor = _floor_hour(stamp)
+    return floor if floor == stamp else floor + HOUR
+
+
 def _grid(start: datetime, end: datetime) -> list[datetime]:
     stamp = _ceil_quarter(start)
     stamps: list[datetime] = []
@@ -92,10 +97,12 @@ def _window(
     *,
     crossing: datetime | None = None,
     end_limit: datetime | None = None,
+    min_step: timedelta | None = None,
 ) -> tuple[datetime, datetime]:
     """Anchor + offset of 0-40 days (whole seconds plus microseconds) and a
     length of 1 minute to 20 days. ``crossing`` forces start < it < end;
-    ``end_limit`` caps the window end."""
+    ``end_limit`` caps the window end; ``min_step`` (INTERVAL or HOUR) forces
+    the window to contain a step boundary, so the response is never empty."""
     anchor = draw(
         st.datetimes(
             min_value=earliest.replace(tzinfo=None),
@@ -107,7 +114,8 @@ def _window(
     if crossing is not None:
         offset_cap = min(offset_cap, _us(crossing - anchor) - 1)
     if end_limit is not None:
-        offset_cap = min(offset_cap, _us(end_limit - anchor - timedelta(minutes=1)))
+        reserve = min_step or timedelta(minutes=1)
+        offset_cap = min(offset_cap, _us(end_limit - anchor - reserve))
     offset = timedelta(
         seconds=draw(st.integers(0, offset_cap // 1_000_000)),
         microseconds=draw(st.integers(0, 999_999)),
@@ -118,6 +126,10 @@ def _window(
     min_length = _us(timedelta(minutes=1))
     if crossing is not None:
         min_length = max(min_length, _us(crossing - start) + 1)
+    if min_step is not None:
+        first = _ceil_quarter(start) if min_step == INTERVAL else _ceil_hour(start)
+        if first > start:
+            min_length = max(min_length, _us(first - start) + 1)
     max_length = _us(timedelta(days=20))
     if end_limit is not None:
         max_length = min(max_length, _us(end_limit - start))
@@ -137,9 +149,12 @@ def _case(
     *,
     crossing: datetime | None = None,
     end_limit: datetime | None = None,
+    min_step: timedelta | None = None,
 ) -> tuple[datetime, datetime, datetime, list[BiddingZone]]:
     """A window [start, end), a split point strictly inside, and the zones."""
-    start, end = draw(_window(earliest, latest, crossing=crossing, end_limit=end_limit))
+    start, end = draw(
+        _window(earliest, latest, crossing=crossing, end_limit=end_limit, min_step=min_step)
+    )
     middle = start + timedelta(microseconds=draw(st.integers(1, _us(end - start) - 1)))
     return start, middle, end, draw(zones)
 
@@ -282,6 +297,7 @@ def _eds_handler(request: httpx.Request) -> httpx.Response:
         datetime(2026, 3, 1, tzinfo=UTC),
         _zones((BiddingZone.DK1, BiddingZone.DK2), 2),
         end_limit=datetime(2026, 4, 1, tzinfo=UTC),
+        min_step=INTERVAL,
     )
 )
 @settings(max_examples=30, deadline=None)
@@ -367,6 +383,7 @@ def _fingrid_expected(stamp: datetime) -> float:
         datetime(2025, 3, 24, tzinfo=UTC),
         _zones((BiddingZone.FI,), 1),
         end_limit=datetime(2025, 3, 25, tzinfo=UTC),
+        min_step=HOUR,
     )
 )
 @settings(max_examples=30, deadline=None)
@@ -459,6 +476,7 @@ def _svk_handler(request: httpx.Request) -> httpx.Response:
         datetime(2026, 3, 1, tzinfo=UTC),
         _zones((BiddingZone.SE1, BiddingZone.SE2, BiddingZone.SE3, BiddingZone.SE4), 3),
         end_limit=datetime(2026, 4, 1, tzinfo=UTC),
+        min_step=HOUR,
     ),
     product=st.sampled_from((ReserveProduct.MFRR, ReserveProduct.AFRR)),
 )
@@ -537,6 +555,7 @@ def _entsoe_handler(request: httpx.Request) -> httpx.Response:
         datetime(2026, 3, 1, tzinfo=UTC),
         _zones(_ZONES, 2),
         end_limit=datetime(2026, 4, 1, tzinfo=UTC),
+        min_step=INTERVAL,
     )
 )
 @settings(max_examples=30, deadline=None)
@@ -577,6 +596,7 @@ def _imbalance_series(draw: st.DrawFn, source: str) -> list[ImbalancePrice]:
                 ),
             ),
             unique=True,
+            min_size=1,
             max_size=8,
         )
     )
@@ -861,7 +881,9 @@ def _esett_hourly_response_case(
 ) -> tuple[datetime, datetime, list[BiddingZone], list[dict[str, Any]]]:
     base = datetime(2023, 5, 10, tzinfo=UTC)
     start = base + timedelta(microseconds=draw(st.integers(0, _us(timedelta(hours=4)))))
-    length = draw(st.integers(_us(timedelta(minutes=1)), _us(timedelta(hours=6))))
+    first_hour = _ceil_hour(start)
+    min_length = max(_us(timedelta(minutes=1)), _us(first_hour - start) + 1)
+    length = draw(st.integers(min_length, _us(timedelta(hours=6))))
     end = start + timedelta(microseconds=length)
     zones = draw(_zones(_ZONES, 3))
     hours: list[datetime] = []
@@ -876,6 +898,11 @@ def _esett_hourly_response_case(
             unique_by=lambda pair: (pair[0], pair[1]),
         )
     )
+    # A row on the first hour boundary in the window always expands to quarters
+    # in [start, end), so the response is never empty.
+    first = (draw(st.sampled_from(zones)), first_hour)
+    if first not in chosen:
+        chosen.append(first)
     finite = st.floats(-500, 500, allow_nan=False, allow_infinity=False)
     rows: list[dict[str, Any]] = []
     for zone, h in chosen:
@@ -952,7 +979,9 @@ def _svk_response_case(
 ) -> tuple[datetime, datetime, list[BiddingZone], ReserveProduct, list[dict[str, Any]]]:
     base = datetime(2026, 1, 10, tzinfo=UTC)
     start = base + timedelta(microseconds=draw(st.integers(0, _us(timedelta(hours=4)))))
-    length = draw(st.integers(_us(timedelta(minutes=1)), _us(timedelta(hours=6))))
+    first_hour = _ceil_hour(start)
+    min_length = max(_us(timedelta(minutes=1)), _us(first_hour - start) + 1)
+    length = draw(st.integers(min_length, _us(timedelta(hours=6))))
     end = start + timedelta(microseconds=length)
     zones = draw(_zones((BiddingZone.SE1, BiddingZone.SE2, BiddingZone.SE3, BiddingZone.SE4), 3))
     product = draw(st.sampled_from((ReserveProduct.MFRR, ReserveProduct.AFRR)))
@@ -971,6 +1000,11 @@ def _svk_response_case(
             unique_by=lambda item: (item[0], item[1], item[2]),
         )
     )
+    # A row on the first hour boundary in the window always expands to quarters
+    # in [start, end), so the response is never empty.
+    first = (first_hour, draw(st.sampled_from(zones)), draw(st.sampled_from(("down", "up"))))
+    if first not in chosen:
+        chosen.append(first)
     finite_price = st.floats(-500, 500, allow_nan=False, allow_infinity=False)
     finite_vol = st.floats(0, 2000, allow_nan=False, allow_infinity=False)
     rows: list[dict[str, Any]] = []
@@ -1067,7 +1101,9 @@ def _fingrid_hourly_response_case(
 ) -> tuple[datetime, datetime, dict[int, list[dict[str, Any]]]]:
     base = datetime(2025, 3, 10, tzinfo=UTC)
     start = base + timedelta(microseconds=draw(st.integers(0, _us(timedelta(hours=4)))))
-    length = draw(st.integers(_us(timedelta(minutes=1)), _us(timedelta(hours=6))))
+    first_hour = _ceil_hour(start)
+    min_length = max(_us(timedelta(minutes=1)), _us(first_hour - start) + 1)
+    length = draw(st.integers(min_length, _us(timedelta(hours=6))))
     end = start + timedelta(microseconds=length)
     hours: list[datetime] = []
     hour = _floor_hour(start)
@@ -1078,6 +1114,10 @@ def _fingrid_hourly_response_case(
     by_dataset: dict[int, list[dict[str, Any]]] = {}
     for dataset in (319, 244, 106, 369):
         chosen_hours = draw(st.lists(st.sampled_from(hours), unique=True))
+        if dataset == 319 and first_hour not in chosen_hours:
+            # A dataset-319 row on the first hour boundary in the window always
+            # expands to a quarter in [start, end): the response is never empty.
+            chosen_hours.append(first_hour)
         value_strategy = (
             st.sampled_from((None, -1.0, 0.0, 1.0))
             if dataset == 369

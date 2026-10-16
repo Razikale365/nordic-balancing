@@ -38,6 +38,18 @@ def test_filters_by_zone() -> None:
     assert changes_between(*window, zones=[]) == []
 
 
+def test_dk2_gets_the_danish_changes() -> None:
+    window = (datetime(2025, 1, 1, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC))
+
+    found = changes_between(*window, zones=[BiddingZone.DK2])
+
+    assert [c.effective for c in found] == [
+        datetime(2025, 3, 18, 23, tzinfo=UTC),
+        datetime(2025, 3, 18, 23, tzinfo=UTC),
+        datetime(2026, 3, 3, 23, tzinfo=UTC),
+    ]
+
+
 def test_rejects_naive_datetimes() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         changes_between(datetime(2026, 1, 1), datetime(2026, 6, 1, tzinfo=UTC))
