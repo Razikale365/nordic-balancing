@@ -30,6 +30,21 @@ the project is in beta: the public API is defined in
   - The `Direction` docstring and `docs/API_CONTRACT.md` state the meaning of `NONE` on
     `ReserveCapacity`.
 
+### Fixed
+- **eSett:** a record missing any of `imblSalesPrice`, `imblPurchasePrice`, `upRegPrice`,
+  `downRegPrice` or `mainDirRegPowerPerMBA` now raises `SourceError` naming the key. Before, a
+  renamed or dropped column would have been read as `None` and reported as unpublished. eSett
+  sends every key, with `null` for an unpublished value (checked live for 2021, 2022, 2023 and
+  2026 records), so a null value still gives `None`.
+- **Svenska kraftnät:** a record missing `price` or `volume` raises `SourceError`; a null value is
+  still `None`.
+- **ENTSO-E:** any error raised while sending a request (for example by a custom `httpx`
+  transport) is reported as `SourceError("entsoe: request failed")`, so the token in the request
+  URL can't appear in the message or the traceback. The library's own errors, including
+  `RateLimitError`, are unchanged.
+- **Energi Data Service:** FCR-N and FCR-D requests filter on `ProductName`, so only the
+  requested product's rows are fetched.
+
 ### Documentation
 - README names the CC BY 4.0 data sources (Energinet, Svenska kraftnät, Fingrid) and
   Energinet's suggested attribution.
