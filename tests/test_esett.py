@@ -488,3 +488,14 @@ def test_transport_error_becomes_source_error() -> None:
         ESettClient(
             httpx.Client(transport=httpx.MockTransport(handler)), sleep=lambda _: None
         ).imbalance_prices(START, END)
+
+
+@pytest.mark.live
+def test_live_history_starts_2021_10_31_23z() -> None:
+    first = datetime(2021, 10, 31, 23, tzinfo=UTC)
+    with ESettClient() as esett:
+        prices = esett.imbalance_prices(
+            first - timedelta(hours=3), first + timedelta(hours=2), [BiddingZone.SE3]
+        )
+    assert prices
+    assert min(p.start for p in prices) == first

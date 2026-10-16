@@ -68,7 +68,8 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   `FCR-D ned` to `DOWN`. Before `2024-02-01` prices are average prices; from
   that date each auction has a marginal price and Total is the volume-weighted
   average of the auctions (common to all areas).
-- EDS `ReserveProduct.FCR = "FCR"` uses `FcrDK1` for DK1 only:
+- EDS `ReserveProduct.FCR = "FCR"` uses `FcrDK1` for DK1 only, from
+  `2021-01-18T23:00Z`:
   `FCRdomestic_MW` and `FCRdk_EUR` supply volume and price, with
   `Direction.NONE`; other source columns stay in `raw`. These FCR datasets
   expand hourly records to quarters with hourly `resolution`; null volume or
@@ -76,8 +77,8 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   `zones=(BiddingZone.DK2,)` / covered SE zones for FCR-N/FCR-D; the existing
   default `(DK1, DK2)` raises `ValueError` for all three products.
 - `EntsoeClient.capacity_market(product, start, end, *, zones=(NO1, NO2, NO3, NO4, NO5))`
-  returns only FCR-N for Norwegian zones, using A81/B95/A52 and market agreement
-  A01. Documents must be A81/A52; series must be B95, symmetric flow A03,
+  returns only FCR-N for Norwegian zones from `2014-09-30T22:00Z` (all five zones;
+  checked live 2026-10-16), using A81/B95/A52 and market agreement A01. Documents must be A81/A52; series must be B95, symmetric flow A03,
   quantity unit MAW and currency EUR. `quantity` supplies MW and
   `procurement_Price.amount` supplies EUR/MW per hour; hourly points expand to
   quarters with `Direction.NONE`, retaining hourly `resolution`. A03 omitted
@@ -260,20 +261,22 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   zone-windows checked. Conflicting dual-category prices are covered by
   `tests/test_entsoe.py::test_rejects_dual_prices_for_the_same_interval` and
   `tests/test_entsoe.py::test_fixture_v45_conflicting_dual_categories_raise`.
-  Rejection of curve types `A02` and `A05` is covered by
-  `tests/test_entsoe.py::test_rejects_malformed_documents`. Rejection of curve
-  type `A04` is enforced by the parser but has no dedicated test or live check.
+  Rejection of curve types `A02`, `A04` and `A05` is covered by
+  `tests/test_entsoe.py::test_rejects_malformed_documents`.
 - **Accepted (part of the contract).** A possible FI imbalance-price formula
   change around `2026-06-01` is **UNVERIFIED**: no primary source was found, so it
-  has no entry in `CHANGES` and no test coverage. The library applies no formula of
-  its own; it reports what Fingrid and eSett publish.
+  has no entry in `CHANGES` (`tests/test_changes.py::test_unverified_fi_formula_change_has_no_entry`).
+  The library applies no formula of its own; it reports what Fingrid and eSett
+  publish (`tests/test_field_matrix.py::test_imbalance_price_fields_map_to_their_source_columns`).
 - **Accepted (part of the contract).** Synchronous only: there is no async client;
   all clients are synchronous over `httpx.Client`. Public client signatures are
   pinned by `tests/test_public_api.py::test_public_api_snapshot`.
 - **Accepted (part of the contract).** Python 3.12+ only (`requires-python = ">=3.12"`
-  in `pyproject.toml`).
+  in `pyproject.toml`). CI tests every classified version; covered by
+  `tests/test_package.py::test_python_floor_is_3_12_and_ci_tests_every_classified_version`.
 - **Accepted (part of the contract).** eSett history starts at
-  `2021-10-31T23:00Z`; nothing earlier exists in the eSett API.
+  `2021-10-31T23:00Z`; nothing earlier exists in the eSett API. Covered live by
+  `tests/test_esett.py::test_live_history_starts_2021_10_31_23z`.
 - **Accepted (part of the contract).** Reconciliation classifies differences only;
   `reconcile_imbalance_prices` never merges series or picks a source. Covered by
   `tests/test_reconcile.py::test_identical_records_produce_no_divergences`,
@@ -310,8 +313,8 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `tests/test_energidataservice.py::test_accepts_exact_dominating_directions`,
   `tests/test_energidataservice.py::test_rejects_fractional_dominating_direction`,
   and `tests/test_energidataservice.py::test_rejects_malformed_records`.
-  Acceptance of `DominatingDirection=null` is implemented but has no dedicated
-  test or live check.
+  `DominatingDirection=null` becomes `None`
+  (`tests/test_energidataservice.py::test_null_dominating_direction_is_none`).
 - **Accepted (part of the contract).** ENTSO-E checks that never triggered on live
   data (60 zone-windows and all 12 zones for 2025, checked 2026-10-12) stay
   strict so they fail loudly if the API changes:
@@ -336,7 +339,11 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
 - **Accepted (part of the contract).** ENTSO-E: the token is passed as the
   `securityToken` query parameter, as the API requires. If `INFO` logging is
   enabled for the `httpx` logger, `httpx` logs request URLs and therefore the
-  token (documented risk; library exceptions redact the token, covered by
+  token (documented risk, shown by
+  `tests/test_entsoe.py::test_token_reaches_logs_only_through_httpx_info_logging`,
+  which also checks that the library leaves the `httpx` logger's level and
+  handlers unchanged; library exceptions
+  redact the token, covered by
   `tests/test_entsoe.py::test_request_params_eic_codes_and_custom_base_url`,
   `tests/test_entsoe.py::test_http_errors_include_status_and_redact_token`, and
   `tests/test_entsoe.py::test_transport_error_does_not_leak_token_or_url`).
