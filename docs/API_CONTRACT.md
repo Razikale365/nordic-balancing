@@ -93,10 +93,15 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   clipped to each query chunk; non-overlapping Periods contribute no records.
   Results sort by `(start, zone, direction)` and are filtered to `[start, end)`.
   ENTSO-E does not name the product; the series is FCR-N because the identical
-  query returns EDS's FCR-N figures for SE and DK2.
+  query returns EDS's FCR-N figures for SE and DK2. ENTSO-E's FCR-N documents for
+  delivery days 2014-12-15 to 2014-12-19 and 2016-10-26 to 2016-11-03 are malformed
+  (price and quantity in separate series, Periods spanning several days, and a price
+  series scaled by 100), so a query covering those days raises `SourceError` rather
+  than guessing. Every other delivery day from 2014-09-30T22:00Z to 2026-10-15 parses
+  (scanned live 2026-10-16).
   Both FCR-N and mFRR capacity requests use **7-day chunks**. If an acknowledgement
   Reason text contains `exceeds the allowed maximum`, that capacity chunk is split
-  at the hour nearest its midpoint (half-hour ties round upward) and each half is
+  at the hour nearest its midpoint (for an odd number of hours, the later hour) and each half is
   retried recursively, stopping at a minimum of one hour. An instance-limit
   acknowledgement at that floor raises `SourceError`. Each half reuses full
   delivery-day validation/A03 filling followed by clipping, preventing gaps and

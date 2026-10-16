@@ -1293,3 +1293,18 @@ def test_entsoe_fcr_differing_repeat_values_still_raise(where: str, field: str) 
     with pytest.raises(SourceError) as exc:
         entsoe_fetch(content, start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N)
     assert str(exc.value) == f"entsoe: duplicate capacity for NO1 at {start}"
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
+def test_entsoe_mfrr_point_flow_conflicting_with_series_raises(zone: BiddingZone) -> None:
+    root = ET.fromstring(xml_member(zone))
+    namespace = root.tag.split("}")[0] + "}"
+    series = root.find(f"{namespace}TimeSeries")
+    assert series is not None
+    series_flow = series.findtext(f"{namespace}flowDirection.direction")
+    point = series.find(f"{namespace}Period/{namespace}Point")
+    assert point is not None and series_flow in ("A01", "A02")
+    flow = ET.SubElement(point, f"{namespace}flowDirection.direction")
+    flow.text = "A02" if series_flow == "A01" else "A01"
+    with pytest.raises(SourceError, match=r"mFRR capacity flowDirection.direction conflicts"):
+        entsoe_fetch(ET.tostring(root), zone=zone)
