@@ -232,6 +232,19 @@ def test_filters_subinterval_start_and_preserves_exclusive_end_precision() -> No
     assert seen[0].url.params["end"] == "2026-01-15T00:15:00.001Z"
 
 
+def test_end_rounds_up_to_the_next_millisecond() -> None:
+    # A sub-millisecond tail (not a whole millisecond) must still widen the
+    # query end so an interval starting inside it is fetched.
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=[])
+
+    client(handler).imbalance_prices(START, START + INTERVAL + timedelta(microseconds=500))
+    assert seen[0].url.params["end"] == "2026-01-15T00:15:00.001Z"
+
+
 @pytest.mark.parametrize(
     "override",
     [
@@ -279,6 +292,7 @@ def test_rejects_duplicate_zone_and_interval(price: float) -> None:
         ({"timestampUTC": "invalid"}, "unparseable timestampUTC"),
         ({"timestampUTC": "2026-01-15T00:00:00"}, "must be UTC"),
         ({"timestampUTC": "2026-01-15T01:00:00+01:00"}, "must be UTC"),
+        ({"timestampUTC": "2026-01-15T01:00:00-01:00"}, "must be UTC"),
         ({"timestampUTC": "2026-01-15T00:05:00Z"}, "15-minute boundary"),
         ({"timestampUTC": "2026-01-15T00:00:00.000001Z"}, "15-minute boundary"),
         ({"timestampUTC": "2026-01-15T00:00:01Z"}, "15-minute boundary"),
