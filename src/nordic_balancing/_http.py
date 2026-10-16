@@ -101,9 +101,9 @@ def _request(
             sleep(_DEFAULT_RETRY_AFTER)
         else:
             break
-    if (
-        not response.is_success or response.status_code == 204
-    ) and response.status_code not in passthrough_statuses:
+    # Only 200 carries a complete body: 204 has none, 202 is not yet processed and 206
+    # is a partial body.
+    if response.status_code != 200 and response.status_code not in passthrough_statuses:
         detail = f": {response.text[:200]}" if response.is_error else ""
         raise SourceError(f"{source}: HTTP {response.status_code} for {path}{detail}")
     return response

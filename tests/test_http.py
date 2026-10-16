@@ -75,8 +75,8 @@ def test_http_date_beyond_the_cap_raises_without_sleeping() -> None:
     assert sleeps == []
 
 
-@pytest.mark.parametrize("status", [100, 204, 301, 302, 307, 308])
-def test_get_bytes_rejects_non_2xx_and_204_statuses(status: int) -> None:
+@pytest.mark.parametrize("status", [100, 201, 202, 203, 204, 206, 301, 302, 307, 308])
+def test_get_bytes_rejects_every_status_but_200(status: int) -> None:
     record_body = b'{"value":1,"private_record_marker":"SYNTHETIC_RECORD"}'
     http = httpx.Client(
         transport=httpx.MockTransport(
@@ -219,7 +219,7 @@ def test_retry_after_rejects_non_ascii_offset_bytes(offset: bytes) -> None:
     assert sleeps == [10.0]
 
 
-@pytest.mark.parametrize("status", [100, 204, 301, 302, 307, 308, 600, 999])
+@pytest.mark.parametrize("status", [100, 202, 204, 206, 301, 302, 307, 308, 600, 999])
 @pytest.mark.parametrize("fetch_json", [False, True])
 def test_http_status_errors_exclude_response_records(status: int, fetch_json: bool) -> None:
     record_body = (
