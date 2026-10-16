@@ -77,18 +77,44 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   `zones=(BiddingZone.DK2,)` / covered SE zones for FCR-N/FCR-D; the existing
   default `(DK1, DK2)` raises `ValueError` for all three products.
 - `EntsoeClient.capacity_market(product, start, end, *, zones=(NO1, NO2, NO3, NO4, NO5))`
-  returns only FCR-N for Norwegian zones from `2014-09-30T22:00Z` (all five zones;
+  returns FCR-N for Norwegian zones from `2014-09-30T22:00Z` (all five zones;
   checked live 2026-10-16), using A81/B95/A52 and market agreement A01. Documents must be A81/A52; series must be B95, symmetric flow A03,
   quantity unit MAW and currency EUR. `quantity` supplies MW and
   `procurement_Price.amount` supplies EUR/MW per hour; hourly points expand to
   quarters with `Direction.NONE`, retaining hourly `resolution`. A03 omitted
-  positions continue the preceding quantity and price. Duplicate values for a
-  zone and hour raise `SourceError`; other products/zones raise `ValueError`.
+  positions continue the preceding quantity and price. Identical quantity and price repeats from separate documents/members
+  collapse by `(zone, start, direction)`; conflicting values raise `SourceError`.
+  Repeated positions or series inside a document still raise. Other products/zones
+  raise `ValueError`.
   Returned A81 delivery-day Periods are validated and A03-filled in full, then
   clipped to each query chunk; non-overlapping Periods contribute no records.
   Results sort by `(start, zone, direction)` and are filtered to `[start, end)`.
   ENTSO-E does not name the product; the series is FCR-N because the identical
   query returns EDS's FCR-N figures for SE and DK2.
+- `FingridClient.capacity_market(product, start, end)` returns FI `ReserveCapacity`
+  for FCR-N (NONE, price/volume datasets 317/316, from 2014-01-01T00:00Z), FCR-D
+  UP (318/315, from 2014-01-01T00:00Z), FCR-D DOWN (283/281, from
+  2021-04-21T22:00Z), and mFRR UP/DOWN (329/327 and 330/328, from
+  2022-11-30T23:00Z). Volume is hourly-market procured MW, excluding yearly-market
+  FCR. Price and volume join on hour start, retaining an hour present in either
+  dataset with the missing value `None`. Raw rows remain under `price` and `volume`.
+  Each hourly level expands to four quarters with hourly `resolution`, clipped
+  to `[start, end)` and sorted by `(start, zone, direction)`. Duplicate starts,
+  off-hour starts, non-hourly durations and non-finite values raise `SourceError`.
+  Other products raise `ValueError`; there is no `zones` parameter.
+  `series()`, its hourly-policy dataset set and `imbalance_prices()` are unchanged.
+- `EntsoeClient.capacity_market` also accepts `ReserveProduct.MFRR` for NO1–NO5
+  and FI, keeping the NO1–NO5 default. It queries A81/B95/A47 with market agreement
+  A01; requires EUR, MAW and PT60M; and maps flow A01 to UP and A02 to DOWN.
+  A03 continuation, whole-day validation/clipping, expansion and the identical-
+  duplicate rule above apply. FCR-N with FI raises `ValueError`: ENTSO-E has no
+  Finnish FCR. The mFRR product was verified live against Fingrid (FI) and SvK
+  (SE3), matching all 48 hour-directions per source on 2026-10-08, per the supplied
+  work-order evidence. Reproduce with `examples/fi_no_capacity/cross_check.py`.
+  A47 NO/FI data are captured from 2026-10-07T22:00Z in the supplied fixtures;
+  the first historical day is **UNKNOWN**, pending the reviewer's permitted live
+  binary search (`cross_check.py --live --find-coverage`). This worker was forbidden
+  network access, so this capture date is not claimed as the coverage start.
 - `SvKClient.capacity_market(product, start, end, zones=(SE1, SE2, SE3, SE4))`
   returns `list[ReserveCapacity]` for Swedish aFRR and mFRR capacity markets.
 
@@ -154,7 +180,8 @@ bidding zone, product, direction, and 15-minute UTC interval:
 - `start: datetime` — UTC start of the 15-minute interval.
 - `zone: BiddingZone` — Nordic bidding zone (`SE1`–`SE4` for `SvKClient`;
   all 12 zones for EDS aFRR, DK1/DK2 for EDS mFRR, DK2/SE1–SE4 for EDS
-  FCR-N/FCR-D, DK1 for EDS FCR, and NO1–NO5 for ENTSO-E FCR-N).
+  FCR-N/FCR-D, DK1 for EDS FCR, FI for Fingrid, NO1–NO5 for ENTSO-E FCR-N,
+  and NO1–NO5/FI for ENTSO-E mFRR).
 - `product: ReserveProduct` — reserve product (`ReserveProduct.MFRR = "mFRR"`,
   `ReserveProduct.AFRR = "aFRR"`, `ReserveProduct.FCR_N = "FCR-N"`,
   `ReserveProduct.FCR_D = "FCR-D"`, or `ReserveProduct.FCR = "FCR"`).
@@ -185,6 +212,8 @@ bidding zone, product, direction, and 15-minute UTC interval:
     categories (`A04` and `A05`) at the same resolution with an equal price
     collapses to one record,
     keeping all categories in `raw["categories"]`.
+  - ENTSO-E capacity (A81): identical quantity/price repeats across documents
+    collapse by zone, quarter and direction; conflicting values raise.
   - Fingrid: where hourly and 15-minute records overlap around the March 2025
     transition (datasets 319, 244, 106, 369), the hourly value is kept before
     `2025-03-18T23:00Z` and the 15-minute value from then on, with the other

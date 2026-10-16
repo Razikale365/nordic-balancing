@@ -43,18 +43,18 @@ their contribution to the single imbalance price is not verified.
 
 ## `ReserveCapacity`
 
-| Field | Svenska kraftnät (`svk`) | Energi Data Service (`energidataservice`) | ENTSO-E (`entsoe`) |
-|---|---|---|---|
-| `start` | `provided` | `provided` | `provided` |
-| `zone` | `provided` | `provided` | `provided` |
-| `product` | `provided` | `provided` | `provided` |
-| `direction` | `provided` | `provided` | `provided` |
-| `price_eur_per_mw` | `provided` | `provided` | `provided` |
-| `volume_mw` | `provided` | `provided` | `provided` |
-| `source` | `provided` | `provided` | `provided` |
-| `resolution` | `provided` | `provided` | `provided` |
-| `raw` | `provided` | `provided` | `provided` |
-| Unpublished interval appears as | No record when the hourly row is absent from `datastore_search`; four quarter-hour records with `None` (`price_eur_per_mw` / `volume_mw`) when a row is returned with null values | No record when the hourly row is absent; each returned row expands to four quarters per direction, with `None` for null price or procured volume | No record when absent; A03 omitted positions repeat the preceding point within a Period; hourly values expand to four quarters |
+| Field | Svenska kraftnät (`svk`) | Energi Data Service (`energidataservice`) | ENTSO-E (`entsoe`) | Fingrid (`fingrid`) |
+|---|---|---|---|---|
+| `start` | `provided` | `provided` | `provided` | `provided` |
+| `zone` | `provided` | `provided` | `provided` | `provided` |
+| `product` | `provided` | `provided` | `provided` | `provided` |
+| `direction` | `provided` | `provided` | `provided` | `provided` |
+| `price_eur_per_mw` | `provided` | `provided` | `provided` | `provided` |
+| `volume_mw` | `provided` | `provided` | `provided` | `provided` |
+| `source` | `provided` | `provided` | `provided` | `provided` |
+| `resolution` | `provided` | `provided` | `provided` | `provided` |
+| `raw` | `provided` | `provided` | `provided` | `provided` |
+| Unpublished interval appears as | No record when the hourly row is absent from `datastore_search`; four quarter-hour records with `None` (`price_eur_per_mw` / `volume_mw`) when a row is returned with null values | No record when the hourly row is absent; each returned row expands to four quarters per direction, with `None` for null price or procured volume | No record when absent; A03 omitted positions repeat the preceding point within a Period; hourly values expand to four quarters | No record if both rows are absent; price-only or volume-only hours are returned with the missing value `None`; null values remain `None`; each hour expands to four quarters |
 
 EDS aFRR covers all 12 Nordic zones; EDS mFRR covers DK1/DK2. Each row maps
 `UpPriceEUR` / `DownPriceEUR` to `price_eur_per_mw` and `UpProcuredMW` /
@@ -81,3 +81,16 @@ ENTSO-E does not name the product; the series is FCR-N because the identical
 query returns EDS's FCR-N figures for SE and DK2.
 Symmetric FCR-N/FCR volume counts in both regulation directions, while its
 capacity cost counts once. FCR-D capacity and cost count per direction.
+
+
+Fingrid FI hourly-market capacity uses price/volume dataset pairs 317/316
+(FCR-N NONE), 318/315 (FCR-D UP), 283/281 (FCR-D DOWN), 329/327 (mFRR UP)
+and 330/328 (mFRR DOWN). Volumes exclude yearly-market FCR procurement.
+Both source rows remain under `raw["price"]` and `raw["volume"]`, including
+`None` for an absent row. Dataset 328 is labelled MW/h but represents MW.
+
+ENTSO-E mFRR (NO1–NO5 and FI, A81/B95/A47) uses the same quantity/price fields
+as FCR-N; flow A01 is UP and A02 is DOWN. Identical quantity/price repeats
+across documents collapse by `(zone, start, direction)`; conflicting repeats
+raise. On 2026-10-08, all 48 FI hour-directions matched Fingrid and all 48
+SE3 hour-directions matched SvK (work-order live evidence).

@@ -1,4 +1,4 @@
-"""ENTSO-E Transparency Platform imbalance prices (A85) and FCR-N capacity (A81).
+"""ENTSO-E Transparency Platform imbalance prices (A85) and FCR-N/mFRR capacity (A81).
 
 The XML structure handled here was verified against the official IEC
 62325-451-6 balancing document schema, namespace versions 3.0 to 4.5, using
@@ -51,6 +51,7 @@ _CHUNK = timedelta(days=366)
 _HOUR = timedelta(hours=1)
 _NO = (BiddingZone.NO1, BiddingZone.NO2, BiddingZone.NO3, BiddingZone.NO4, BiddingZone.NO5)
 _LIMIT = 64 * 1024 * 1024
+_MFRR_DIRECTIONS = {"A01": Direction.UP, "A02": Direction.DOWN}
 _NO_DATA = "No matching data found"
 _PASSTHROUGH = frozenset({400})
 _RESOLUTIONS = {"PT15M": INTERVAL, "PT60M": _HOUR}
@@ -90,7 +91,7 @@ class _Point:
 
 
 class EntsoeClient:
-    """Synchronous ENTSO-E client for A85 imbalance prices and A81 FCR-N capacity.
+    """Synchronous ENTSO-E client for A85 imbalance prices and A81 FCR-N/mFRR capacity.
 
     ``api_key`` defaults to ``ENTSOE_API_KEY``. Pass your own ``httpx.Client``
     to control proxies, timeouts or transports; otherwise this instance owns it.
@@ -206,20 +207,30 @@ class EntsoeClient:
             BiddingZone.NO5,
         ),
     ) -> list[ReserveCapacity]:
-        """Return Norwegian FCR-N capacity, hourly values expanded to quarters.
+        """Return NO FCR-N or NO/FI mFRR capacity, expanded to quarters.
 
         ENTSO-E does not name the product; FCR-N is inferred from the identical
         query matching EDS FCR-N for Swedish zones and DK2.
+        The mFRR product is verified against Fingrid and SvK (2026-10-08).
         """
-        if not isinstance(product, ReserveProduct) or product is not ReserveProduct.FCR_N:
-            raise ValueError("ENTSO-E capacity supports only ReserveProduct.FCR_N")
+        if not isinstance(product, ReserveProduct) or product not in (
+            ReserveProduct.FCR_N,
+            ReserveProduct.MFRR,
+        ):
+            raise ValueError(
+                "ENTSO-E capacity supports ReserveProduct.FCR_N and ReserveProduct.MFRR"
+            )
         start_utc = to_utc(start, "start")
         end_utc = to_utc(end, "end")
         if end_utc <= start_utc:
             raise ValueError("end must be after start")
         requested = list(zones)
-        if any(not isinstance(z, BiddingZone) or z not in _NO for z in requested):
-            raise ValueError("ENTSO-E FCR-N capacity covers only NO1, NO2, NO3, NO4 and NO5")
+        supported = (*_NO, BiddingZone.FI) if product is ReserveProduct.MFRR else _NO
+        if any(not isinstance(z, BiddingZone) or z not in supported for z in requested):
+            raise ValueError(
+                f"ENTSO-E {product.value} capacity covers only "
+                + ", ".join(z.value for z in supported)
+            )
         zone_list = sorted(set(requested))
         if not zone_list:
             raise ValueError("zones must not be empty")
@@ -227,30 +238,48 @@ class EntsoeClient:
         pool = ThreadPoolExecutor(min(self._max_workers, len(jobs)))
         try:
             try:
-                parts = list(pool.map(lambda job: self._fetch_capacity(*job), jobs))
+                parts = list(
+                    pool.map(lambda job: self._fetch_capacity(*job, product=product), jobs)
+                )
             finally:
                 pool.shutdown(cancel_futures=True)
+            collected: dict[tuple[BiddingZone, datetime, Direction], ReserveCapacity] = {}
+            for part in parts:
+                for record in part:
+                    key = (record.zone, record.start, record.direction)
+                    existing = collected.get(key)
+                    if existing is not None and (
+                        existing.volume_mw != record.volume_mw
+                        or existing.price_eur_per_mw != record.price_eur_per_mw
+                    ):
+                        raise SourceError(
+                            f"{SOURCE}: duplicate capacity with differing values for "
+                            f"{record.zone} at {record.start} ({record.direction.name})"
+                        )
+                    collected.setdefault(key, record)
+            return sorted(
+                (r for r in collected.values() if start_utc <= r.start < end_utc),
+                key=lambda r: (r.start, r.zone, r.direction),
+            )
         except SourceError as exc:
             raise SourceError(str(exc).replace(self._api_key, "[REDACTED_SECRET]")) from None
-        collected: dict[tuple[BiddingZone, datetime], ReserveCapacity] = {}
-        for part in parts:
-            for record in part:
-                key = (record.zone, record.start)
-                if key in collected:
-                    raise SourceError(
-                        f"{SOURCE}: duplicate capacity for {record.zone} at {record.start}"
-                    )
-                collected[key] = record
-        return sorted(
-            (r for r in collected.values() if start_utc <= r.start < end_utc),
-            key=lambda r: (r.start, r.zone, r.direction),
-        )
 
     def _fetch_capacity(
-        self, zone: BiddingZone, chunk_start: datetime, chunk_end: datetime
+        self,
+        zone: BiddingZone,
+        chunk_start: datetime,
+        chunk_end: datetime,
+        *,
+        product: ReserveProduct = ReserveProduct.FCR_N,
     ) -> list[ReserveCapacity]:
         records: list[ReserveCapacity] = []
-        for member in self._request_members(zone, chunk_start, chunk_end, capacity=True):
+        process = "A47" if product is ReserveProduct.MFRR else "A52"
+        for member in self._request_members(
+            zone, chunk_start, chunk_end, capacity=True, capacity_process=process
+        ):
+            # Repeated keys inside one document remain invalid; only identical
+            # repeats from separate documents/members may collapse.
+            seen: set[tuple[datetime, str | None]] = set()
             for point in _points(
                 member,
                 _EIC_CODES[zone],
@@ -258,14 +287,25 @@ class EntsoeClient:
                 chunk_end,
                 api_key=self._api_key,
                 capacity=True,
+                capacity_process=process,
             ):
+                key = (point.start, point.flow_direction)
+                if key in seen:
+                    raise SourceError(f"{SOURCE}: duplicate capacity within document")
+                seen.add(key)
+                assert point.flow_direction is not None  # validated series-level capacity flow
+                direction = (
+                    _MFRR_DIRECTIONS[point.flow_direction]
+                    if product is ReserveProduct.MFRR
+                    else Direction.NONE
+                )
                 for quarter in range(4):
                     records.append(
                         ReserveCapacity(
                             start=point.start + quarter * INTERVAL,
                             zone=zone,
-                            product=ReserveProduct.FCR_N,
-                            direction=Direction.NONE,
+                            product=product,
+                            direction=direction,
                             price_eur_per_mw=point.amount,
                             volume_mw=point.quantity,
                             source=SOURCE,
@@ -278,7 +318,7 @@ class EntsoeClient:
                                 "namespace": point.namespace,
                                 "quantity": point.quantity,
                                 "procurement_Price.amount": point.amount,
-                                "flow_direction": "A03",
+                                "flow_direction": point.flow_direction,
                                 "businessType": "B95",
                                 "currency_Unit.name": "EUR",
                                 "quantity_Measure_Unit.name": "MAW",
@@ -294,6 +334,7 @@ class EntsoeClient:
         chunk_end: datetime,
         *,
         capacity: bool = False,
+        capacity_process: str = "A52",
     ) -> list[bytes]:
         params = [
             ("securityToken", self._api_key),
@@ -306,7 +347,7 @@ class EntsoeClient:
             params.extend(
                 [
                     ("businessType", "B95"),
-                    ("processType", "A52"),
+                    ("processType", capacity_process),
                     ("Type_MarketAgreement.Type", "A01"),
                 ]
             )
@@ -504,6 +545,7 @@ def _points(
     *,
     api_key: str = "",
     capacity: bool = False,
+    capacity_process: str = "A52",
 ) -> list[_Point]:
     try:
         root = ElementTree.fromstring(member)
@@ -523,8 +565,8 @@ def _points(
         # Other balancing documents (A86 imbalance volumes, ...) carry no prices;
         # parsing one would yield only unpublished intervals.
         raise SourceError(f"{SOURCE}: unexpected document type {document_type!r}")
-    if capacity and _text(root, "process.processType") != "A52":
-        raise SourceError(f"{SOURCE}: capacity process.processType must be A52")
+    if capacity and _text(root, "process.processType") != capacity_process:
+        raise SourceError(f"{SOURCE}: capacity process.processType must be {capacity_process}")
     for element in _AREA_ELEMENTS:
         area = _code(root, element)
         if area is not None and area != eic:
@@ -532,7 +574,14 @@ def _points(
     return [
         point
         for series in _children(root, "TimeSeries")
-        for point in _series_points(series, namespace, window_start, window_end, capacity=capacity)
+        for point in _series_points(
+            series,
+            namespace,
+            window_start,
+            window_end,
+            capacity=capacity,
+            capacity_process=capacity_process,
+        )
     ]
 
 
@@ -561,11 +610,16 @@ def _series_points(
     window_end: datetime,
     *,
     capacity: bool = False,
+    capacity_process: str = "A52",
 ) -> list[_Point]:
+    series_flow: str | None = None
     if capacity:
+        series_flow = _text(series, "flowDirection.direction")
+        allowed = ("A01", "A02") if capacity_process == "A47" else ("A03",)
+        if series_flow not in allowed:
+            raise SourceError(f"{SOURCE}: capacity flowDirection.direction must be {allowed}")
         for name, expected in (
             ("businessType", "B95"),
-            ("flowDirection.direction", "A03"),
             ("quantity_Measure_Unit.name", "MAW"),
             ("currency_Unit.name", "EUR"),
         ):
@@ -590,7 +644,13 @@ def _series_points(
         point
         for period in _children(series, "Period")
         for point in _period_points(
-            period, curve_type, namespace, window_start, window_end, capacity=capacity
+            period,
+            curve_type,
+            namespace,
+            window_start,
+            window_end,
+            capacity=capacity,
+            capacity_flow=series_flow,
         )
     ]
 
@@ -603,6 +663,7 @@ def _period_points(
     window_end: datetime,
     *,
     capacity: bool = False,
+    capacity_flow: str | None = None,
 ) -> list[_Point]:
     interval = _child(period, "timeInterval")
     if interval is None:
@@ -646,15 +707,17 @@ def _period_points(
             )
         if capacity:
             point_flow = _code(element, "flowDirection.direction")
-            if point_flow is not None and point_flow != "A03":
-                raise SourceError(f"{SOURCE}: capacity flowDirection.direction must be A03")
+            if point_flow is not None and point_flow != capacity_flow:
+                raise SourceError(
+                    f"{SOURCE}: capacity flowDirection.direction conflicts with series"
+                )
         record = _Point(
             start=start,
             amount=amount,
             categories=(
                 {"category": _code(element, "imbalance_Price.category"), "amount": amount},
             ),
-            flow_direction=_code(element, "flowDirection.direction"),
+            flow_direction=capacity_flow if capacity else _code(element, "flowDirection.direction"),
             financial_prices=tuple(
                 _financial_price(component) for component in _children(element, "Financial_Price")
             ),

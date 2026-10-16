@@ -129,6 +129,7 @@ RESERVE_CAPACITY_AVAILABILITY: dict[str, dict[str, str]] = {
         "resolution": "provided",
         "raw": "provided",
     },
+    "fingrid": {name: "provided" for name in RESERVE_CAPACITY_FIELDS},
 }
 
 
@@ -445,3 +446,33 @@ def test_imbalance_price_fields_map_to_their_source_columns(source: str) -> None
     assert {name: type(value) for name, value in actual.items()} == {
         name: type(value) for name, value in expected.items()
     }
+
+
+def test_fingrid_capacity_field_matrix_and_values() -> None:
+    import json
+
+    fixture_dir = Path(__file__).parent / "fixtures" / "fi_no_capacity"
+    bodies = {
+        dataset: json.loads((fixture_dir / f"fingrid-{dataset}-2026-10-08.json").read_text())
+        for dataset in (317, 316)
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        dataset = int(request.url.path.split("/")[-2])
+        return httpx.Response(200, json=bodies[dataset])
+
+    start = datetime(2026, 10, 7, 22, tzinfo=UTC)
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        FingridClient("test-key", http, min_interval=0) as client,
+    ):
+        records = client.capacity_market(ReserveProduct.FCR_N, start, start + timedelta(days=1))
+    availability = RESERVE_CAPACITY_AVAILABILITY["fingrid"]
+    assert tuple(availability) == RESERVE_CAPACITY_FIELDS
+    assert all(status == "provided" for status in availability.values())
+    assert len(records) == 96
+    for record in records:
+        assert record.source == "fingrid"
+        assert all(getattr(record, name) is not None for name in availability)
+        assert record.price_eur_per_mw == record.raw["price"]["value"]
+        assert record.volume_mw == record.raw["volume"]["value"]
