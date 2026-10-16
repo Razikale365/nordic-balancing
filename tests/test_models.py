@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -13,6 +13,7 @@ from nordic_balancing import (
     ReserveCapacity,
     ReserveProduct,
 )
+from nordic_balancing.models import to_utc
 
 START = datetime(2026, 1, 15, tzinfo=UTC)
 
@@ -106,3 +107,42 @@ def test_offset_zero_local_start_is_normalised_to_utc(kind: str) -> None:
     assert record.start == datetime(2026, 10, 25, 1, 15, tzinfo=UTC)
     assert record.end - record.start == INTERVAL
     assert record.end == datetime(2026, 10, 25, 1, 30, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("kind", ["imbalance", "reserve"])
+def test_non_utc_aware_start_is_rejected_not_normalised(kind: str) -> None:
+    # An offset-zero zone is normalised; any other offset must raise.
+    start = datetime(2026, 1, 15, 12, 0, tzinfo=ZoneInfo("Europe/Copenhagen"))
+
+    with pytest.raises(ValueError, match="must be a UTC datetime"):
+        replace(price({}), start=start) if kind == "imbalance" else reserve(start)
+
+
+def test_reserve_capacity_raw_top_level_is_read_only() -> None:
+    record = reserve(START)
+    with pytest.raises(TypeError):
+        record.raw["a"] = 2  # type: ignore[index]
+
+
+class _NoOffset(tzinfo):
+    def utcoffset(self, dt: datetime | None) -> timedelta | None:
+        return None
+
+    def dst(self, dt: datetime | None) -> timedelta | None:
+        return None
+
+    def tzname(self, dt: datetime | None) -> str:
+        return "NONE"
+
+
+def test_to_utc_rejects_a_datetime_python_treats_as_naive() -> None:
+    # A tzinfo whose utcoffset() is None makes the datetime naive per the
+    # datetime docs; to_utc must reject it, not convert it as local time.
+    with pytest.raises(ValueError, match="timezone-aware"):
+        to_utc(datetime(2026, 1, 15, 12, 0, tzinfo=_NoOffset()), "start")
+
+
+def test_to_utc_normalises_non_utc_zone() -> None:
+    stamp = to_utc(datetime(2026, 1, 15, 12, 0, tzinfo=ZoneInfo("Europe/Copenhagen")), "start")
+    assert stamp.tzinfo is UTC
+    assert stamp == datetime(2026, 1, 15, 11, 0, tzinfo=UTC)

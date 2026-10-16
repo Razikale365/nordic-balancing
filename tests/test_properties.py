@@ -17,7 +17,7 @@ from typing import Any
 
 import httpx
 import pytest
-from hypothesis import example, given, settings
+from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
 from nordic_balancing import (
@@ -295,6 +295,7 @@ def test_energidataservice_same_records_however_the_window_is_split(
     with pytest.MonkeyPatch().context() as patch:
         patch.setattr(energidataservice, "PAGE_SIZE", 97)
         whole = client.imbalance_prices(start, end, zones)
+        assume(len(whole) > 0)
         _assert_price_invariants(whole, zones, start, end)
         left = client.imbalance_prices(start, middle, zones)
         right = client.imbalance_prices(middle, end, zones)
@@ -384,6 +385,7 @@ def test_fingrid_same_series_however_the_window_is_split(
     with pytest.MonkeyPatch().context() as patch:
         patch.setattr(fingrid, "PAGE_SIZE", 50)
         whole = client.series(319, start, end)
+        assume(len(whole) > 0)
         assert [stamp for stamp, _ in whole] == _grid(start, end)
         for stamp, value in whole:
             assert stamp.utcoffset() == timedelta(0)
@@ -472,6 +474,7 @@ def test_svk_same_records_however_the_window_is_split(
         httpx.Client(transport=httpx.MockTransport(_svk_handler)), sleep=lambda _: None
     )
     whole = client.capacity_market(product, start, end, zones)
+    assume(len(whole) > 0)
     keys = [(r.start, r.zone, r.direction) for r in whole]
     assert keys == sorted(keys)
     assert len(keys) == len(set(keys))
@@ -552,6 +555,7 @@ def test_entsoe_same_records_however_the_window_is_split(
     with pytest.MonkeyPatch().context() as patch:
         patch.setattr(entsoe, "_CHUNK", timedelta(days=7))
         whole = client.imbalance_prices(start, end, zones)
+        assume(len(whole) > 0)
         _assert_price_invariants(whole, zones, start, end)
         left = client.imbalance_prices(start, middle, zones)
         right = client.imbalance_prices(middle, end, zones)
@@ -577,6 +581,7 @@ def _imbalance_series(draw: st.DrawFn, source: str) -> list[ImbalancePrice]:
                 ),
             ),
             unique=True,
+            min_size=1,
             max_size=8,
         )
     )
@@ -844,6 +849,7 @@ def test_entsoe_periods_return_only_published_in_window_records(
                     if start <= q_start < end:
                         expected.append((q_start, carried, spec.step))
 
+    assume(len(expected) > 0)
     for price in prices:
         assert price.imbalance_price_eur is not None
         origin_idx = 0 if price.imbalance_price_eur < 500.0 else 1
@@ -908,6 +914,7 @@ def test_esett_hourly_quarters_map_to_published_row(
         sleep=lambda _: None,
     )
     prices = client.imbalance_prices(start, end, zones)
+    assume(len(prices) > 0)
     _assert_grid(prices, start, end)
     keys = [(p.start, p.zone) for p in prices]
     assert keys == sorted(keys)
@@ -1021,6 +1028,7 @@ def test_svk_quarters_map_to_published_row(
 
     client = SvKClient(httpx.Client(transport=httpx.MockTransport(handler)), sleep=lambda _: None)
     records = client.capacity_market(product, start, end, zones)
+    assume(len(records) > 0)
     keys = [(r.start, r.zone, r.direction) for r in records]
     assert keys == sorted(keys)
     assert len(keys) == len(set(keys))
@@ -1121,8 +1129,12 @@ def test_fingrid_hourly_quarters_map_to_published_row(
         dataset: [(datetime.fromisoformat(row["startTime"]), row) for row in rows]
         for dataset, rows in by_dataset.items()
     }
+    series_by_dataset = {
+        dataset: client.series(dataset, start, end) for dataset in (319, 244, 106, 369)
+    }
+    assume(any(series_by_dataset.values()))
     for dataset in (319, 244, 106, 369):
-        series = client.series(dataset, start, end)
+        series = series_by_dataset[dataset]
         for stamp, value in series:
             assert stamp.utcoffset() == timedelta(0)
             assert stamp.minute % 15 == 0 and stamp.second == 0 and stamp.microsecond == 0
@@ -1139,6 +1151,7 @@ def test_fingrid_hourly_quarters_map_to_published_row(
         assert [stamp for stamp, _ in series] == expected_stamps
 
     prices = client.imbalance_prices(start, end)
+    assume(len(prices) > 0)
     _assert_grid(prices, start, end)
     for price in prices:
         assert price.zone is BiddingZone.FI

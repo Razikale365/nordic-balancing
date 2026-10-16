@@ -269,6 +269,54 @@ def test_full_overlap_has_no_coverage_gap() -> None:
     assert report.reference_only_zones == ()
 
 
+def test_compared_counts_keys_not_divergences() -> None:
+    # One key can yield several divergences; compared still counts it once.
+    report = reconcile_imbalance_prices(
+        [record("a", resolution=HOUR, price=10.0, direction=Direction.UP)],
+        [record("b", resolution=INTERVAL, price=10.5, direction=Direction.DOWN)],
+    )
+
+    assert len(report.divergences) == 3
+    assert report.compared == 1
+    assert report.identical == 0
+
+
+def test_zero_tolerance_is_accepted() -> None:
+    report = reconcile_imbalance_prices(
+        [record("a", price=10.0)], [record("b", price=10.0)], tolerance_eur=0
+    )
+    assert report.identical == 1
+
+    report = reconcile_imbalance_prices(
+        [record("a", price=10.0)], [record("b", price=10.001)], tolerance_eur=0
+    )
+    assert kinds(report) == [DivergenceKind.PRICE]
+
+
+def test_zones_are_reported_sorted() -> None:
+    later = START + INTERVAL
+    report = reconcile_imbalance_prices(
+        [record("a", zone=BiddingZone.FI), record("a", zone=BiddingZone.DK1, start=later)],
+        [record("b", zone=BiddingZone.FI), record("b", zone=BiddingZone.DK1, start=later)],
+    )
+
+    assert report.zones == (BiddingZone.DK1, BiddingZone.FI)
+
+
+def test_missing_divergence_names_the_source_holding_the_record() -> None:
+    later = START + INTERVAL
+    report = reconcile_imbalance_prices([record("a")], [record("b"), record("b", start=later)])
+    assert report.divergences[0].detail == "only in b"
+
+    report = reconcile_imbalance_prices([record("a"), record("a", start=later)], [record("b")])
+    assert report.divergences[0].detail == "only in a"
+
+
+def test_unpublished_detail_marks_the_missing_side() -> None:
+    report = reconcile_imbalance_prices([record("a", price=None)], [record("b", price=10.0)])
+    assert report.divergences[0].detail == "unpublished vs 10.0"
+
+
 def test_report_constructs_without_coverage_fields() -> None:
     # Existing positional construction keeps working (the new fields default to ()).
     report = ReconciliationReport("a", "b", (BiddingZone.DK1,), 0, 0, ())

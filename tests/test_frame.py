@@ -120,6 +120,13 @@ def test_reserve_capacity_columns() -> None:
     assert frame["volume_mw"].isna().all()
 
 
+def test_all_none_numeric_columns_stay_float64() -> None:
+    frame = to_frame([price()])
+    assert frame["imbalance_price_dkk"].dtype == "float64"
+    assert frame["spot_price_eur"].dtype == "float64"
+    assert to_frame([capacity()])["volume_mw"].dtype == "float64"
+
+
 def test_no_records_give_an_empty_frame() -> None:
     frame = to_frame([])
     assert frame.empty
