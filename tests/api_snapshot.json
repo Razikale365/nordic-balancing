@@ -33,6 +33,9 @@
   },
   "symbols": {
     "BiddingZone": {
+      "bases": [
+        "StrEnum"
+      ],
       "kind": "enum",
       "members": {
         "DK1": "DK1",
@@ -54,6 +57,9 @@
       "type": "tuple"
     },
     "Direction": {
+      "bases": [
+        "IntEnum"
+      ],
       "kind": "enum",
       "members": {
         "DOWN": -1,
@@ -70,13 +76,18 @@
         "reference: nordic_balancing.models.ImbalancePrice | None",
         "detail: str"
       ],
+      "frozen": true,
       "kind": "dataclass",
       "methods": {
         "__init__": "(self, zone: nordic_balancing.models.BiddingZone, start: datetime.datetime, kind: nordic_balancing.reconcile.DivergenceKind, primary: nordic_balancing.models.ImbalancePrice | None, reference: nordic_balancing.models.ImbalancePrice | None, detail: str) -> None"
       },
-      "properties": {}
+      "properties": {},
+      "slots": true
     },
     "DivergenceKind": {
+      "bases": [
+        "StrEnum"
+      ],
       "kind": "enum",
       "members": {
         "DIRECTION": "direction",
@@ -168,13 +179,15 @@
         "resolution: datetime.timedelta",
         "raw: collections.abc.Mapping[str, typing.Any]"
       ],
+      "frozen": true,
       "kind": "dataclass",
       "methods": {
         "__init__": "(self, start: datetime.datetime, zone: nordic_balancing.models.BiddingZone, imbalance_price_eur: float | None, imbalance_price_dkk: float | None, spot_price_eur: float | None, dominating_direction: nordic_balancing.models.Direction | None, satisfied_demand_mw: float | None, afrr_up_vwa_eur: float | None, afrr_down_vwa_eur: float | None, mfrr_up_price_eur: float | None, mfrr_down_price_eur: float | None, source: str, resolution: datetime.timedelta, raw: collections.abc.Mapping[str, typing.Any]) -> None"
       },
       "properties": {
         "end": "(self) -> datetime.datetime"
-      }
+      },
+      "slots": true
     },
     "MarketChange": {
       "fields": [
@@ -183,11 +196,13 @@
         "summary: str",
         "source_url: str"
       ],
+      "frozen": true,
       "kind": "dataclass",
       "methods": {
         "__init__": "(self, effective: datetime.datetime, zones: frozenset[nordic_balancing.models.BiddingZone], summary: str, source_url: str) -> None"
       },
-      "properties": {}
+      "properties": {},
+      "slots": true
     },
     "NordicBalancingError": {
       "bases": [
@@ -218,12 +233,14 @@
         "primary_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = ()",
         "reference_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = ()"
       ],
+      "frozen": true,
       "kind": "dataclass",
       "methods": {
         "__init__": "(self, primary_source: str, reference_source: str, zones: tuple[nordic_balancing.models.BiddingZone, ...], compared: int, identical: int, divergences: tuple[nordic_balancing.reconcile.Divergence, ...], primary_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = (), reference_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = ()) -> None",
         "counts": "(self) -> dict[nordic_balancing.reconcile.DivergenceKind, int]"
       },
-      "properties": {}
+      "properties": {},
+      "slots": true
     },
     "ReserveCapacity": {
       "fields": [
@@ -237,15 +254,20 @@
         "resolution: datetime.timedelta",
         "raw: collections.abc.Mapping[str, typing.Any]"
       ],
+      "frozen": true,
       "kind": "dataclass",
       "methods": {
         "__init__": "(self, start: datetime.datetime, zone: nordic_balancing.models.BiddingZone, product: nordic_balancing.models.ReserveProduct, direction: nordic_balancing.models.Direction, price_eur_per_mw: float | None, volume_mw: float | None, source: str, resolution: datetime.timedelta, raw: collections.abc.Mapping[str, typing.Any]) -> None"
       },
       "properties": {
         "end": "(self) -> datetime.datetime"
-      }
+      },
+      "slots": true
     },
     "ReserveProduct": {
+      "bases": [
+        "StrEnum"
+      ],
       "kind": "enum",
       "members": {
         "AFRR": "aFRR",
