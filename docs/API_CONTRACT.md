@@ -338,7 +338,8 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   enabled for the `httpx` logger, `httpx` logs request URLs and therefore the
   token (documented risk, shown by
   `tests/test_entsoe.py::test_token_reaches_logs_only_through_httpx_info_logging`,
-  which also checks that the library configures no logging; library exceptions
+  which also checks that the library leaves the `httpx` logger's level and
+  handlers unchanged; library exceptions
   redact the token, covered by
   `tests/test_entsoe.py::test_request_params_eic_codes_and_custom_base_url`,
   `tests/test_entsoe.py::test_http_errors_include_status_and_redact_token`, and
