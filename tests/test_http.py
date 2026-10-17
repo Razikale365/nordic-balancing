@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
+from nordic_balancing import BiddingZone
 from nordic_balancing._http import _retry_after as retry_after
 from nordic_balancing._http import check_base_url, get_bytes, get_json
 from nordic_balancing._validate import finite_number
@@ -113,6 +114,43 @@ def test_retry_after_very_long_delay_seconds_raises() -> None:
     with pytest.raises(RateLimitError):
         fetch([header("9" * 400), httpx.Response(200, content=b"ok")], sleeps)
     assert sleeps == []
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"\xef\xbc\x91\xef\xbc\x92\xef\xbc\x93",  # full-width digits
+        b"\xd9\xa1\xd9\xa2\xd9\xa3",  # Arabic-Indic digits
+    ],
+)
+def test_retry_after_rejects_non_ascii_delay_seconds(raw: bytes) -> None:
+    # str.isdigit() accepts non-ASCII decimal digits, but delay-seconds is 1*DIGIT
+    # (ASCII only), so these are malformed: None and the default delay.
+    response = httpx.Response(503, headers=[(b"Retry-After", raw)])
+    assert retry_after(response, at_now) is None
+    sleeps: list[float] = []
+    body = fetch([response, httpx.Response(200, content=b"ok")], sleeps)
+    assert body == b"ok"
+    assert sleeps == [10.0]
+
+
+def test_exhausted_retries_report_the_fractional_retry_after() -> None:
+    http = httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(429, headers={"Retry-After": "2.5"}))
+    )
+    with pytest.raises(RateLimitError) as exc_info:
+        get_bytes(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    assert exc_info.value.retry_after == 2.5
+    assert exc_info.value.source == "test"
+    assert str(exc_info.value) == "test rate limit exceeded; retry after 2.5 s"
 
 
 def test_transient_transport_error_is_retried() -> None:
@@ -283,6 +321,36 @@ def test_get_json_rejects_non_2xx_and_204_statuses(status: int, body: bytes) -> 
             sleep=lambda _: None,
         )
     assert "SYNTHETIC_RECORD" not in str(exc_info.value)
+
+
+def test_get_json_reports_a_deeply_nested_body_as_not_json() -> None:
+    # A syntactically nested body exhausts the decoder's recursion limit; that
+    # RecursionError is the same contract breach as malformed JSON.
+    body = b"[" * 50000 + b"1" + b"]" * 50000
+    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, content=body)))
+    with pytest.raises(SourceError) as exc_info:
+        get_json(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    assert str(exc_info.value) == "test: response for /api is not JSON"
+
+
+@pytest.mark.parametrize("status", [302, 204])
+def test_entsoe_status_outside_passthrough_has_no_path_slot(status: int) -> None:
+    # ENTSO-E calls _request with an empty path because the URL holds the token,
+    # so statuses raised by the shared layer (redirects, 2xx != 200) name no path.
+    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(status)))
+    client = EntsoeClient("test-entsoe-token", http, max_retries=0, sleep=lambda _: None)
+    start = datetime(2026, 1, 15, tzinfo=UTC)
+    with pytest.raises(SourceError) as exc_info:
+        client.imbalance_prices(start, start + timedelta(hours=1), zones=[BiddingZone.NO1])
+    assert str(exc_info.value) == f"entsoe: HTTP {status}"
 
 
 @pytest.mark.parametrize(
