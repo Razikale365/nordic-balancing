@@ -32,7 +32,7 @@ jobs:
           /tmp/smoke/bin/python -c "import nordic_balancing as n; print(n.__version__, len(n.__all__))"
 
   lowest-direct:
-    name: lowest-direct (httpx 0.27.0, pandas 2.1, numpy<2; transitive dependencies latest)
+    name: lowest-direct (httpx 0.27.0, pandas 2.1.1, numpy<2; transitive dependencies latest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,6 +42,8 @@ jobs:
       - name: Install the declared dependency floor into a fresh environment (no lockfile)
         run: |
           uv venv /tmp/floor --python 3.12
-          uv pip install --python /tmp/floor . "httpx==0.27.0" "pandas==2.1.*" "numpy<2" pytest hypothesis
+          # pandas 2.1.1 is the first 2.1.x release with Python 3.12 wheels;
+          # 2.1.0 needs a source build.
+          uv pip install --python /tmp/floor . "httpx==0.27.0" "pandas==2.1.1" "numpy<2" pytest hypothesis
       - name: Run the offline tests against the installed package
         run: /tmp/floor/bin/python -m pytest -q
