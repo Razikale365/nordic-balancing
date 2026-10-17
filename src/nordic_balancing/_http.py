@@ -46,7 +46,9 @@ def get_json(
     )
     try:
         return response.json()
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
+        # A deeply nested body exhausts the decoder's recursion limit; that is
+        # still an uninterpretable body, not an internal error.
         raise SourceError(f"{source}: response for {path} is not JSON") from exc
 
 
@@ -120,7 +122,9 @@ def _request(
     # is a partial body.
     if response.status_code != 200 and response.status_code not in passthrough_statuses:
         detail = f": {response.text[:200]}" if response.is_error and response.text else ""
-        raise SourceError(f"{source}: HTTP {response.status_code} for {path}{detail}")
+        # An empty path is deliberate (the URL carries a secret): name no slot.
+        where = f" for {path}" if path else ""
+        raise SourceError(f"{source}: HTTP {response.status_code}{where}{detail}")
     return response
 
 
