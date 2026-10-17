@@ -69,6 +69,13 @@ _BALANCING_NS = re.compile(r"urn:iec62325\.351:tc57wg16:451-6:balancingdocument:
 # The xs:positiveInteger and xs:decimal lexical forms, ASCII digits only.
 _POSITION_TEXT = re.compile(r"\+?[0-9]+")
 _DECIMAL_TEXT = re.compile(r"[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)")
+# The timeInterval lexical form: extended layout with a T separator and the Z
+# or +00:00 UTC designator (real documents send HH:MM with no seconds). The
+# other zero-offset spellings fromisoformat accepts (-00:00, +00, +0000, offset
+# seconds, a space separator, the basic layout) are not valid here.
+_TIME_TEXT = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]+)?)?(Z|z|\+00:00)"
+)
 _EIC_CODES = {
     BiddingZone.DK1: "10YDK-1--------W",
     BiddingZone.DK2: "10YDK-2--------M",
@@ -437,7 +444,10 @@ class EntsoeClient:
             raise SourceError(f"{SOURCE}: request failed ({name})") from None
         if response.is_error and response.status_code not in _PASSTHROUGH:
             detail = response.text.replace(self._api_key, "[REDACTED_SECRET]")
-            raise SourceError(f"{SOURCE}: HTTP {response.status_code}: {detail[:200]}")
+            message = f"{SOURCE}: HTTP {response.status_code}"
+            if detail:
+                message += f": {detail[:200]}"
+            raise SourceError(message)
         return _members(response.content)
 
     def _fetch(
@@ -925,6 +935,10 @@ def _time(text: str) -> datetime:
         parsed = datetime.fromisoformat(text)
     except ValueError as exc:
         raise SourceError(f"{SOURCE}: unparseable timeInterval time {text!r}") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+    if (
+        parsed.tzinfo is None
+        or parsed.utcoffset() != timedelta(0)
+        or _TIME_TEXT.fullmatch(text) is None
+    ):
         raise SourceError(f"{SOURCE}: timeInterval time must be UTC: {text!r}")
     return parsed.astimezone(UTC)
