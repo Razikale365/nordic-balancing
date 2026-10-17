@@ -584,22 +584,27 @@ def test_entsoe_same_records_however_the_window_is_split(
 
 
 @st.composite
-def _imbalance_series(draw: st.DrawFn, source: str) -> list[ImbalancePrice]:
-    keys = draw(
-        st.lists(
-            st.tuples(
-                st.sampled_from(BiddingZone),
-                st.datetimes(
-                    min_value=datetime(2020, 1, 1),
-                    max_value=datetime(2030, 1, 1),
-                    timezones=st.just(UTC),
+def _imbalance_series(
+    draw: st.DrawFn,
+    source: str,
+    keys: list[tuple[BiddingZone, datetime]] | None = None,
+) -> list[ImbalancePrice]:
+    if keys is None:
+        keys = draw(
+            st.lists(
+                st.tuples(
+                    st.sampled_from(BiddingZone),
+                    st.datetimes(
+                        min_value=datetime(2020, 1, 1),
+                        max_value=datetime(2030, 1, 1),
+                        timezones=st.just(UTC),
+                    ),
                 ),
-            ),
-            unique=True,
-            min_size=1,
-            max_size=8,
+                unique=True,
+                min_size=1,
+                max_size=8,
+            )
         )
-    )
     return [
         ImbalancePrice(
             start=start,
@@ -621,27 +626,67 @@ def _imbalance_series(draw: st.DrawFn, source: str) -> list[ImbalancePrice]:
     ]
 
 
+@st.composite
+def _imbalance_series_pair(
+    draw: st.DrawFn,
+) -> tuple[list[ImbalancePrice], list[ImbalancePrice]]:
+    """Two series with shared keys plus keys known to exist on only one side."""
+    key = st.tuples(
+        st.sampled_from(BiddingZone),
+        st.datetimes(
+            min_value=datetime(2020, 1, 1),
+            max_value=datetime(2030, 1, 1),
+            timezones=st.just(UTC),
+        ),
+    )
+    shared = draw(st.lists(key, unique=True, min_size=1, max_size=6))
+    primary_only = [k for k in draw(st.lists(key, unique=True, max_size=4)) if k not in shared]
+    taken = {*shared, *primary_only}
+    reference_only = [k for k in draw(st.lists(key, unique=True, max_size=4)) if k not in taken]
+    return (
+        draw(_imbalance_series("a", shared + primary_only)),
+        draw(_imbalance_series("b", shared + reference_only)),
+    )
+
+
 @given(records=_imbalance_series("a"))
 @settings(max_examples=30, deadline=None)
 def test_reconcile_identical_input_has_no_divergences(records: list[ImbalancePrice]) -> None:
     report = reconcile_imbalance_prices(records, records)
-    assert report.divergences == ()
+    assert report.compared == len(records)
     assert report.identical == report.compared
+    assert report.divergences == ()
 
 
-@given(primary=_imbalance_series("a"), reference=_imbalance_series("b"))
+@given(series=_imbalance_series_pair())
 @settings(max_examples=30, deadline=None)
 def test_reconcile_swapping_arguments_swaps_missing_counts(
-    primary: list[ImbalancePrice], reference: list[ImbalancePrice]
+    series: tuple[list[ImbalancePrice], list[ImbalancePrice]],
 ) -> None:
-    forward = reconcile_imbalance_prices(primary, reference).counts()
-    reverse = reconcile_imbalance_prices(reference, primary).counts()
+    primary, reference = series
+    forward = reconcile_imbalance_prices(primary, reference)
+    reverse = reconcile_imbalance_prices(reference, primary)
+
+    primary_keys = {(r.zone, r.start) for r in primary}
+    reference_keys = {(r.zone, r.start) for r in reference}
+    common_zones = {zone for zone, _ in primary_keys} & {zone for zone, _ in reference_keys}
+    compared_keys = {k for k in primary_keys | reference_keys if k[0] in common_zones}
+    counts = forward.counts()
+    assert forward.compared == len(compared_keys)
+    assert counts.get(DivergenceKind.MISSING_IN_REFERENCE, 0) == len(
+        (primary_keys - reference_keys) & compared_keys
+    )
+    assert counts.get(DivergenceKind.MISSING_IN_PRIMARY, 0) == len(
+        (reference_keys - primary_keys) & compared_keys
+    )
+
     swapped = {
         DivergenceKind.MISSING_IN_PRIMARY: DivergenceKind.MISSING_IN_REFERENCE,
         DivergenceKind.MISSING_IN_REFERENCE: DivergenceKind.MISSING_IN_PRIMARY,
     }
+    reverse_counts = reverse.counts()
     for kind in DivergenceKind:
-        assert forward.get(kind, 0) == reverse.get(swapped.get(kind, kind), 0)
+        assert counts.get(kind, 0) == reverse_counts.get(swapped.get(kind, kind), 0)
 
 
 @dataclass(frozen=True, slots=True)

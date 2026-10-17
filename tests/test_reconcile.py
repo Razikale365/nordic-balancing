@@ -102,13 +102,14 @@ def test_price_divergence_above_tolerance() -> None:
     report = reconcile_imbalance_prices([record("a", price=10.0)], [record("b", price=10.5)])
 
     assert kinds(report) == [DivergenceKind.PRICE]
-    assert "10.0" in report.divergences[0].detail
+    assert report.divergences[0].detail == "10.0 vs 10.5 EUR/MWh"
 
 
 def test_rounding_divergence_within_tolerance() -> None:
     report = reconcile_imbalance_prices([record("a", price=10.0)], [record("b", price=10.01)])
 
     assert kinds(report) == [DivergenceKind.ROUNDING]
+    assert report.divergences[0].detail == "10.0 vs 10.01 EUR/MWh"
 
 
 def test_difference_exactly_at_tolerance_is_rounding() -> None:
@@ -189,6 +190,37 @@ def test_only_zones_present_in_both_inputs_are_compared() -> None:
 
 
 def test_divergences_sorted_by_start_zone_kind() -> None:
+    # The earlier FI divergences must precede the later DK1 ones: a zone-major
+    # sort would produce the reverse.
+    later = START + INTERVAL
+    primary = [
+        record("a", zone=BiddingZone.FI, resolution=HOUR),
+        record("a", zone=BiddingZone.DK1, start=later, price=5.0, direction=Direction.DOWN),
+    ]
+    reference = [
+        record("b", zone=BiddingZone.FI, resolution=INTERVAL, price=10.01),
+        record("b", zone=BiddingZone.DK1, start=later, price=6.0, direction=Direction.UP),
+    ]
+
+    report = reconcile_imbalance_prices(primary, reference)
+
+    assert [(d.start, d.zone, d.kind) for d in report.divergences] == [
+        (START, BiddingZone.FI, DivergenceKind.RESOLUTION),
+        (START, BiddingZone.FI, DivergenceKind.ROUNDING),
+        (later, BiddingZone.DK1, DivergenceKind.DIRECTION),
+        (later, BiddingZone.DK1, DivergenceKind.PRICE),
+    ]
+    assert report.counts() == {
+        DivergenceKind.PRICE: 1,
+        DivergenceKind.DIRECTION: 1,
+        DivergenceKind.RESOLUTION: 1,
+        DivergenceKind.ROUNDING: 1,
+    }
+
+
+def test_divergences_sort_zones_at_shared_start() -> None:
+    # Two zones diverge at the same start: the zone key must break the tie
+    # ascending (DK1 before FI).
     later = START + INTERVAL
     primary = [
         record("a", zone=BiddingZone.FI, start=later, resolution=HOUR),
@@ -203,11 +235,12 @@ def test_divergences_sorted_by_start_zone_kind() -> None:
 
     report = reconcile_imbalance_prices(primary, reference)
 
-    assert [(d.start, d.zone, d.kind) for d in report.divergences] == sorted(
-        (d.start, d.zone, d.kind) for d in report.divergences
-    )
-    assert report.divergences[0].kind == DivergenceKind.PRICE
-    assert report.divergences[0].start == START
+    assert [(d.start, d.zone, d.kind) for d in report.divergences] == [
+        (START, BiddingZone.DK1, DivergenceKind.PRICE),
+        (later, BiddingZone.DK1, DivergenceKind.DIRECTION),
+        (later, BiddingZone.FI, DivergenceKind.RESOLUTION),
+        (later, BiddingZone.FI, DivergenceKind.ROUNDING),
+    ]
     assert report.counts() == {
         DivergenceKind.PRICE: 1,
         DivergenceKind.DIRECTION: 1,
