@@ -164,9 +164,10 @@ def test_all_none_numeric_columns_stay_float64() -> None:
     for column in numeric:
         assert frame[column].dtype == "float64"
         assert frame[column].isna().all()
-    volume = to_frame([capacity(volume=None)])["volume_mw"]
-    assert volume.dtype == "float64"
-    assert volume.isna().all()
+    capacity_frame = to_frame([replace(capacity(volume=None), price_eur_per_mw=None)])
+    for column in ("price_eur_per_mw", "volume_mw"):
+        assert capacity_frame[column].dtype == "float64"
+        assert capacity_frame[column].isna().all()
 
 
 def test_no_records_give_an_empty_frame() -> None:
