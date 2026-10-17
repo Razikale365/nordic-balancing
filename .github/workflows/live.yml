@@ -14,9 +14,6 @@ jobs:
   live:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      FINGRID_API_KEY: ${{ secrets.FINGRID_API_KEY }}
-      ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
@@ -26,10 +23,16 @@ jobs:
       # The live tests skip when a key is missing, which would give a green run that
       # tested nothing for Fingrid and ENTSO-E.
       - name: Require both API keys
+        env:
+          FINGRID_API_KEY: ${{ secrets.FINGRID_API_KEY }}
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: |
           test -n "$FINGRID_API_KEY" || { echo "::error::FINGRID_API_KEY secret is empty"; exit 1; }
           test -n "$ENTSOE_API_KEY" || { echo "::error::ENTSOE_API_KEY secret is empty"; exit 1; }
       - name: Run the live tests (failures retried once after 60 s; any skip fails the job)
+        env:
+          FINGRID_API_KEY: ${{ secrets.FINGRID_API_KEY }}
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: |
           set +e
           : > rerun.log
