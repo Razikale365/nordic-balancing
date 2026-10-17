@@ -577,7 +577,9 @@ def test_rejects_a_product_svk_does_not_publish(product: ReserveProduct) -> None
         pytest.fail("an unsupported product must not send an HTTP request")
 
     with pytest.raises(ValueError, match="svk capacity markets cover only aFRR and mFRR"):
-        client(handler).capacity_market(product, START, END)
+        SvKClient(httpx.Client(transport=httpx.MockTransport(handler))).capacity_market(
+            product, START, END
+        )
 
 
 @pytest.mark.parametrize("retries", [-1, True, 1.5])
