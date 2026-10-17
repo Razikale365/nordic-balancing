@@ -75,6 +75,9 @@ the project is in beta: the public API is defined in
   - **Retry-After:** delay-seconds accepts ASCII digits with an optional decimal fraction. Forms
     such as `5_0`, `+120`, `-3` and `1e400` use the default 10-second delay (`-3` previously meant
     no wait), and a delay above 300 s still raises `RateLimitError`.
+  - **Market changes:** `changes_between(start, end)` raises `ValueError` when `end` is before
+    `start`, as the client query methods do; it previously returned an empty list. `start == end`
+    still returns an empty list.
   - The ENTSO-E HTTP error message no longer has an empty path slot: `entsoe: HTTP 404: <detail>`
     instead of `entsoe: HTTP 404 for : <detail>`.
 

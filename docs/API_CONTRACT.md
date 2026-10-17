@@ -32,7 +32,11 @@ Everything else is private:
 - Any `_`-prefixed attribute, function, class, or module is private.
 - For data constants (`CHANGES`, `INTERVAL`), only the type is part of the API
   surface. Adding a new dated `MarketChange` entry to `CHANGES` is a data update,
-  not an API change.
+  not an API change. `CHANGES` covers changes to imbalance-price definitions;
+  changes to a capacity market's definition (for example the EDS FCR-N/FCR-D
+  price-basis change at `2024-02-01`) are documented per dataset under "Capacity
+  market methods", not as `MarketChange` entries. `changes_between` raises
+  `ValueError` when `end` is before `start`.
 
 `tests/test_public_api.py` compares the public surface against
 `tests/api_snapshot.json` and fails on any unrecorded addition, removal, or
@@ -364,6 +368,9 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `tests/test_reconcile.py::test_one_interval_can_have_several_divergences`,
   `tests/test_reconcile.py::test_zones_in_only_one_input_are_reported_not_silently_dropped`,
   and `tests/test_properties.py::test_reconcile_swapping_arguments_swaps_missing_counts`.
+  `ReconciliationReport.divergences` is ordered by `(start, zone, kind)`, covered by
+  `tests/test_reconcile.py::test_divergences_sorted_by_start_zone_kind` and
+  `tests/test_reconcile.py::test_divergences_sort_zones_at_shared_start`.
 - **Accepted (part of the contract).** `raw` is a read-only mapping over a deep
   copy private to each record. Only the top level rejects writes; nested
   containers are mutable but unshared, so treat them as read-only. Covered by
