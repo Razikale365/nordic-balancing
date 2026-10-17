@@ -15,3 +15,6 @@ wheels/
 # jpcp worker scratch
 .jpcp/
 .hypothesis/
+
+# Canonical output dumps are per-run verification artifacts, not evidence
+benchmarks/dumps/
