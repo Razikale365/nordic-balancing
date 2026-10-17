@@ -308,6 +308,7 @@ class EnergiDataServiceClient:
     ) -> list[ReserveCapacity]:
         domestic = product is ReserveProduct.FCR
         columns = _FCR_DK1_COLUMNS if domestic else _FCR_ND_COLUMNS
+        numeric = columns[2:] if domestic else columns[5:]
         params = {
             "start": _format(query_start),
             "end": _format(query_end),
@@ -342,6 +343,8 @@ class EnergiDataServiceClient:
             name = "FCR" if domestic else row["ProductName"]
             if not domestic and (not isinstance(name, str) or name not in _FCR_PRODUCTS):
                 raise SourceError(f"{SOURCE}: unknown ProductName {name!r}")
+            for column in numeric:
+                _number(row, column)
             groups.setdefault((hour, zone, name), []).append(row)
         capacities: list[ReserveCapacity] = []
         seen: set[tuple[datetime, BiddingZone, str]] = set()
