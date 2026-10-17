@@ -572,6 +572,29 @@ def test_quarter_record_wins_at_and_after_the_switch() -> None:
     ]
 
 
+def test_quarter_record_wins_at_the_switch_instant_and_loser_is_kept() -> None:
+    # At exactly 2025-03-18T23:00Z the 15-minute record is already
+    # authoritative: the hourly record covering that start loses to it and is
+    # kept as superseded.
+    start = datetime(2025, 3, 18, 23, tzinfo=UTC)
+    hourly = _at(319, start, 60, 50)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        dataset = int(request.url.path.split("/")[-2])
+        return page([hourly, _at(319, start, 15, 7)] if dataset == 319 else [])
+
+    fingrid = client(handler)
+    prices = fingrid.imbalance_prices(start, start + timedelta(hours=1))
+    assert [p.imbalance_price_eur for p in prices] == [7.0] + [50.0] * 3
+    assert prices[0].resolution == INTERVAL
+    assert [p.resolution for p in prices[1:]] == [timedelta(hours=1)] * 3
+    assert prices[0].raw["319_superseded"] == [hourly]
+    assert all("319_superseded" not in p.raw for p in prices[1:])
+    assert fingrid.series(319, start, start + timedelta(hours=1)) == [(start, 7.0)] + [
+        (start + q * INTERVAL, 50.0) for q in (1, 2, 3)
+    ]
+
+
 def test_hourly_record_wins_overlap_in_the_hour_before_the_switch() -> None:
     # 2025-03-18T22:00Z is still inside the hourly era: the hourly value wins
     # every quarter it covers, even when a 15-minute record was also published.
