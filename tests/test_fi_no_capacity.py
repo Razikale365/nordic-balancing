@@ -183,6 +183,25 @@ def test_fingrid_rejects_invalid_capacity_row(update: dict[str, Any]) -> None:
         fingrid_fetch(ReserveProduct.FCR_N, bodies)
 
 
+# A well-formed hourly row strictly before query_start or exactly at query_end
+# must raise in the capacity path, not be clipped away silently.
+@pytest.mark.parametrize("dataset", [317, 316])
+@pytest.mark.parametrize("hour", [START - HOUR, END], ids=["before_query_start", "at_query_end"])
+def test_fingrid_capacity_rejects_rows_outside_the_window(dataset: int, hour: datetime) -> None:
+    bodies = datasets()
+    bodies[dataset]["data"].append(
+        {
+            "datasetId": dataset,
+            "startTime": hour.isoformat().replace("+00:00", "Z"),
+            "endTime": (hour + HOUR).isoformat().replace("+00:00", "Z"),
+            "value": 5,
+        }
+    )
+    bodies[dataset]["pagination"]["total"] += 1
+    with pytest.raises(SourceError, match="outside requested window"):
+        fingrid_fetch(ReserveProduct.FCR_N, bodies)
+
+
 def test_fingrid_null_values_and_empty_datasets() -> None:
     bodies = datasets()
     bodies[317]["data"][0]["value"] = None
@@ -1116,6 +1135,42 @@ def test_entsoe_fcr_zero_placeholder_stays_strict() -> None:
     assert str(exc.value) == f"entsoe: duplicate capacity for NO1 at {start}"
 
 
+# The placeholder exception is not restricted to A03 Periods: a one-hour
+# zero/zero A01 series is ignored beside a complete A01 series covering the
+# same direction and Period, and the output is unchanged without it.
+def test_entsoe_a01_placeholder_is_ignored_beside_a_complete_a01_series() -> None:
+    start = datetime(2026, 10, 5, 22, tzinfo=UTC)
+    root = ET.fromstring((FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes())
+    process = root.find("{*}process.processType")
+    assert process is not None
+    process.text = "A47"
+    series = root.find("{*}TimeSeries")
+    assert series is not None
+    for tag, value in (("flowDirection.direction", "A01"), ("curveType", "A01")):
+        node = series.find(f"{{*}}{tag}")
+        assert node is not None
+        node.text = value
+    period = series.find("{*}Period")
+    assert period is not None
+    end = period.find("{*}timeInterval/{*}end")
+    assert end is not None
+    end.text = (start + HOUR).isoformat()
+    for point in period.findall("{*}Point")[1:]:
+        period.remove(point)
+    placeholder = ET.fromstring(ET.tostring(series))
+    for tag in ("quantity", "procurement_Price.amount"):
+        node = placeholder.find(f"{{*}}Period/{{*}}Point/{{*}}{tag}")
+        assert node is not None
+        node.text = "0"
+    root.append(placeholder)
+    with_placeholder = entsoe_fetch(ET.tostring(root), start=start, end=start + HOUR)
+    root.remove(placeholder)
+    assert with_placeholder == entsoe_fetch(ET.tostring(root), start=start, end=start + HOUR)
+    assert len(with_placeholder) == 4
+    assert all(r.price_eur_per_mw == 17.2 for r in with_placeholder)
+    assert all(r.volume_mw == 14.4 for r in with_placeholder)
+
+
 def instance_limit_ack(prefix: str = "") -> bytes:
     root = ET.fromstring((FIXTURES.parent / "entsoe" / "acknowledgement-no-data.xml").read_bytes())
     text = root.find("{*}Reason/{*}text")
@@ -1129,6 +1184,23 @@ def request_window(request: httpx.Request) -> tuple[datetime, datetime]:
         datetime.strptime(request.url.params["periodStart"], "%Y%m%d%H%M").replace(tzinfo=UTC),
         datetime.strptime(request.url.params["periodEnd"], "%Y%m%d%H%M").replace(tzinfo=UTC),
     )
+
+
+LIMIT_TEXT = "The number of instances (106) exceeds the allowed maximum (100)"
+
+
+def mixed_limit_ack(reasons: list[list[str]]) -> bytes:
+    root = ET.fromstring((FIXTURES.parent / "entsoe" / "acknowledgement-no-data.xml").read_bytes())
+    namespace = root.tag.split("}")[0] + "}"
+    original = root.find(f"{namespace}Reason")
+    assert original is not None
+    root.remove(original)
+    for texts in reasons:
+        reason = ET.SubElement(root, f"{namespace}Reason")
+        for text in texts:
+            element = ET.SubElement(reason, f"{namespace}text")
+            element.text = text
+    return ET.tostring(root)
 
 
 @pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.MFRR])
@@ -1179,6 +1251,55 @@ def test_entsoe_capacity_splits_instance_limit_without_changing_records(
             (start + HOUR, start + 2 * HOUR),
             (start + 2 * HOUR, end),
         ]
+
+
+# The limit phrase only needs to appear once: other texts may sit beside it
+# in the same Reason or in another Reason, in either order.
+@pytest.mark.parametrize(
+    "reasons",
+    [
+        [[LIMIT_TEXT, "Details: reduce the interval"]],
+        [["Details: reduce the interval", LIMIT_TEXT]],
+        [[LIMIT_TEXT], ["Details: reduce the interval"]],
+        [["Details: reduce the interval"], [LIMIT_TEXT]],
+    ],
+    ids=[
+        "one-reason-limit-first",
+        "one-reason-limit-second",
+        "two-reasons-limit-first",
+        "two-reasons-limit-second",
+    ],
+)
+def test_entsoe_capacity_splits_mixed_instance_limit_acknowledgements(
+    reasons: list[list[str]],
+) -> None:
+    start = datetime(2026, 10, 5, 22, tzinfo=UTC)
+    end = start + 3 * HOUR
+    content = (FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes()
+    expected = entsoe_fetch(content, start=start, end=end, product=ReserveProduct.FCR_N)
+    acknowledgement = mixed_limit_ack(reasons)
+    calls: list[tuple[datetime, datetime]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        window = request_window(request)
+        calls.append(window)
+        if window[1] - window[0] > HOUR:
+            return httpx.Response(400, content=acknowledgement)
+        return httpx.Response(200, content=content)
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        EntsoeClient("test-token", http, max_workers=1) as client,
+    ):
+        result = client.capacity_market(ReserveProduct.FCR_N, start, end, zones=[BiddingZone.NO1])
+    assert result == expected
+    assert calls == [
+        (start, end),
+        (start, start + 2 * HOUR),
+        (start, start + HOUR),
+        (start + HOUR, start + 2 * HOUR),
+        (start + 2 * HOUR, end),
+    ]
 
 
 @pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.MFRR])

@@ -1139,6 +1139,16 @@ def test_http_error_message_has_no_path_slot() -> None:
     assert str(caught.value) == "entsoe: HTTP 404: oops"
 
 
+# An empty error body leaves no detail to append, so no trailing ": " either.
+@pytest.mark.parametrize("status", [404, 500])
+def test_http_error_with_empty_body_has_no_trailing_colon(status: int) -> None:
+    with pytest.raises(SourceError) as caught:
+        client(lambda _: httpx.Response(status, content=b"")).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    assert str(caught.value) == f"entsoe: HTTP {status}"
+
+
 def test_transport_error_does_not_leak_token_or_url() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError(KEY, request=request)

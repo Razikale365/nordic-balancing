@@ -370,3 +370,37 @@ def test_rejects_a_time_interval_with_non_utc_offset() -> None:
         client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
             START, END, [BiddingZone.SE3]
         )
+
+
+# Real documents write timeInterval as YYYY-MM-DDTHH:MMZ with no seconds;
+# the Z and +00:00 designators are the only UTC spellings allowed.
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        "2026-01-15T00:00Z",
+        "2026-01-15T00:00:00Z",
+        "2026-01-15T00:00:00.000Z",
+        "2026-01-15T00:00:00+00:00",
+    ],
+)
+def test_accepts_canonical_utc_time_intervals(stamp: str) -> None:
+    assert entsoe_module._time(stamp) == START
+
+
+# fromisoformat also parses zero-offset spellings that are not the UTC
+# designator: -00:00 (RFC 3339 "offset unknown"), +00, +0000, offset seconds,
+# a space separator and the basic layout. All read "must be UTC".
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        "2026-01-15T00:00:00-00:00",
+        "2026-01-15T00:00:00+00",
+        "2026-01-15T00:00:00+0000",
+        "2026-01-15T00:00:00+00:00:00",
+        "2026-01-15 00:00:00+00:00",
+        "20260115T000000+00:00",
+    ],
+)
+def test_rejects_non_canonical_utc_time_intervals(stamp: str) -> None:
+    with pytest.raises(SourceError, match="must be UTC"):
+        entsoe_module._time(stamp)
