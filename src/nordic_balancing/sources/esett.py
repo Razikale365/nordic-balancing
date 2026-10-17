@@ -169,7 +169,11 @@ def _parse_time(value: object) -> datetime:
         parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise SourceError(f"{SOURCE}: unparseable timestampUTC {value!r}") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+    if (
+        parsed.tzinfo is None
+        or parsed.utcoffset() != timedelta(0)
+        or not value.endswith(("Z", "z", "+00:00"))
+    ):
         raise SourceError(f"{SOURCE}: timestampUTC must be UTC: {value!r}")
     parsed = parsed.astimezone(UTC)
     if parsed.minute % 15 or parsed.second or parsed.microsecond:
