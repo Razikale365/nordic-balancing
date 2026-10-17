@@ -75,6 +75,12 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   `FCR-D ned` to `DOWN`. Before `2024-02-01` prices are average prices; from
   that date each auction has a marginal price and Total is the volume-weighted
   average of the auctions (common to all areas).
+  On the last Sunday of October `FcrNdDK2` has no 00:00 UTC hour and publishes
+  HourUTC 01:00 (HourDK 02:00) and 01:01 (HourDK 02:01) instead; these are
+  returned as 00:00 and 01:00 UTC (verified against ENTSO-E A81 and SvK Mimer),
+  with `raw` keeping the published `HourUTC`. Only that exact pattern is mapped:
+  any other HourUTC off a 15-minute boundary, or a 01:01 row on a day that also
+  has a 00:00 row, raises `SourceError`.
 - EDS `ReserveProduct.FCR = "FCR"` uses `FcrDK1` for DK1 only, from
   `2021-01-18T23:00Z`:
   `FCRdomestic_MW` and `FCRdk_EUR` supply volume and price, with
