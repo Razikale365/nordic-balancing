@@ -11,9 +11,9 @@ are listed in the 0.2.0 section below and ship in this version, so when upgradin
 read both sections. New: reserve capacity (`capacity_market`) from Energi Data Service (aFRR for
 all twelve Nordic zones, mFRR and FCR for Denmark, FCR-N and FCR-D for DK2 and Sweden), Fingrid
 (FCR-N, FCR-D and mFRR) and ENTSO-E (FCR-N and mFRR for Norway, mFRR for Finland). The public API
-only grows: no existing signature or record field changed. Two independent audits of every work
-package found no High defect in new code, but a live history check found one in all earlier
-versions: Energi Data Service queries over 10,000 rows were silently truncated (see Fixed).
+only grows: no existing signature or record field changed. Before release the code was audited
+twice; the audits found no High defect in new code, but a live history check found one in all
+earlier versions: Energi Data Service queries over 10,000 rows were silently truncated (see Fixed).
 
 ### Added
 - **Fingrid:** `capacity_market(product, start, end)` returns FI hourly-market FCR-N,
