@@ -368,6 +368,8 @@ def test_preserves_compact_and_hour_only_naive_timestamps(start_time_utc: str) -
         ({"start_time_utc": None}, "missing or not a string"),
         ({"start_time_utc": 5}, "missing or not a string"),
         ({"start_time_utc": "invalid"}, "unparseable start_time_utc"),
+        ({"start_time_utc": "T"}, "unparseable start_time_utc"),
+        ({"start_time_utc": "2026-13-99T99:99"}, "unparseable start_time_utc"),
         ({"start_time_utc": "2026-10-08T00:00:00+01:00"}, "must be UTC"),
         ({"start_time_utc": "2026-10-08T00:00:00-00:00"}, "must be UTC"),
         ({"start_time_utc": "2026-10-08T00:00:30+00:00:30"}, "must be UTC"),
