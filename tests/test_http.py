@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -7,7 +8,11 @@ from nordic_balancing._http import _retry_after as retry_after
 from nordic_balancing._http import check_base_url, get_bytes, get_json
 from nordic_balancing._validate import finite_number
 from nordic_balancing.errors import RateLimitError, SourceError
+from nordic_balancing.sources.energidataservice import EnergiDataServiceClient
+from nordic_balancing.sources.entsoe import EntsoeClient
+from nordic_balancing.sources.esett import ESettClient
 from nordic_balancing.sources.fingrid import FingridClient
+from nordic_balancing.sources.svk import SvKClient
 
 NOW = datetime(2026, 10, 12, 12, 0, tzinfo=UTC)
 
@@ -411,3 +416,22 @@ def test_check_base_url_rejects_urls_without_http_host(base_url: str) -> None:
 )
 def test_check_base_url_accepts_absolute_http_urls(base_url: str) -> None:
     check_base_url(base_url)
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda url: EnergiDataServiceClient(base_url=url),
+        lambda url: ESettClient(base_url=url),
+        lambda url: FingridClient(api_key="key", base_url=url),
+        lambda url: EntsoeClient(api_key="key", base_url=url),
+        lambda url: SvKClient(base_url=url),
+    ],
+    ids=["eds", "esett", "fingrid", "entsoe", "svk"],
+)
+@pytest.mark.parametrize("base_url", ["http://[::1", "not-a-url", "ftp://example.com"])
+def test_every_client_rejects_a_malformed_base_url(
+    make: Callable[[str], object], base_url: str
+) -> None:
+    with pytest.raises(ValueError, match="base_url must be an absolute http or https URL"):
+        make(base_url)

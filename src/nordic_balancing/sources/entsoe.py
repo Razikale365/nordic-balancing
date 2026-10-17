@@ -31,7 +31,7 @@ from xml.etree import ElementTree
 
 import httpx
 
-from nordic_balancing._http import _request
+from nordic_balancing._http import _request, check_base_url
 from nordic_balancing.errors import NordicBalancingError, SourceError
 from nordic_balancing.models import (
     INTERVAL,
@@ -129,6 +129,7 @@ class EntsoeClient:
         if any(not "!" <= character <= "~" for character in key):
             raise ValueError("api_key must contain only printable ASCII without whitespace")
         self._api_key = key
+        check_base_url(base_url)
         self._owns_http = http is None
         # Observed latency reached 42 s for a single request.
         self._http = http if http is not None else httpx.Client(timeout=120.0)

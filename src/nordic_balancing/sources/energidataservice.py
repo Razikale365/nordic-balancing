@@ -19,7 +19,7 @@ from typing import Any, Self
 
 import httpx
 
-from nordic_balancing._http import get_json
+from nordic_balancing._http import check_base_url, get_json
 from nordic_balancing._validate import finite_number, reject_duplicate
 from nordic_balancing.errors import SourceError
 from nordic_balancing.models import (
@@ -115,6 +115,7 @@ class EnergiDataServiceClient:
     ) -> None:
         if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
             raise ValueError("max_retries must be a non-negative integer")
+        check_base_url(base_url)
         self._owns_http = http is None
         self._http = http if http is not None else httpx.Client(timeout=30.0)
         self._base_url = base_url.rstrip("/")
