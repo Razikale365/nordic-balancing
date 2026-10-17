@@ -293,7 +293,7 @@ bidding zone, product, direction, and 15-minute UTC interval:
 ## Supported Python and dependencies
 
 - **Python**: every CPython release `>= 3.12` that is still under upstream support
-  (Python 3.14 is added in `0.2.0`).
+  (Python 3.14 is added in `0.3.0`).
 - **Runtime dependencies**: `httpx>=0.27,<1` is the only required runtime
   dependency, tested at the floor (`0.27.x`) and at the latest allowed release.
   When `httpx` 1.0 ships, it is evaluated in the next minor release.

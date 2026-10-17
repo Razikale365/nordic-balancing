@@ -4,7 +4,16 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the project is in beta: the public API is defined in
 [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it before 1.0 is listed here.
 
-## Unreleased
+## 0.3.0 — 2026-10-17
+
+First published beta, and the reserve-capacity release. 0.2.0 was never published: its changes
+are listed in the 0.2.0 section below and ship in this version, so when upgrading from 0.1.1
+read both sections. New: reserve capacity (`capacity_market`) from Energi Data Service (aFRR for
+all twelve Nordic zones, mFRR and FCR for Denmark, FCR-N and FCR-D for DK2 and Sweden), Fingrid
+(FCR-N, FCR-D and mFRR) and ENTSO-E (FCR-N and mFRR for Norway, mFRR for Finland). The public API
+only grows: no existing signature or record field changed. Two independent audits of every work
+package found no High defect in new code, but a live history check found one in all earlier
+versions: Energi Data Service queries over 10,000 rows were silently truncated (see Fixed).
 
 ### Added
 - **Fingrid:** `capacity_market(product, start, end)` returns FI hourly-market FCR-N,
@@ -51,7 +60,7 @@ the project is in beta: the public API is defined in
     `ReserveCapacity`.
 
 ### Behaviour changes to note
-- Three checks are stricter. Data that 0.2.0 accepted now raises `SourceError`: an eSett or
+- Three checks are stricter. Data that the 0.2.0 candidate accepted now raises `SourceError`: an eSett or
   Svenska kraftnät record that lacks a value key (a null value is still `None`), and any HTTP
   status other than 200 on a data request. Valid responses from the five providers parse as
   before; the live suite was rerun on this version.
@@ -86,7 +95,7 @@ the project is in beta: the public API is defined in
   10,000 rows: the API reports `total` as the row count of each page, not of the whole query. Paging now
   continues until a page returns fewer than 10,000 records, and a page whose `total` differs from its record
   count raises `SourceError`. FcrNdDK2 requests also sort by a key unique per row, which offset paging needs.
-  Also fixed in 0.2.0; 0.1.1 is affected.
+  0.1.1 is affected: re-fetch any Energi Data Service window longer than about 52 days.
 - **Svenska kraftnät:** `capacity_market` with a product SvK does not publish (FCR, FCR-N, FCR-D)
   raises `ValueError` before any request; it previously leaked a `KeyError`.
 - **HTTP:** an undecodable response body (for example a corrupt `Content-Encoding`) is retried
@@ -127,7 +136,9 @@ the project is in beta: the public API is defined in
   public surface. The known limitations moved there from `docs/RELEASE_EVIDENCE.md`; each is
   marked accepted and names the test or live check that covers it, or says that none does.
 
-## 0.2.0 — unreleased (Beta candidate)
+## 0.2.0 — not published (included in 0.3.0)
+
+This version was prepared but never published to PyPI; everything below ships in 0.3.0.
 
 First beta. The public surface is now written down and tested, the supported Python and
 dependency range is tested in CI, and every source is checked against its live API daily. The
