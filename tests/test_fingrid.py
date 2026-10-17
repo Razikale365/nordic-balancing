@@ -330,6 +330,10 @@ def test_bounded_retry_budget(status: int) -> None:
         ({"startTime": "2026-01-15T00:00:00"}, "must be UTC"),
         ({"startTime": "2026-01-15T01:00:00+01:00"}, "must be UTC"),
         ({"startTime": "2026-01-15T01:00:00-01:00"}, "must be UTC"),
+        ({"startTime": "2026-01-15T00:00:00-00:00"}, "must be UTC"),
+        ({"startTime": "2026-01-15T00:00:00+00"}, "must be UTC"),
+        ({"startTime": "2026-01-15T00:00:00+0000"}, "must be UTC"),
+        ({"startTime": "2026-01-15T00:00:00+00:00:00"}, "must be UTC"),
         ({"startTime": "2026-01-15T00:05:00Z"}, "15-minute boundary"),
         ({"startTime": "2026-01-15T00:00:30Z"}, "15-minute boundary"),
         ({"startTime": "2026-01-15T00:00:00.000001Z"}, "15-minute boundary"),
@@ -895,7 +899,7 @@ def test_pagination_rejects_empty_short_and_overflowing_pages_without_further_re
         pages_empty_after_total.append(page_num)
         return page([PUBLISHED] if page_num == "1" else [], total=1, last_page=3)
 
-    with pytest.raises(SourceError, match=r"page 2 ended with row count 1 != page-1 total 1"):
+    with pytest.raises(SourceError, match=r"page 2 returned no rows"):
         client(empty_after_total_handler).series(319, START, END)
     assert pages_empty_after_total == ["1", "2"]
 

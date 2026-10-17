@@ -392,11 +392,13 @@ class FingridClient:
                     f"{SOURCE}: row count {len(rows)} != page-1 total {total}; "
                     "data changed or truncated"
                 )
-            if (len(page_rows) < PAGE_SIZE and len(rows) < total) or (page > 1 and not page_rows):
+            if len(page_rows) < PAGE_SIZE and len(rows) < total:
                 raise SourceError(
                     f"{SOURCE}: page {page} ended with row count {len(rows)} != page-1 "
                     f"total {total}; data changed or truncated"
                 )
+            if page > 1 and not page_rows:
+                raise SourceError(f"{SOURCE}: page {page} returned no rows")
         if len(rows) != total:
             raise SourceError(
                 f"{SOURCE}: row count {len(rows)} != page-1 total {total}; "
@@ -421,7 +423,11 @@ def _parse_time(value: object, column: str) -> datetime:
         parsed = datetime.fromisoformat(value)
     except ValueError:
         raise SourceError(f"{SOURCE}: unparseable {column}") from None
-    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+    if (
+        parsed.tzinfo is None
+        or parsed.utcoffset() != timedelta(0)
+        or not value.endswith(("Z", "z", "+00:00"))
+    ):
         raise SourceError(f"{SOURCE}: {column} must be UTC")
     if parsed.minute % 15 or parsed.second or parsed.microsecond:
         raise SourceError(f"{SOURCE}: {column} is not on a 15-minute boundary")
