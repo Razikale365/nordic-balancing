@@ -47,6 +47,13 @@ pandas = [
 ]
 
 [dependency-groups]
+benchmarks-compare = [
+    "entsoe-py==0.8.1",
+    "esett-py==0.1.0",
+    "fingrid-py==0.2.0",
+    "clarigrid==0.2.0",
+    "psutil==7.2.2",
+]
 dev = [
     "pytest>=8.3",
     "mypy>=1.11",

@@ -1,0 +1,92 @@
+{
+  "status": "BLOCKED_FIXTURES_NOT_READY",
+  "environment": {
+    "python": "3.12.13 (main, Mar 24 2026, 22:57:53) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "Windows-11-10.0.22621-SP0",
+    "processor": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+    "logical_cpus": 6,
+    "host_memory_bytes": 34268110848,
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "git_commit": "74d61e666586c0929a1b084adb98834b30b93794",
+    "versions": {
+      "entsoe-py": "0.8.1",
+      "esett-py": "0.1.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    }
+  },
+  "method": {
+    "transport": "frozen replay; client-side processing only",
+    "warmups_per_subprocess": 1,
+    "measurements_per_subprocess": 1,
+    "peak_rss_scope": "process lifetime including warmup, imports and loaded fixtures",
+    "p95_min_samples": 20,
+    "docker": "NOT_EXECUTED",
+    "native_codex_children": 0
+  },
+  "sets": {
+    "entsoe-imb-SE3-day-2025-10-26": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": true
+    },
+    "entsoe-imb-SE3-month-2025-10": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": false
+    },
+    "entsoe-imb-SE3-year-2025": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": false
+    },
+    "entsoe-imb-all-year-2025": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": false
+    },
+    "entsoe-imb-SE3-year-2022": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": false
+    },
+    "entsoe-cap-FCRN-NO-year-2025": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": true
+    },
+    "esett-imb-SE3-year-2025": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": false
+    },
+    "esett-imb-all-year-2025": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": false
+    },
+    "eds-imb-DK-year-2025": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": false
+    },
+    "eds-cap-FCRN-year-2025": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": false
+    },
+    "eds-cap-aFRR-month-2025-10": {
+      "status": "NOT_EXECUTED",
+      "reason": "READY absent",
+      "manifest_present": false
+    }
+  }
+}
