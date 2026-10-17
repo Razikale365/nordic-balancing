@@ -87,8 +87,9 @@ def reconcile_imbalance_prices(
     as ``primary_only_zones`` / ``reference_only_zones``.
     ``tolerance_eur`` bounds ROUNDING: a price difference above it is PRICE,
     a non-zero one at or below it is ROUNDING. PRIMARY/REFERENCE names follow
-    the argument order. The result describes differences; it never merges the
-    series and never decides which source is right.
+    the argument order. Divergences are ordered by ``(start, zone, kind)``.
+    The result describes differences; it never merges the series and never
+    decides which source is right.
     """
     if (
         isinstance(tolerance_eur, bool)

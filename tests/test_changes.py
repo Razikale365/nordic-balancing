@@ -38,6 +38,29 @@ def test_filters_by_zone() -> None:
     assert changes_between(*window, zones=[]) == []
 
 
+def test_fi_window_returns_the_fingrid_and_nordic_changes() -> None:
+    found = changes_between(
+        datetime(2025, 1, 1, tzinfo=UTC),
+        datetime(2026, 1, 1, tzinfo=UTC),
+        zones=[BiddingZone.FI],
+    )
+
+    assert [c.effective for c in found] == [
+        datetime(2025, 3, 14, 23, 15, tzinfo=UTC),
+        datetime(2025, 3, 18, 23, tzinfo=UTC),
+    ]
+    assert found[0].zones == frozenset({BiddingZone.FI})
+
+
+def test_end_before_start_raises() -> None:
+    with pytest.raises(ValueError, match="end must be after start"):
+        changes_between(datetime(2026, 6, 1, tzinfo=UTC), datetime(2026, 1, 1, tzinfo=UTC))
+
+
+def test_empty_window_returns_no_changes() -> None:
+    assert changes_between(MARCH_2026, MARCH_2026) == []
+
+
 def test_dk2_gets_the_danish_changes() -> None:
     window = (datetime(2025, 1, 1, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC))
 

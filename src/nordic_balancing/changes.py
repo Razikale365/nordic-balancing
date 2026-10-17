@@ -7,6 +7,10 @@ data that spans one of these dates.
 Each entry cites an announcement or the source where the change was observed.
 ``effective`` is the first instant (UTC) the new rule applies; for changes
 published as a Danish delivery day, that is midnight Danish time on that day.
+
+``CHANGES`` covers changes to imbalance-price definitions; changes to a
+capacity market's definition are documented per dataset in
+``docs/API_CONTRACT.md``.
 """
 
 from collections.abc import Iterable
@@ -96,6 +100,8 @@ def changes_between(
     """
     start_utc = to_utc(start, "start")
     end_utc = to_utc(end, "end")
+    if end_utc < start_utc:
+        raise ValueError("end must be after start")
     wanted = None if zones is None else frozenset(zones)
     return [
         change
