@@ -151,7 +151,7 @@ def test_eds_fcr_expands_exactly_four_quarters() -> None:
 
 @pytest.mark.parametrize(
     ("domestic", "expected_sort"),
-    [(True, "HourUTC asc"), (False, "HourUTC asc,PriceArea asc")],
+    [(True, "HourUTC asc"), (False, "HourUTC asc,PriceArea asc,ProductName asc,AuctionType asc")],
 )
 def test_eds_fcr_sort_param_matches_the_dataset(domestic: bool, expected_sort: str) -> None:
     seen: list[httpx.Request] = []

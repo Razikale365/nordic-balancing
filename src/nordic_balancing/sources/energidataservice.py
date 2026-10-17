@@ -314,7 +314,12 @@ class EnergiDataServiceClient:
             "end": _format(query_end),
             "timezone": "UTC",
             "columns": ",".join(columns),
-            "sort": "HourUTC asc" if domestic else "HourUTC asc,PriceArea asc",
+            # Offset paging needs a sort key that is unique per row: FcrNdDK2 has one row per
+            # hour, area, product and auction type, and ties may come back in a different
+            # order on each page request.
+            "sort": "HourUTC asc"
+            if domestic
+            else "HourUTC asc,PriceArea asc,ProductName asc,AuctionType asc",
         }
         if not domestic:
             names = [
@@ -396,8 +401,12 @@ class EnergiDataServiceClient:
         return sorted(capacities, key=lambda c: (c.start, c.zone, c.direction))
 
     def _records(self, dataset: str, params: dict[str, str]) -> Iterator[dict[str, Any]]:
+        # Offset paging is safe only because every query above sorts by a key unique
+        # per row: time and area for ImbalancePrice and the aFRR/mFRR datasets, the
+        # hour for FcrDK1, and hour, area, product and auction type for FcrNdDK2.
+        # The API's `total` is the row count of that page, not of the whole query,
+        # so only a short page marks the end of the data.
         offset = 0
-        total: int | None = None
         while True:
             page = self._get(
                 f"/dataset/{dataset}",
@@ -406,26 +415,17 @@ class EnergiDataServiceClient:
             records = page.get("records")
             if not isinstance(records, list):
                 raise SourceError(f"{SOURCE}: response for {dataset} has no 'records' list")
-            page_total = page.get("total")
-            if isinstance(page_total, bool) or not isinstance(page_total, int) or page_total < 0:
+            total = page.get("total")
+            if isinstance(total, bool) or not isinstance(total, int) or total < 0:
                 raise SourceError(f"{SOURCE}: response for {dataset} has invalid total")
-            if total is None:
-                total = page_total
-            elif page_total != total:
+            if total != len(records):
                 raise SourceError(
-                    f"{SOURCE}: total for {dataset} changed from {total} to {page_total}"
+                    f"{SOURCE}: total {total} does not match {len(records)} records "
+                    f"for {dataset} at offset {offset}"
                 )
             offset += len(records)
-            if offset > total:
-                raise SourceError(
-                    f"{SOURCE}: row count {offset} exceeds total {total} for {dataset}"
-                )
-            if len(records) < PAGE_SIZE and offset < total:
-                raise SourceError(
-                    f"{SOURCE}: page for {dataset} ended at {offset} rows before total {total}"
-                )
             yield from records
-            if offset >= total:
+            if len(records) < PAGE_SIZE:
                 return
 
     def _get(self, path: str, params: dict[str, str]) -> dict[str, Any]:

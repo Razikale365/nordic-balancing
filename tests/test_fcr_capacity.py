@@ -208,6 +208,36 @@ def test_eds_nd_rejects_bad_groups(failure: str) -> None:
         eds_fetch(rows)
 
 
+def test_eds_nd_paging_sorts_by_a_unique_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The server orders rows by the requested sort columns only; rows that tie come back
+    # in a different order on every page request, as offset paging allows.
+    rows = [r for r in nd_rows() if r["ProductName"] == "FCR-N"]
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sort = request.url.params["sort"]
+        calls.append(sort)
+        columns = [part.split()[0] for part in sort.split(",")]
+        turn = len(calls) % len(rows)
+        ordered = sorted(rows[turn:] + rows[:turn], key=lambda r: [r[c] for c in columns])
+        offset = int(request.url.params["offset"])
+        records = ordered[offset : offset + 2]
+        return httpx.Response(200, json={"total": len(records), "records": records})
+
+    with monkeypatch.context() as patch:
+        patch.setattr(energidataservice, "PAGE_SIZE", 2)
+        with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+            result = EnergiDataServiceClient(http).capacity_market(
+                ReserveProduct.FCR_N,
+                START,
+                START + HOUR,
+                zones=(BiddingZone.DK2, BiddingZone.SE3),
+            )
+    assert calls[0] == "HourUTC asc,PriceArea asc,ProductName asc,AuctionType asc"
+    assert len(calls) > 1
+    assert result == eds_fetch(rows)
+
+
 @pytest.mark.parametrize("identical", [True, False])
 def test_eds_nd_rejects_duplicate_auction_row(identical: bool) -> None:
     rows = nd_rows()
@@ -303,7 +333,8 @@ def test_eds_fcr_query_columns_dataset_filter_and_pagination(
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         offset = int(request.url.params["offset"])
-        return httpx.Response(200, json={"total": len(rows), "records": rows[offset : offset + 2]})
+        records = rows[offset : offset + 2]
+        return httpx.Response(200, json={"total": len(records), "records": records})
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as http:
         result = EnergiDataServiceClient(http).capacity_market(
