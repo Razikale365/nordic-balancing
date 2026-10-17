@@ -233,7 +233,7 @@ bidding zone, product, direction, and 15-minute UTC interval:
   volume per direction, and once when summing cost.
 - `price_eur_per_mw: float | None` — capacity price in EUR per MW per hour.
 - `volume_mw: float | None` — procured capacity volume in MW.
-- `source: str` — provider identifier (`"svk"`, `"energidataservice"`, or `"entsoe"`).
+- `source: str` — provider identifier (`"svk"`, `"energidataservice"`, `"entsoe"`, or `"fingrid"`).
 - `resolution: timedelta` — publication interval at the source.
 - `raw: Mapping[str, Any]` — read-only view of the underlying source record
   (`compare=False, repr=False`).
