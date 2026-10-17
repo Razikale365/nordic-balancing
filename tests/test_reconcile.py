@@ -218,6 +218,37 @@ def test_divergences_sorted_by_start_zone_kind() -> None:
     }
 
 
+def test_divergences_sort_zones_at_shared_start() -> None:
+    # Two zones diverge at the same start: the zone key must break the tie
+    # ascending (DK1 before FI).
+    later = START + INTERVAL
+    primary = [
+        record("a", zone=BiddingZone.FI, start=later, resolution=HOUR),
+        record("a", zone=BiddingZone.DK1, price=5.0),
+        record("a", zone=BiddingZone.DK1, start=later, direction=Direction.DOWN),
+    ]
+    reference = [
+        record("b", zone=BiddingZone.DK1, price=6.0),
+        record("b", zone=BiddingZone.DK1, start=later, direction=Direction.UP),
+        record("b", zone=BiddingZone.FI, start=later, resolution=INTERVAL, price=10.01),
+    ]
+
+    report = reconcile_imbalance_prices(primary, reference)
+
+    assert [(d.start, d.zone, d.kind) for d in report.divergences] == [
+        (START, BiddingZone.DK1, DivergenceKind.PRICE),
+        (later, BiddingZone.DK1, DivergenceKind.DIRECTION),
+        (later, BiddingZone.FI, DivergenceKind.RESOLUTION),
+        (later, BiddingZone.FI, DivergenceKind.ROUNDING),
+    ]
+    assert report.counts() == {
+        DivergenceKind.PRICE: 1,
+        DivergenceKind.DIRECTION: 1,
+        DivergenceKind.RESOLUTION: 1,
+        DivergenceKind.ROUNDING: 1,
+    }
+
+
 def test_mixed_sources_in_one_input_rejected() -> None:
     with pytest.raises(ValueError, match="mixes sources"):
         reconcile_imbalance_prices([record("a"), record("other")], [record("b")])
