@@ -313,7 +313,12 @@ class EnergiDataServiceClient:
             "end": _format(query_end),
             "timezone": "UTC",
             "columns": ",".join(columns),
-            "sort": "HourUTC asc" if domestic else "HourUTC asc,PriceArea asc",
+            # Offset paging needs a sort key that is unique per row: FcrNdDK2 has one row per
+            # hour, area, product and auction type, and ties may come back in a different
+            # order on each page request.
+            "sort": "HourUTC asc"
+            if domestic
+            else "HourUTC asc,PriceArea asc,ProductName asc,AuctionType asc",
         }
         if not domestic:
             names = [
