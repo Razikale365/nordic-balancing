@@ -34,3 +34,30 @@ def test_python_floor_is_3_12_and_ci_tests_every_classified_version() -> None:
     check_job = re.search(r"^  check:.*?(?=^  \S)", ci, re.DOTALL | re.MULTILINE)
     assert check_job is not None
     assert "- run: uv run pytest" in check_job.group(0)
+
+
+def test_lowest_direct_installs_the_declared_pandas_floor() -> None:
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    floor = ci.split("  lowest-direct:", 1)[1]
+    assert '"pandas==2.1.1"' in floor
+    assert '"pandas==2.1.*"' not in floor
+    assert "first 2.1.x release with Python 3.12 wheels" in floor
+    assert "2.1.0 needs a source build" in floor
+
+
+def test_live_workflow_scopes_the_api_keys_to_the_two_steps_that_read_them() -> None:
+    live = (ROOT / ".github" / "workflows" / "live.yml").read_text(encoding="utf-8")
+    header, steps = live.split("    steps:", 1)
+    assert "    env:" not in header
+    for key in ("FINGRID_API_KEY", "ENTSOE_API_KEY"):
+        assert steps.count(key + ": ${{ secrets." + key + " }}") == 2
+    for step in re.split(r"^      - ", steps, flags=re.MULTILINE)[1:]:
+        reads_keys = step.startswith(("name: Require both API keys", "name: Run the live tests"))
+        for key in ("FINGRID_API_KEY", "ENTSOE_API_KEY"):
+            assert ("          " + key + ": ${{ secrets." + key + " }}" in step) == reads_keys
+
+
+def test_release_checks_the_dists_with_a_pinned_twine() -> None:
+    release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "- run: uvx twine@6.1.0 check dist/*" in release
+    assert "uvx twine check" not in release
