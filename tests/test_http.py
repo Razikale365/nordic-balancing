@@ -323,11 +323,20 @@ def test_get_json_rejects_non_2xx_and_204_statuses(status: int, body: bytes) -> 
     assert "SYNTHETIC_RECORD" not in str(exc_info.value)
 
 
-def test_get_json_reports_a_deeply_nested_body_as_not_json() -> None:
-    # A syntactically nested body exhausts the decoder's recursion limit; that
-    # RecursionError is the same contract breach as malformed JSON.
-    body = b"[" * 50000 + b"1" + b"]" * 50000
-    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, content=body)))
+def test_get_json_reports_a_deeply_nested_body_as_not_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A deeply nested body can exhaust the decoder's recursion limit; that
+    # RecursionError is the same contract breach as malformed JSON. How deep a body
+    # must be depends on the Python version (3.14 decodes 50,000 levels), so the
+    # decoder's failure is simulated rather than reached by depth.
+    def exhausted(self: httpx.Response, **kwargs: object) -> object:
+        raise RecursionError("maximum recursion depth exceeded while decoding a JSON array")
+
+    monkeypatch.setattr(httpx.Response, "json", exhausted)
+    http = httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, content=b"[1]"))
+    )
     with pytest.raises(SourceError) as exc_info:
         get_json(
             http,
