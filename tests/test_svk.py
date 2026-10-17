@@ -17,7 +17,7 @@ from nordic_balancing import (
     SvKClient,
 )
 from nordic_balancing.sources import SvKClient as SourceSvKClient
-from nordic_balancing.sources.svk import _parse_time
+from nordic_balancing.sources.svk import _DATASETS, _parse_time
 
 RECORD: dict[str, Any] = {
     "_id": 191887,
@@ -569,6 +569,17 @@ def test_rejects_bad_arguments_without_request(
             c.capacity_market(product, start, end)
         else:
             c.capacity_market(product, start, end, zones)
+
+
+@pytest.mark.parametrize("product", [p for p in ReserveProduct if p not in _DATASETS])
+def test_rejects_a_product_svk_does_not_publish(product: ReserveProduct) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        pytest.fail("an unsupported product must not send an HTTP request")
+
+    with pytest.raises(ValueError, match="svk capacity markets cover only aFRR and mFRR"):
+        SvKClient(httpx.Client(transport=httpx.MockTransport(handler))).capacity_market(
+            product, START, END
+        )
 
 
 @pytest.mark.parametrize("retries", [-1, True, 1.5])

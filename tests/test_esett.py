@@ -220,6 +220,7 @@ def test_filters_subinterval_start_and_preserves_exclusive_end_precision() -> No
         return httpx.Response(
             200,
             json=[
+                {**PUBLISHED, "timestampUTC": START.isoformat()},
                 {**PUBLISHED, "timestampUTC": (START + INTERVAL).isoformat()},
             ],
         )
@@ -293,6 +294,9 @@ def test_rejects_duplicate_zone_and_interval(price: float) -> None:
         ({"timestampUTC": "2026-01-15T00:00:00"}, "must be UTC"),
         ({"timestampUTC": "2026-01-15T01:00:00+01:00"}, "must be UTC"),
         ({"timestampUTC": "2026-01-15T01:00:00-01:00"}, "must be UTC"),
+        ({"timestampUTC": "2026-01-15T00:00:00-00:00"}, "must be UTC"),
+        ({"timestampUTC": "2026-01-15T00:00:00+00"}, "must be UTC"),
+        ({"timestampUTC": "2026-01-15T00:00:00+0000"}, "must be UTC"),
         ({"timestampUTC": "2026-01-15T00:05:00Z"}, "15-minute boundary"),
         ({"timestampUTC": "2026-01-15T00:00:00.000001Z"}, "15-minute boundary"),
         ({"timestampUTC": "2026-01-15T00:00:01Z"}, "15-minute boundary"),

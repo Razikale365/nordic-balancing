@@ -90,6 +90,8 @@ class SvKClient:
         """
         if not isinstance(product, ReserveProduct):
             raise ValueError("product must be a ReserveProduct")
+        if product not in _DATASETS:
+            raise ValueError("svk capacity markets cover only aFRR and mFRR")
         start_utc = to_utc(start, "start")
         end_utc = to_utc(end, "end")
         if end_utc <= start_utc:
