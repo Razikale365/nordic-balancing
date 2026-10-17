@@ -1,6 +1,5 @@
 """Shared bounded retries so sources handle throttling consistently."""
 
-import math
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -14,7 +13,12 @@ from nordic_balancing.errors import RateLimitError, SourceError
 _RATE_LIMIT_STATUSES = frozenset({429, 503})
 # Transient gateway failures: retried, then reported as an ordinary HTTP error.
 _TRANSIENT_STATUSES = frozenset({502, 504})
-_TRANSIENT_ERRORS = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
+_TRANSIENT_ERRORS = (
+    httpx.TimeoutException,
+    httpx.NetworkError,
+    httpx.RemoteProtocolError,
+    httpx.DecodingError,
+)
 _DEFAULT_RETRY_AFTER = 10.0
 # A longer requested wait is not slept through: RateLimitError reports it instead.
 _MAX_RETRY_AFTER = 300.0
@@ -70,6 +74,16 @@ def get_bytes(
     return response.content, response.headers.get("content-type", "")
 
 
+def check_base_url(base_url: str) -> None:
+    """Reject a ``base_url`` that is not an absolute http or https URL."""
+    try:
+        url = httpx.URL(base_url)
+    except httpx.InvalidURL as exc:
+        raise ValueError("base_url must be an absolute http or https URL") from exc
+    if url.scheme not in ("http", "https") or not url.host:
+        raise ValueError("base_url must be an absolute http or https URL")
+
+
 def _request(
     http: httpx.Client,
     base_url: str,
@@ -87,7 +101,8 @@ def _request(
         try:
             response = http.get(f"{base_url}{path}", params=query_params)
         except _TRANSIENT_ERRORS:
-            # Timeouts and dropped connections are retried; callers wrap the last one.
+            # Timeouts, dropped connections and undecodable bodies are retried;
+            # callers wrap the last one.
             if last:
                 raise
             sleep(_DEFAULT_RETRY_AFTER)
@@ -104,7 +119,7 @@ def _request(
     # Only 200 carries a complete body: 204 has none, 202 is not yet processed and 206
     # is a partial body.
     if response.status_code != 200 and response.status_code not in passthrough_statuses:
-        detail = f": {response.text[:200]}" if response.is_error else ""
+        detail = f": {response.text[:200]}" if response.is_error and response.text else ""
         raise SourceError(f"{source}: HTTP {response.status_code} for {path}{detail}")
     return response
 
@@ -116,12 +131,14 @@ def _retry_after(
     header = response.headers.get("Retry-After")
     if header is None:
         return None
-    try:
-        seconds = float(header)
-    except ValueError:
-        return _seconds_until(header, now())
-    # "inf" and "nan" parse as floats but are not usable delays.
-    return max(seconds, 0.0) if math.isfinite(seconds) else None
+    whole, dot, fraction = header.partition(".")
+    if header.isascii() and whole.isdigit() and (not dot or fraction.isdigit()):
+        # delay-seconds is 1*DIGIT (the decimal fraction some sources send is
+        # kept). float() saturates rather than overflowing, so a very long
+        # delay still raises RateLimitError through the _MAX_RETRY_AFTER cap;
+        # the bound keeps the value formattable for the error hint.
+        return min(float(header), 1e300)
+    return _seconds_until(header, now())
 
 
 def _seconds_until(header: str, now: datetime) -> float | None:
