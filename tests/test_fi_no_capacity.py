@@ -186,7 +186,21 @@ def test_fingrid_rejects_invalid_capacity_row(update: dict[str, Any]) -> None:
 def test_fingrid_null_values_and_empty_datasets() -> None:
     bodies = datasets()
     bodies[317]["data"][0]["value"] = None
-    assert fingrid_fetch(ReserveProduct.FCR_N, bodies)[0].price_eur_per_mw is None
+    result = fingrid_fetch(ReserveProduct.FCR_N, bodies)
+    assert result[0].price_eur_per_mw is None
+    assert result[0].raw["price"]["value"] is None
+
+    bodies[317]["data"][1]["value"] = None
+    bodies[316]["data"][1]["value"] = None
+    result = fingrid_fetch(ReserveProduct.FCR_N, bodies)
+    assert len(result) == 96
+    for index, record in enumerate(result[4:8]):
+        assert record.start == START + (index + 4) * INTERVAL
+        assert record.price_eur_per_mw is None
+        assert record.volume_mw is None
+        assert record.raw["price"]["value"] is None
+        assert record.raw["volume"]["value"] is None
+
     for dataset in (317, 316):
         bodies[dataset]["data"] = []
         bodies[dataset]["pagination"]["total"] = 0
