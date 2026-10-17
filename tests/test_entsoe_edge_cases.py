@@ -238,6 +238,28 @@ def test_rejects_a_non_balancing_451_6_namespace() -> None:
         )
 
 
+# the namespace check matches the whole balancingdocument URN, so a URN merely
+# containing the substring, or with extra segments or non-ASCII digits, raises.
+@pytest.mark.parametrize(
+    "namespace",
+    [
+        "urn:not-cim:451-6:balancingdocuments-are-great:9:9",
+        "urn:iec62325.351:tc57wg16:451-6:balancingdocument:4:0:extra",
+        "x-urn:iec62325.351:tc57wg16:451-6:balancingdocument:4:0",
+        "urn:iec62325.351:tc57wg16:451-6:balancingdocument:\uff14:\uff10",
+    ],
+)
+def test_rejects_lookalike_balancing_document_namespaces(namespace: str) -> None:
+    body = document(
+        series(period("2026-01-15T00:00Z", "2026-01-15T00:15Z", point(1))),
+        namespace=namespace,
+    )
+    with pytest.raises(SourceError, match="unsupported namespace"):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
 # a zero-length Period is rejected like a negative one.
 def test_rejects_a_zero_length_period() -> None:
     body = document(series(period("2026-01-15T00:00Z", "2026-01-15T00:00Z")))
@@ -254,6 +276,49 @@ def test_rejects_point_level_capacity_flow_direction_other_than_a03() -> None:
     )
     with pytest.raises(SourceError, match=r"capacity flowDirection\.direction must be A03"):
         capacity_prices(body)
+
+
+# quantity is a singleton in a capacity Point, and Python numeric spellings are
+# not valid xs:decimal/xs:positiveInteger lexical forms.
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            "<quantity>14.4</quantity>",
+            "<quantity>14.4</quantity><quantity>15.4</quantity>",
+            "more than one quantity in Point",
+        ),
+        ("<position>1</position>", "<position>1_0</position>", "unparseable position"),
+        ("<quantity>14.4</quantity>", "<quantity>1_0.5</quantity>", "unparseable quantity"),
+        (
+            "<procurement_Price.amount>17.2</procurement_Price.amount>",
+            "<procurement_Price.amount>1e5</procurement_Price.amount>",
+            "unparseable procurement_Price.amount",
+        ),
+    ],
+)
+def test_capacity_rejects_duplicated_singletons_and_python_literals(
+    old: str, new: str, message: str
+) -> None:
+    body = capacity_document(capacity_point(1).replace(old, new))
+    with pytest.raises(SourceError, match=message):
+        capacity_prices(body)
+
+
+# +, a bare fraction and a trailing dot stay valid in capacity Points.
+def test_capacity_accepts_xsd_numeric_forms() -> None:
+    body = capacity_document(
+        capacity_point(1)
+        .replace("<position>1</position>", "<position>+1</position>")
+        .replace("<quantity>14.4</quantity>", "<quantity>.5</quantity>")
+        .replace(
+            "<procurement_Price.amount>17.2</procurement_Price.amount>",
+            "<procurement_Price.amount>5.</procurement_Price.amount>",
+        )
+    )
+    records = capacity_prices(body)
+    assert [r.volume_mw for r in records] == [0.5] * 12
+    assert [r.price_eur_per_mw for r in records] == [5.0] * 12
 
 
 # merging equal prices keeps an agreeing flow direction, adopts the

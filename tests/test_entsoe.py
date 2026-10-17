@@ -2,6 +2,7 @@ import io
 import logging
 import os
 import struct
+import sys
 import traceback
 import zipfile
 from collections.abc import Callable
@@ -880,9 +881,178 @@ def test_rejects_conflicting_duplicate_positions() -> None:
             ),
             "Period end is not after its start",
         ),
+        # Python literal forms are not xs:positiveInteger/xs:decimal lexical forms.
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:15Z",
+                        point("1_6", 21.0),
+                    )
+                )
+            ),
+            "unparseable position",
+        ),
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:15Z",
+                        point("\uff11\uff12", 21.0),
+                    )
+                )
+            ),
+            "unparseable position",
+        ),
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:15Z",
+                        point(1, "1_0"),
+                    )
+                )
+            ),
+            "unparseable imbalance_Price.amount",
+        ),
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:15Z",
+                        point(1, "1e5"),
+                    )
+                )
+            ),
+            "unparseable imbalance_Price.amount",
+        ),
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:15Z",
+                        point(1, "\uff11\uff12\uff13"),
+                    )
+                )
+            ),
+            "unparseable imbalance_Price.amount",
+        ),
     ],
 )
 def test_rejects_malformed_documents(body: str, message: str) -> None:
+    with pytest.raises(SourceError, match=message):
+        client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+# A digit string longer than the interpreter's integer conversion limit fails
+# inside int(): the parser must still report it as a SourceError.
+def test_rejects_a_position_beyond_the_integer_conversion_limit() -> None:
+    limit = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(640)
+    try:
+        body = document(
+            series(
+                period(
+                    "2026-01-15T00:00Z",
+                    "2026-01-15T00:15Z",
+                    point("9" * 641, 21.0),
+                )
+            )
+        )
+        with pytest.raises(SourceError, match="unparseable position"):
+            client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+                START, END, [BiddingZone.SE3]
+            )
+    finally:
+        sys.set_int_max_str_digits(limit)
+
+
+# A leading sign, a bare fraction and a trailing dot are legal lexical forms of
+# xs:positiveInteger and xs:decimal.
+@pytest.mark.parametrize(
+    ("position", "amount", "expected"),
+    [("+1", "+21.0", 21.0), ("1", ".5", 0.5), ("1", "5.", 5.0), ("1", "-5.25", -5.25)],
+)
+def test_accepts_xsd_integer_and_decimal_forms(position: str, amount: str, expected: float) -> None:
+    body = document(
+        series(period("2026-01-15T00:00Z", "2026-01-15T00:15Z", point(position, amount)))
+    )
+    prices = client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+        START, START + INTERVAL, [BiddingZone.SE3]
+    )
+    assert [p.imbalance_price_eur for p in prices] == [expected]
+
+
+# Singleton elements (maxOccurs=1) appearing twice must raise instead of
+# silently keeping the first of two conflicting values.
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:15Z",
+                        "<Point><position>1</position>"
+                        "<imbalance_Price.amount>999.0</imbalance_Price.amount>"
+                        "<imbalance_Price.amount>21.0</imbalance_Price.amount></Point>",
+                    )
+                )
+            ),
+            "more than one imbalance_Price.amount in Point",
+        ),
+        (
+            document(
+                series(
+                    period(
+                        "2026-01-15T00:00Z",
+                        "2026-01-15T00:30Z",
+                        "<Point><position>1</position><position>2</position>"
+                        "<imbalance_Price.amount>21.0</imbalance_Price.amount></Point>"
+                        + point(2, 30.0),
+                    )
+                )
+            ),
+            "more than one position in Point",
+        ),
+        (
+            document(series(period("2026-01-15T00:00Z", "2026-01-15T00:15Z", point(1)))).replace(
+                "<type>A85</type>", "<type>A85</type><type>A86</type>"
+            ),
+            "more than one type in Balancing_MarketDocument",
+        ),
+        (
+            document(
+                series(period("2026-01-15T00:00Z", "2026-01-15T00:15Z", point(1))).replace(
+                    "<currency_Unit.name>EUR</currency_Unit.name>",
+                    "<currency_Unit.name>EUR</currency_Unit.name>"
+                    "<currency_Unit.name>SEK</currency_Unit.name>",
+                )
+            ),
+            "more than one currency_Unit.name in TimeSeries",
+        ),
+        (
+            document(
+                series(
+                    period("2026-01-15T00:00Z", "2026-01-15T00:15Z", point(1)).replace(
+                        "<resolution>PT15M</resolution>",
+                        "<resolution>PT15M</resolution><resolution>PT60M</resolution>",
+                    )
+                )
+            ),
+            "more than one resolution in Period",
+        ),
+    ],
+)
+def test_rejects_duplicated_singleton_elements(body: str, message: str) -> None:
     with pytest.raises(SourceError, match=message):
         client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
             START, END, [BiddingZone.SE3]
@@ -958,6 +1128,15 @@ def test_http_errors_include_status_and_redact_token(status: int) -> None:
     assert KEY not in str(caught.value)
     assert "[REDACTED_SECRET]" in str(caught.value)
     assert KEY not in "".join(traceback.format_exception(caught.value))
+
+
+# The request URL carries the token, so the HTTP error names no path at all.
+def test_http_error_message_has_no_path_slot() -> None:
+    with pytest.raises(SourceError) as caught:
+        client(lambda _: httpx.Response(404, text="oops")).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    assert str(caught.value) == "entsoe: HTTP 404: oops"
 
 
 def test_transport_error_does_not_leak_token_or_url() -> None:

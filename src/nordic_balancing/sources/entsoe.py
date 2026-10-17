@@ -18,6 +18,7 @@ import io
 import lzma
 import math
 import os
+import re
 import time
 import zipfile
 import zlib
@@ -63,6 +64,11 @@ _AREA_ELEMENTS = ("area_Domain.mRID", "controlArea_Domain.mRID")
 # The price unit element: price_Measure_Unit.name up to 4.4, price_Measurement_Unit.name
 # in 4.5. Both are optional.
 _PRICE_UNIT_ELEMENTS = ("price_Measurement_Unit.name", "price_Measure_Unit.name")
+# Any version of the IEC 62325-451-6 balancingdocument URN, ASCII digits only.
+_BALANCING_NS = re.compile(r"urn:iec62325\.351:tc57wg16:451-6:balancingdocument:[0-9]+:[0-9]+")
+# The xs:positiveInteger and xs:decimal lexical forms, ASCII digits only.
+_POSITION_TEXT = re.compile(r"\+?[0-9]+")
+_DECIMAL_TEXT = re.compile(r"[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)")
 _EIC_CODES = {
     BiddingZone.DK1: "10YDK-1--------W",
     BiddingZone.DK2: "10YDK-2--------M",
@@ -431,7 +437,7 @@ class EntsoeClient:
             raise SourceError(f"{SOURCE}: request failed ({name})") from None
         if response.is_error and response.status_code not in _PASSTHROUGH:
             detail = response.text.replace(self._api_key, "[REDACTED_SECRET]")
-            raise SourceError(f"{SOURCE}: HTTP {response.status_code} for : {detail[:200]}")
+            raise SourceError(f"{SOURCE}: HTTP {response.status_code}: {detail[:200]}")
         return _members(response.content)
 
     def _fetch(
@@ -554,15 +560,15 @@ def _children(element: ElementTree.Element, name: str) -> list[ElementTree.Eleme
     return [child for child in element if _local(child.tag) == name]
 
 
-def _child(element: ElementTree.Element, name: str) -> ElementTree.Element | None:
-    for child in element:
-        if _local(child.tag) == name:
-            return child
-    return None
+def _only_child(element: ElementTree.Element, name: str) -> ElementTree.Element | None:
+    children = _children(element, name)
+    if len(children) > 1:
+        raise SourceError(f"{SOURCE}: more than one {name} in {_local(element.tag)}")
+    return children[0] if children else None
 
 
 def _text(parent: ElementTree.Element, name: str) -> str:
-    element = _child(parent, name)
+    element = _only_child(parent, name)
     if element is None or element.text is None or not element.text.strip():
         raise SourceError(f"{SOURCE}: missing {name}")
     return element.text.strip()
@@ -615,7 +621,7 @@ def _points(
     if name != "Balancing_MarketDocument":
         raise SourceError(f"{SOURCE}: unknown root element {name!r}")
     namespace = root.tag[1:].partition("}")[0] if root.tag.startswith("{") else ""
-    if "451-6:balancingdocument" not in namespace:
+    if _BALANCING_NS.fullmatch(namespace) is None:
         raise SourceError(f"{SOURCE}: unsupported namespace {namespace!r}")
     document_type = _text(root, "type")
     if document_type != ("A81" if capacity else "A85"):
@@ -693,13 +699,13 @@ def _series_points(
         series_flow = _text(series, "flowDirection.direction")
         if capacity_process == "A47" and series_flow not in ("A01", "A02"):
             raise SourceError(f"{SOURCE}: mFRR capacity flowDirection.direction must be A01 or A02")
-    currency = _child(series, "currency_Unit.name")
+    currency = _only_child(series, "currency_Unit.name")
     if currency is not None and (currency.text or "").strip() != "EUR":
         raise SourceError(
             f"{SOURCE}: unsupported currency_Unit.name {(currency.text or '').strip()!r}"
         )
     for element in _PRICE_UNIT_ELEMENTS:
-        unit = _child(series, element)
+        unit = _only_child(series, element)
         expected_unit = "MAW" if capacity else "MWH"
         if unit is not None and (unit.text or "").strip() != expected_unit:
             raise SourceError(f"{SOURCE}: unsupported {element} {(unit.text or '').strip()!r}")
@@ -734,7 +740,7 @@ def _period_points(
     capacity: bool = False,
     capacity_flow: str | None = None,
 ) -> list[_Point]:
-    interval = _child(period, "timeInterval")
+    interval = _only_child(period, "timeInterval")
     if interval is None:
         raise SourceError(f"{SOURCE}: Period has no timeInterval")
     period_start = _time(_text(interval, "start"))
@@ -768,7 +774,7 @@ def _period_points(
         if capacity:
             amount = _amount(_text(element, amount_name), amount_name)
         else:
-            amount_element = _child(element, amount_name)
+            amount_element = _only_child(element, amount_name)
             amount = (
                 _amount((amount_element.text or "").strip(), amount_name)
                 if amount_element is not None
@@ -851,7 +857,7 @@ def _period_points(
 
 
 def _code(parent: ElementTree.Element, name: str) -> str | None:
-    element = _child(parent, name)
+    element = _only_child(parent, name)
     if element is None:
         return None
     return _text(parent, name)
@@ -890,9 +896,12 @@ def _reject_repeated_categories(
 
 
 def _position(text: str) -> int:
+    if _POSITION_TEXT.fullmatch(text) is None:
+        raise SourceError(f"{SOURCE}: unparseable position {text!r}")
     try:
         position = int(text, 10)
     except ValueError as exc:
+        # A digit string past the interpreter's conversion limit still fails here.
         raise SourceError(f"{SOURCE}: unparseable position {text!r}") from exc
     if position < 1:
         raise SourceError(f"{SOURCE}: position {position} is not 1-based")
@@ -906,6 +915,8 @@ def _amount(text: str, name: str) -> float:
         raise SourceError(f"{SOURCE}: unparseable {name} {text!r}") from exc
     if not math.isfinite(amount):
         raise SourceError(f"{SOURCE}: {name} is not finite: {text!r}")
+    if _DECIMAL_TEXT.fullmatch(text) is None:
+        raise SourceError(f"{SOURCE}: unparseable {name} {text!r}")
     return amount
 
 
