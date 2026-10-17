@@ -30,9 +30,9 @@ def to_frame(records: Iterable[ImbalancePrice] | Iterable[ReserveCapacity]) -> "
       the source) becomes ``NaN``.
 
     The index is a plain ``RangeIndex``; use ``.set_index(["start", "zone"])`` to key it.
-    No records give an empty DataFrame without columns. Records must all be
-    :class:`ImbalancePrice` or all :class:`ReserveCapacity`; ``raw`` is left out because
-    it differs per source.
+    No records give an empty DataFrame without columns. Records must be exactly
+    :class:`ImbalancePrice` or exactly :class:`ReserveCapacity` (subclasses are
+    rejected); ``raw`` is left out because it differs per source.
     """
     try:
         import pandas as pd
@@ -45,7 +45,7 @@ def to_frame(records: Iterable[ImbalancePrice] | Iterable[ReserveCapacity]) -> "
         return pd.DataFrame()
     kind = type(rows[0])
     if kind not in (ImbalancePrice, ReserveCapacity) or any(type(row) is not kind for row in rows):
-        raise ValueError("records must be all ImbalancePrice or all ReserveCapacity")
+        raise ValueError("records must be exactly ImbalancePrice or exactly ReserveCapacity")
     columns: dict[str, Any] = {}
     for field in fields(kind):
         if field.name == "raw":

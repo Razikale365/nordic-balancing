@@ -33,6 +33,7 @@
   },
   "symbols": {
     "BiddingZone": {
+      "attributes": {},
       "bases": [
         "StrEnum"
       ],
@@ -50,13 +51,16 @@
         "SE2": "SE2",
         "SE3": "SE3",
         "SE4": "SE4"
-      }
+      },
+      "methods": {},
+      "properties": {}
     },
     "CHANGES": {
       "kind": "constant",
       "type": "tuple"
     },
     "Direction": {
+      "attributes": {},
       "bases": [
         "IntEnum"
       ],
@@ -65,16 +69,19 @@
         "DOWN": -1,
         "NONE": 0,
         "UP": 1
-      }
+      },
+      "methods": {},
+      "properties": {}
     },
     "Divergence": {
+      "attributes": {},
       "fields": [
-        "zone: nordic_balancing.models.BiddingZone",
-        "start: datetime.datetime",
-        "kind: nordic_balancing.reconcile.DivergenceKind",
-        "primary: nordic_balancing.models.ImbalancePrice | None",
-        "reference: nordic_balancing.models.ImbalancePrice | None",
-        "detail: str"
+        "zone: nordic_balancing.models.BiddingZone (compare=True, repr=True)",
+        "start: datetime.datetime (compare=True, repr=True)",
+        "kind: nordic_balancing.reconcile.DivergenceKind (compare=True, repr=True)",
+        "primary: nordic_balancing.models.ImbalancePrice | None (compare=True, repr=True)",
+        "reference: nordic_balancing.models.ImbalancePrice | None (compare=True, repr=True)",
+        "detail: str (compare=True, repr=True)"
       ],
       "frozen": true,
       "kind": "dataclass",
@@ -85,6 +92,7 @@
       "slots": true
     },
     "DivergenceKind": {
+      "attributes": {},
       "bases": [
         "StrEnum"
       ],
@@ -97,9 +105,12 @@
         "RESOLUTION": "resolution",
         "ROUNDING": "rounding",
         "UNPUBLISHED": "unpublished"
-      }
+      },
+      "methods": {},
+      "properties": {}
     },
     "ESettClient": {
+      "attributes": {},
       "bases": [
         "object"
       ],
@@ -114,6 +125,7 @@
       "properties": {}
     },
     "EnergiDataServiceClient": {
+      "attributes": {},
       "bases": [
         "object"
       ],
@@ -129,6 +141,7 @@
       "properties": {}
     },
     "EntsoeClient": {
+      "attributes": {},
       "bases": [
         "object"
       ],
@@ -144,6 +157,7 @@
       "properties": {}
     },
     "FingridClient": {
+      "attributes": {},
       "bases": [
         "object"
       ],
@@ -164,21 +178,22 @@
       "type": "timedelta"
     },
     "ImbalancePrice": {
+      "attributes": {},
       "fields": [
-        "start: datetime.datetime",
-        "zone: nordic_balancing.models.BiddingZone",
-        "imbalance_price_eur: float | None",
-        "imbalance_price_dkk: float | None",
-        "spot_price_eur: float | None",
-        "dominating_direction: nordic_balancing.models.Direction | None",
-        "satisfied_demand_mw: float | None",
-        "afrr_up_vwa_eur: float | None",
-        "afrr_down_vwa_eur: float | None",
-        "mfrr_up_price_eur: float | None",
-        "mfrr_down_price_eur: float | None",
-        "source: str",
-        "resolution: datetime.timedelta",
-        "raw: collections.abc.Mapping[str, typing.Any]"
+        "start: datetime.datetime (compare=True, repr=True)",
+        "zone: nordic_balancing.models.BiddingZone (compare=True, repr=True)",
+        "imbalance_price_eur: float | None (compare=True, repr=True)",
+        "imbalance_price_dkk: float | None (compare=True, repr=True)",
+        "spot_price_eur: float | None (compare=True, repr=True)",
+        "dominating_direction: nordic_balancing.models.Direction | None (compare=True, repr=True)",
+        "satisfied_demand_mw: float | None (compare=True, repr=True)",
+        "afrr_up_vwa_eur: float | None (compare=True, repr=True)",
+        "afrr_down_vwa_eur: float | None (compare=True, repr=True)",
+        "mfrr_up_price_eur: float | None (compare=True, repr=True)",
+        "mfrr_down_price_eur: float | None (compare=True, repr=True)",
+        "source: str (compare=True, repr=True)",
+        "resolution: datetime.timedelta (compare=True, repr=True)",
+        "raw: collections.abc.Mapping[str, typing.Any] (compare=False, repr=False)"
       ],
       "frozen": true,
       "kind": "dataclass",
@@ -191,11 +206,12 @@
       "slots": true
     },
     "MarketChange": {
+      "attributes": {},
       "fields": [
-        "effective: datetime.datetime",
-        "zones: frozenset[nordic_balancing.models.BiddingZone]",
-        "summary: str",
-        "source_url: str"
+        "effective: datetime.datetime (compare=True, repr=True)",
+        "zones: frozenset[nordic_balancing.models.BiddingZone] (compare=True, repr=True)",
+        "summary: str (compare=True, repr=True)",
+        "source_url: str (compare=True, repr=True)"
       ],
       "frozen": true,
       "kind": "dataclass",
@@ -206,6 +222,7 @@
       "slots": true
     },
     "NordicBalancingError": {
+      "attributes": {},
       "bases": [
         "Exception"
       ],
@@ -214,6 +231,7 @@
       "properties": {}
     },
     "RateLimitError": {
+      "attributes": {},
       "bases": [
         "NordicBalancingError"
       ],
@@ -224,15 +242,16 @@
       "properties": {}
     },
     "ReconciliationReport": {
+      "attributes": {},
       "fields": [
-        "primary_source: str",
-        "reference_source: str",
-        "zones: tuple[nordic_balancing.models.BiddingZone, ...]",
-        "compared: int",
-        "identical: int",
-        "divergences: tuple[nordic_balancing.reconcile.Divergence, ...]",
-        "primary_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = ()",
-        "reference_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = ()"
+        "primary_source: str (compare=True, repr=True)",
+        "reference_source: str (compare=True, repr=True)",
+        "zones: tuple[nordic_balancing.models.BiddingZone, ...] (compare=True, repr=True)",
+        "compared: int (compare=True, repr=True)",
+        "identical: int (compare=True, repr=True)",
+        "divergences: tuple[nordic_balancing.reconcile.Divergence, ...] (compare=True, repr=True)",
+        "primary_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = () (compare=True, repr=True)",
+        "reference_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = () (compare=True, repr=True)"
       ],
       "frozen": true,
       "kind": "dataclass",
@@ -244,16 +263,17 @@
       "slots": true
     },
     "ReserveCapacity": {
+      "attributes": {},
       "fields": [
-        "start: datetime.datetime",
-        "zone: nordic_balancing.models.BiddingZone",
-        "product: nordic_balancing.models.ReserveProduct",
-        "direction: nordic_balancing.models.Direction",
-        "price_eur_per_mw: float | None",
-        "volume_mw: float | None",
-        "source: str",
-        "resolution: datetime.timedelta",
-        "raw: collections.abc.Mapping[str, typing.Any]"
+        "start: datetime.datetime (compare=True, repr=True)",
+        "zone: nordic_balancing.models.BiddingZone (compare=True, repr=True)",
+        "product: nordic_balancing.models.ReserveProduct (compare=True, repr=True)",
+        "direction: nordic_balancing.models.Direction (compare=True, repr=True)",
+        "price_eur_per_mw: float | None (compare=True, repr=True)",
+        "volume_mw: float | None (compare=True, repr=True)",
+        "source: str (compare=True, repr=True)",
+        "resolution: datetime.timedelta (compare=True, repr=True)",
+        "raw: collections.abc.Mapping[str, typing.Any] (compare=False, repr=False)"
       ],
       "frozen": true,
       "kind": "dataclass",
@@ -266,6 +286,7 @@
       "slots": true
     },
     "ReserveProduct": {
+      "attributes": {},
       "bases": [
         "StrEnum"
       ],
@@ -276,9 +297,12 @@
         "FCR_D": "FCR-D",
         "FCR_N": "FCR-N",
         "MFRR": "mFRR"
-      }
+      },
+      "methods": {},
+      "properties": {}
     },
     "SourceError": {
+      "attributes": {},
       "bases": [
         "NordicBalancingError"
       ],
@@ -287,6 +311,7 @@
       "properties": {}
     },
     "SvKClient": {
+      "attributes": {},
       "bases": [
         "object"
       ],
