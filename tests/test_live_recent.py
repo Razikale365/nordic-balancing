@@ -233,12 +233,9 @@ def test_live_recent_entsoe_no1_fcr_n_capacity() -> None:
     end = start + timedelta(days=2)
     with EntsoeClient() as client:
         records = client.capacity_market(ReserveProduct.FCR_N, start, end, zones=[BiddingZone.NO1])
-    assert records
-    assert all(r.product is ReserveProduct.FCR_N and r.direction is Direction.NONE for r in records)
-    assert all(r.zone is BiddingZone.NO1 and r.source == "entsoe" for r in records)
-    assert all(r.resolution == timedelta(hours=1) for r in records)
-    assert all(_on_grid_in_window(r.start, start, end) for r in records)
-    assert all(r.price_eur_per_mw is not None and r.volume_mw is not None for r in records)
+    _assert_recent_fi_no_capacity(
+        records, start, end, ReserveProduct.FCR_N, BiddingZone.NO1, "entsoe"
+    )
     assert all(
         r.raw["currency_Unit.name"] == "EUR" and r.raw["quantity_Measure_Unit.name"] == "MAW"
         for r in records
@@ -256,13 +253,23 @@ def _assert_recent_fi_no_capacity(
     directions = (
         {Direction.NONE} if product is ReserveProduct.FCR_N else {Direction.UP, Direction.DOWN}
     )
-    expected = {(start + q * INTERVAL, d) for q in range(96) for d in directions}
-    assert len(records) == len(expected)
-    assert {(r.start, r.direction) for r in records} == expected
+    expected = {
+        (start + q * INTERVAL, d) for q in range((end - start) // INTERVAL) for d in directions
+    }
+    if source == "entsoe":
+        assert len(expected) * 95 // 100 <= len(records) <= len(expected), (
+            f"{product.value} {zone.value} recent capacity: got {len(records)} records; "
+            f"expected {len(expected)}, require at least 95% ({len(expected) * 95 // 100})"
+        )
+        seen = {(r.start, r.direction) for r in records}
+        assert len(seen) == len(records) and seen <= expected
+    else:
+        assert len(records) == len(expected)
+        assert {(r.start, r.direction) for r in records} == expected
+        assert all(r.price_eur_per_mw is not None and r.volume_mw is not None for r in records)
     assert all(r.zone is zone and r.product is product and r.source == source for r in records)
     assert all(r.resolution == timedelta(hours=1) for r in records)
     assert all(_on_grid_in_window(r.start, start, end) for r in records)
-    assert all(r.price_eur_per_mw is not None and r.volume_mw is not None for r in records)
 
 
 @pytest.mark.live
@@ -327,3 +334,69 @@ def test_live_entsoe_no1_capacity_sixty_days(product: ReserveProduct) -> None:
     assert all(r.zone is BiddingZone.NO1 and r.product is product for r in records)
     assert all(r.direction in directions and r.resolution == timedelta(hours=1) for r in records)
     assert all(r.source == "entsoe" and _on_grid_in_window(r.start, start, end) for r in records)
+
+
+def _synthetic_mfrr_capacity(
+    start: datetime,
+    source: str,
+    *,
+    skip: set[int] | None = None,
+    null_price: set[int] | None = None,
+) -> list[ReserveCapacity]:
+    return [
+        ReserveCapacity(
+            start=start + q * INTERVAL,
+            zone=BiddingZone.NO1 if source == "entsoe" else BiddingZone.FI,
+            product=ReserveProduct.MFRR,
+            direction=direction,
+            price_eur_per_mw=None if null_price and q in null_price else 12.5,
+            volume_mw=50.0,
+            source=source,
+            resolution=timedelta(hours=1),
+            raw={},
+        )
+        for q in range(96)
+        if not (skip and q in skip)
+        for direction in (Direction.UP, Direction.DOWN)
+    ]
+
+
+def test_recent_fi_no_capacity_tolerates_entsoe_gaps_and_nulls() -> None:
+    start, end = _recent_day()
+    full = _synthetic_mfrr_capacity(start, "entsoe")
+    for records in (
+        full,
+        _synthetic_mfrr_capacity(start, "entsoe", skip={40}),
+        _synthetic_mfrr_capacity(start, "entsoe", null_price={10, 11}),
+    ):
+        _assert_recent_fi_no_capacity(
+            records, start, end, ReserveProduct.MFRR, BiddingZone.NO1, "entsoe"
+        )
+    for records in (
+        _synthetic_mfrr_capacity(start, "entsoe", skip=set(range(10))),
+        [*full[:-1], full[0]],
+    ):
+        with pytest.raises(AssertionError):
+            _assert_recent_fi_no_capacity(
+                records, start, end, ReserveProduct.MFRR, BiddingZone.NO1, "entsoe"
+            )
+
+
+def test_recent_fi_no_capacity_stays_strict_for_fingrid() -> None:
+    start, end = _recent_day()
+    _assert_recent_fi_no_capacity(
+        _synthetic_mfrr_capacity(start, "fingrid"),
+        start,
+        end,
+        ReserveProduct.MFRR,
+        BiddingZone.FI,
+        "fingrid",
+    )
+    for records in (
+        _synthetic_mfrr_capacity(start, "fingrid", skip={40}),
+        _synthetic_mfrr_capacity(start, "fingrid", null_price={10}),
+    ):
+        with pytest.raises(AssertionError):
+            _assert_recent_fi_no_capacity(
+                records, start, end, ReserveProduct.MFRR, BiddingZone.FI, "fingrid"
+            )
