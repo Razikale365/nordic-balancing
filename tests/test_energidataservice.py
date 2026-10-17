@@ -264,6 +264,11 @@ def test_rejects_record_that_is_not_an_object(record: object) -> None:
         client(lambda _: httpx.Response(200, json=body)).imbalance_prices(START, END)
 
 
+def test_rejects_body_that_is_not_an_object() -> None:
+    with pytest.raises(SourceError, match="is not a JSON object"):
+        client(lambda _: httpx.Response(200, json=[1, 2, 3])).imbalance_prices(START, END)
+
+
 @pytest.mark.parametrize("column", list(PUBLISHED))
 def test_rejects_missing_columns(column: str) -> None:
     record = {key: value for key, value in PUBLISHED.items() if key != column}
@@ -562,6 +567,8 @@ def test_rejects_total_changing_across_pages(
     [
         "2026-10-09",
         "20261009",
+        "T",
+        "2026-13-99T99:99",
         "2026-10-09T02:30:30+00:00:30",
         "2026-10-09T04:30:00+02:00",
         "2026-10-09T02:30:00-00:00",
@@ -675,6 +682,8 @@ def test_capacity_sorts_rows_and_accepts_deduplicated_zone_generator() -> None:
         ({"TimeUTC": None}, "TimeUTC is missing"),
         ({"TimeUTC": "2026-10-09"}, "unparseable TimeUTC"),
         ({"TimeUTC": "invalid"}, "unparseable TimeUTC"),
+        ({"TimeUTC": "T"}, "unparseable TimeUTC"),
+        ({"TimeUTC": "2026-13-99T99:99"}, "unparseable TimeUTC"),
         ({"TimeUTC": "2026-10-09T02:15:00"}, "not on the hour"),
         ({"TimeUTC": "2026-10-09T02:00:00.000001"}, "15-minute boundary"),
         ({"TimeUTC": "2026-10-09T02:00:01"}, "15-minute boundary"),

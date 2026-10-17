@@ -48,9 +48,8 @@ def eds_fetch(
     start: datetime = START,
     end: datetime = START + HOUR,
 ) -> list[ReserveCapacity]:
-    transport = httpx.MockTransport(
-        lambda _: httpx.Response(200, json={"total": len(rows), "records": rows})
-    )
+    body = json.dumps({"total": len(rows), "records": rows})
+    transport = httpx.MockTransport(lambda _: httpx.Response(200, text=body))
     with httpx.Client(transport=transport) as http, EnergiDataServiceClient(http) as client:
         return client.capacity_market(product, start, end, zones=zones)
 
@@ -209,13 +208,74 @@ def test_eds_nd_rejects_bad_groups(failure: str) -> None:
         eds_fetch(rows)
 
 
-def test_eds_nd_rejects_duplicate_auction_row() -> None:
+@pytest.mark.parametrize("identical", [True, False])
+def test_eds_nd_rejects_duplicate_auction_row(identical: bool) -> None:
     rows = nd_rows()
-    rows.append(
-        next(r.copy() for r in rows if r["AuctionType"] != "Total" and r["ProductName"] == "FCR-N")
+    duplicate = next(
+        r.copy() for r in rows if r["AuctionType"] != "Total" and r["ProductName"] == "FCR-N"
     )
+    if not identical:
+        duplicate["PurchasedVolumeLocal"] += 1
+        duplicate["PurchasedVolumeTotal"] += 1
+        duplicate["PriceTotalEUR"] += 1
+    rows.append(duplicate)
     with pytest.raises(SourceError, match="duplicate"):
         eds_fetch(rows)
+
+
+@pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.FCR])
+@pytest.mark.parametrize("row", [1, None, "x"])
+def test_eds_fcr_rejects_non_object_row(product: ReserveProduct, row: Any) -> None:
+    zones = (BiddingZone.DK1,) if product is ReserveProduct.FCR else (BiddingZone.DK2,)
+    with pytest.raises(SourceError, match="not a JSON object"):
+        eds_fetch([row], product, zones)
+
+
+@pytest.mark.parametrize("column", energidataservice._FCR_ND_COLUMNS[5:])
+@pytest.mark.parametrize("auction", ["Total", "D-1 early"])
+@pytest.mark.parametrize(
+    "value", [True, "1.0", [], {}, float("nan"), float("inf"), -float("inf"), 10**400]
+)
+def test_eds_nd_validates_every_numeric_column_on_total_and_auction_rows(
+    column: str, auction: str, value: Any
+) -> None:
+    total = next(
+        r.copy()
+        for r in nd_rows()
+        if r["ProductName"] == "FCR-N" and r["PriceArea"] == "DK2" and r["AuctionType"] == "Total"
+    )
+    rows = [total, {**total, "AuctionType": "D-1 early"}]
+    next(r for r in rows if r["AuctionType"] == auction)[column] = value
+    with pytest.raises(SourceError, match=f"{column} is not (a number|finite)"):
+        eds_fetch(rows, zones=(BiddingZone.DK2,))
+
+
+@pytest.mark.parametrize("column", energidataservice._FCR_DK1_COLUMNS[2:])
+@pytest.mark.parametrize(
+    "value", [True, "1.0", [], {}, float("nan"), float("inf"), -float("inf"), 10**400]
+)
+def test_eds_dk1_validates_every_numeric_column(column: str, value: Any) -> None:
+    row = {**dk1_rows()[0], column: value}
+    with pytest.raises(SourceError, match=f"{column} is not (a number|finite)"):
+        eds_fetch([row], ReserveProduct.FCR, (BiddingZone.DK1,))
+
+
+@pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.FCR])
+def test_eds_fcr_allows_null_numeric_columns(product: ReserveProduct) -> None:
+    if product is ReserveProduct.FCR:
+        rows = [{**dk1_rows()[0], **dict.fromkeys(energidataservice._FCR_DK1_COLUMNS[2:])}]
+        zones: tuple[BiddingZone, ...] = (BiddingZone.DK1,)
+    else:
+        nulls = dict.fromkeys(energidataservice._FCR_ND_COLUMNS[5:])
+        rows = [{**r, **nulls} for r in nd_rows() if r["PriceArea"] == "DK2"]
+        zones = (BiddingZone.DK2,)
+    result = eds_fetch(rows, product, zones)
+    assert len(result) == 4
+    assert all(r.price_eur_per_mw is None and r.volume_mw is None for r in result)
+    if product is ReserveProduct.FCR:
+        assert result[0].raw["FCRabroad_MW"] is None
+    else:
+        assert all(auction["PurchasedVolumeTotal"] is None for auction in result[0].raw["auctions"])
 
 
 def test_eds_total_without_auctions_and_old_auction_name() -> None:
@@ -687,7 +747,16 @@ def test_eds_nd_ignores_other_product_total_problems(failure: str) -> None:
 
 @pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.FCR])
 @pytest.mark.parametrize(
-    "timestamp", [None, "bad", "2026-10-05", "2026-10-05T22:01:00", "2026-10-06T00:00:00+02:00"]
+    "timestamp",
+    [
+        None,
+        "bad",
+        "2026-10-05",
+        "T",
+        "2026-13-99T99:99",
+        "2026-10-05T22:01:00",
+        "2026-10-06T00:00:00+02:00",
+    ],
 )
 def test_eds_fcr_timestamp_errors_name_hour_utc(product: ReserveProduct, timestamp: Any) -> None:
     rows = dk1_rows() if product is ReserveProduct.FCR else nd_rows()
