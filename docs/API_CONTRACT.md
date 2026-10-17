@@ -37,7 +37,9 @@ Everything else is private:
 `tests/test_public_api.py` compares the public surface against
 `tests/api_snapshot.json` and fails on any unrecorded addition, removal, or
 signature change. It also records whether each dataclass is frozen and slotted,
-and each enum's base class (`StrEnum` or `IntEnum`).
+each enum's base class (`StrEnum` or `IntEnum`), each dataclass field's `compare`
+and `repr` flags and `default_factory`, every public non-callable class attribute,
+and public enum methods and properties.
 
 Regenerate the snapshot intentionally with:
 
@@ -63,7 +65,8 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   `AuctionType == "Total"` is emitted: `PurchasedVolumeLocal` is the area's MW
   and `PriceTotalEUR` is EUR/MW per hour. Other auction rows for the same hour,
   area and source product are retained in `raw["auctions"]`; auction rows
-  without a Total, duplicate Totals and unknown product names raise `SourceError`.
+  without a Total, a repeated Total or a repeated auction of the same type for one
+  hour, area and product, and unknown product names raise `SourceError`.
   FCR-N is symmetric (`Direction.NONE`); `FCR-D upp` maps to `UP` and
   `FCR-D ned` to `DOWN`. Before `2024-02-01` prices are average prices; from
   that date each auction has a marginal price and Total is the volume-weighted
@@ -150,6 +153,7 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
   Early documents repeat identical TimeSeries; the same mFRR collapse rule applies.
 - `SvKClient.capacity_market(product, start, end, zones=(SE1, SE2, SE3, SE4))`
   returns `list[ReserveCapacity]` for Swedish aFRR and mFRR capacity markets.
+  Other products raise `ValueError`.
 
 Every client enforces the same data contracts (C1–C8 in [README.md](../README.md));
 any violation raises `SourceError`.
@@ -235,9 +239,15 @@ bidding zone, product, direction, and 15-minute UTC interval:
 - **Missing vs unpublished**: an interval that the source did not return is absent
   from the returned list; clients never fill gaps. A field set to `None` on a
   returned record means the source has not published that value yet or does not
-  provide that field.
+  provide that field. eSett, Svenska kraftnät and Energi Data Service records that
+  lack a value key or a requested column raise `SourceError`; only an explicit null
+  becomes `None`.
 - **Numbers**: numeric source values must be finite JSON numbers convertible to
   `float` (`bool`, `NaN`, and infinities are rejected with `SourceError`).
+  ENTSO-E XML values must be ASCII `xs:decimal` text and positions ASCII
+  `xs:positiveInteger` text (`1_0`, `1e5` and non-ASCII digits raise); an element
+  the schema allows once that appears twice raises `SourceError` rather than using
+  either value.
 - **Pagination and duplicates**: paginated fetches must match the total row count
   reported by the source. Duplicate source records for the same series key raise
   `SourceError`, with the following documented exceptions:
@@ -256,12 +266,19 @@ bidding zone, product, direction, and 15-minute UTC interval:
 - **`raw` isolation**: `raw` is a `MappingProxyType` over a deep copy made for that
   record alone; nested containers are never shared with caller input or across the
   four quarters of an expanded hourly record. Only the top-level mapping rejects
-  writes, so treat nested values as read-only as well. `to_frame()` omits `raw`.
+  writes, so treat nested values as read-only as well. `to_frame()` omits `raw`
+  and accepts records that are all exactly `ImbalancePrice` or all exactly
+  `ReserveCapacity`; subclass instances raise `ValueError`.
 - **Transport**: HTTP, network, and protocol errors raise `SourceError`, never raw
   `httpx` exceptions. HTTP 429 and 503 responses are retried within `max_retries`
   and then raise `RateLimitError` (or immediately when `Retry-After` exceeds
-  300 seconds). HTTP 502/504, timeouts, and dropped connections are retried within
-  the same `max_retries` budget and then raise `SourceError`.
+  300 seconds). `Retry-After` delay-seconds accepts ASCII digits with an optional
+  decimal fraction; other values use the default 10-second delay. HTTP 502/504,
+  timeouts, dropped connections and undecodable response bodies are retried within
+  the same `max_retries` budget and then raise `SourceError`. Every client raises
+  `ValueError` at construction for a `base_url` that is not an absolute http or https
+  URL. Using a client after `close()` raises the `RuntimeError` from httpx: that is
+  caller misuse, not a source condition.
 
 ## Supported Python and dependencies
 

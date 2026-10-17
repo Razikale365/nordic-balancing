@@ -57,8 +57,35 @@ the project is in beta: the public API is defined in
   before; the live suite was rerun on this version.
 - The ENTSO-E request-failure message now ends with the exception class, for example
   `entsoe: request failed (ConnectError)`. Code that compared the whole message must allow for it.
+- Audit fixes make more malformed input raise. Valid responses from all five providers parse as
+  before: the live suite and history scans (Energi Data Service FCR auctions 2021 to date, ENTSO-E
+  2024 to date) were rerun on this version.
+  - **ENTSO-E:** an element the schema allows once that appears twice raises `SourceError`
+    instead of using the first value; positions and amounts must be ASCII `xs:positiveInteger` /
+    `xs:decimal` text (`1_0`, `1e5` and non-ASCII digits raise; `+2`, `.5` and `5.` stay valid);
+    the document namespace must be a complete
+    `urn:iec62325.351:tc57wg16:451-6:balancingdocument:<major>:<minor>` URN.
+  - **Energi Data Service:** an imbalance record missing a requested column raises `SourceError`
+    instead of reporting its values as `None`; a repeated `FcrNdDK2` auction row (same hour,
+    area, product and auction type) raises, as a repeated `Total` already did.
+  - **eSett:** `timestampUTC` accepts only the `Z` and `+00:00` designators, as the SvK and
+    Energi Data Service parsers do; `-00:00`, `+00` and `+0000` raise `SourceError`.
+  - **All clients:** a `base_url` that is not an absolute http or https URL raises `ValueError`
+    at construction instead of a raw `httpx.InvalidURL` or `ValueError` on the first request.
+  - **Retry-After:** delay-seconds accepts ASCII digits with an optional decimal fraction. Forms
+    such as `5_0`, `+120`, `-3` and `1e400` use the default 10-second delay (`-3` previously meant
+    no wait), and a delay above 300 s still raises `RateLimitError`.
+  - The ENTSO-E HTTP error message no longer has an empty path slot: `entsoe: HTTP 404: <detail>`
+    instead of `entsoe: HTTP 404 for : <detail>`.
 
 ### Fixed
+- **Svenska kraftnät:** `capacity_market` with a product SvK does not publish (FCR, FCR-N, FCR-D)
+  raises `ValueError` before any request; it previously leaked a `KeyError`.
+- **HTTP:** an undecodable response body (for example a corrupt `Content-Encoding`) is retried
+  within `max_retries` like a dropped connection instead of failing after one request. Error
+  messages no longer end in a bare `: ` when the error body is empty.
+- **Records:** `raw` deep-copies any value that is not a mapping, list or tuple (for example a
+  caller-supplied `set` or `bytearray`), so it is never shared with caller input or between records.
 - **ENTSO-E capacity:** long FCR-N and mFRR queries no longer fail solely because
   the response exceeds ENTSO-E's 100-instance limit. Requests use seven-day chunks;
   instance-limit acknowledgements trigger recursive halving at the nearest hour,

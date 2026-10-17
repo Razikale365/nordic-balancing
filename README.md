@@ -115,9 +115,9 @@ Every client enforces the same contracts; a violation raises `SourceError`.
   [docs/RELEASE_EVIDENCE.md](docs/RELEASE_EVIDENCE.md)).
 - **C8 Transport.** Network and protocol failures surface as `SourceError`, never as
   raw `httpx` exceptions. HTTP 429/503 are retried, then raise `RateLimitError`, which
-  is raised at once when `Retry-After` exceeds 300 s. HTTP 502/504, timeouts and
-  dropped connections are retried within the same `max_retries` budget, then raise
-  `SourceError`.
+  is raised at once when `Retry-After` exceeds 300 s. HTTP 502/504, timeouts,
+  dropped connections and undecodable bodies are retried within the same
+  `max_retries` budget, then raise `SourceError`.
 
 `reconcile_imbalance_prices` reports differences between two sources; it never merges
 series or picks a source. `identical` counts intervals present in both with the same
