@@ -291,6 +291,10 @@ def test_rejects_duplicate_zone_and_interval(price: float) -> None:
     [
         ({"timestampUTC": None}, "timestampUTC is missing"),
         ({"timestampUTC": "invalid"}, "unparseable timestampUTC"),
+        ({"timestampUTC": "2026-01-15_00:00:00Z"}, "unparseable timestampUTC"),
+        ({"timestampUTC": "2026-01-15x00:00:00Z"}, "unparseable timestampUTC"),
+        ({"timestampUTC": "2026-01-15\n00:00:00Z"}, "unparseable timestampUTC"),
+        ({"timestampUTC": "2026-01-15500:00:00Z"}, "unparseable timestampUTC"),
         ({"timestampUTC": "2026-01-15T00:00:00"}, "must be UTC"),
         ({"timestampUTC": "2026-01-15T01:00:00+01:00"}, "must be UTC"),
         ({"timestampUTC": "2026-01-15T01:00:00-01:00"}, "must be UTC"),

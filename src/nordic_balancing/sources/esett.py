@@ -166,6 +166,8 @@ def _format(value: datetime) -> str:
 def _parse_time(value: object) -> datetime:
     if not isinstance(value, str):
         raise SourceError(f"{SOURCE}: timestampUTC is missing or not a string: {value!r}")
+    if "T" not in value and "t" not in value and " " not in value:
+        raise SourceError(f"{SOURCE}: unparseable timestampUTC {value!r}")
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError as exc:
