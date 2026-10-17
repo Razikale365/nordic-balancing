@@ -73,9 +73,15 @@ def test_dk2_gets_the_danish_changes() -> None:
     ]
 
 
-def test_rejects_naive_datetimes() -> None:
+@pytest.mark.parametrize("naive_arg", ["start", "end"])
+def test_rejects_naive_datetimes(naive_arg: str) -> None:
+    bounds = {
+        "start": datetime(2026, 1, 1, tzinfo=UTC),
+        "end": datetime(2026, 6, 1, tzinfo=UTC),
+    }
+    bounds[naive_arg] = bounds[naive_arg].replace(tzinfo=None)
     with pytest.raises(ValueError, match="timezone-aware"):
-        changes_between(datetime(2026, 1, 1), datetime(2026, 6, 1, tzinfo=UTC))
+        changes_between(bounds["start"], bounds["end"])
 
 
 def test_nordic_changes_are_observed_and_apply_to_every_zone() -> None:

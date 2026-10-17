@@ -73,6 +73,11 @@ def _public_class_attributes(cls: type[Any]) -> dict[str, str]:
     }
 
 
+def _dataclass_params(cls: type[Any]) -> dict[str, Any]:
+    params = cls.__dataclass_params__
+    return {name: getattr(params, name) for name in type(params).__slots__}
+
+
 def build_public_api_snapshot() -> dict[str, Any]:
     symbols: dict[str, Any] = {}
     for name in sorted(nordic_balancing.__all__):
@@ -91,10 +96,12 @@ def build_public_api_snapshot() -> dict[str, Any]:
         elif dataclasses.is_dataclass(obj) and isinstance(obj, type):
             symbols[name] = {
                 "attributes": _public_class_attributes(obj),
+                "bases": [base.__name__ for base in obj.__bases__],
                 "fields": [_format_field(field) for field in dataclasses.fields(obj)],
                 "frozen": obj.__dataclass_params__.frozen,  # type: ignore[attr-defined]
                 "kind": "dataclass",
                 "methods": _public_methods(obj),
+                "params": _dataclass_params(obj),
                 "properties": _public_properties(obj),
                 "slots": "__slots__" in obj.__dict__,
             }
@@ -269,6 +276,42 @@ def test_snapshot_detects_mutable_unslotted_record_and_enum_base_change(
         snapshot_members = current["symbols"]["BiddingZone"]["members"]
         assert snapshot_members == baseline["symbols"]["BiddingZone"]["members"]
         assert "Removed or changed: BiddingZone" in _diff_message(baseline, current)
+
+
+def test_snapshot_detects_dataclass_order_and_base_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline: dict[str, Any] = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    assert baseline["symbols"]["ImbalancePrice"]["params"]["order"] is False
+    assert baseline["symbols"]["ImbalancePrice"]["bases"] == ["object"]
+
+    original = nordic_balancing.ImbalancePrice
+    spec = [
+        (f.name, f.type, dataclasses.field(compare=False, repr=False) if f.name == "raw" else f)
+        for f in dataclasses.fields(original)
+    ]
+    ordered = dataclasses.make_dataclass(
+        "ImbalancePrice", spec, frozen=True, slots=True, order=True
+    )
+    ordered.end = original.end  # type: ignore[attr-defined]
+    with monkeypatch.context() as mp:
+        mp.setattr(nordic_balancing, "ImbalancePrice", ordered)
+        current = build_public_api_snapshot()
+        assert current["symbols"]["ImbalancePrice"]["params"]["order"] is True
+        assert "Removed or changed: ImbalancePrice" in _diff_message(baseline, current)
+
+    class Mixin:
+        pass
+
+    based = dataclasses.make_dataclass(
+        "ImbalancePrice", spec, bases=(Mixin,), frozen=True, slots=True
+    )
+    based.end = original.end  # type: ignore[attr-defined]
+    with monkeypatch.context() as mp:
+        mp.setattr(nordic_balancing, "ImbalancePrice", based)
+        current = build_public_api_snapshot()
+        assert current["symbols"]["ImbalancePrice"]["bases"] == ["Mixin"]
+        assert "Removed or changed: ImbalancePrice" in _diff_message(baseline, current)
 
 
 def test_snapshot_detects_dropped_compare_flag_on_raw(

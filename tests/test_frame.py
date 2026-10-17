@@ -185,8 +185,9 @@ def test_rejects_mixed_or_foreign_records(records: list[Any]) -> None:
 def test_rejects_a_record_subclass() -> None:
     subclass = type("Sub", (ImbalancePrice,), {})
     record = subclass(**{f.name: getattr(price(), f.name) for f in fields(ImbalancePrice)})
+    # Leading a plain record puts the subclass behind the per-row type check.
     with pytest.raises(ValueError, match="exactly ImbalancePrice or exactly ReserveCapacity"):
-        to_frame([record])
+        to_frame([price(), record])
 
 
 def test_missing_pandas_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:

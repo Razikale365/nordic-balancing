@@ -137,6 +137,24 @@ def test_direction_divergence() -> None:
     assert report.divergences[0].detail == "UP vs DOWN"
 
 
+@pytest.mark.parametrize(
+    ("primary_direction", "reference_direction"),
+    [(first, second) for first in Direction for second in Direction if first is not second],
+)
+def test_every_unequal_direction_pair_diverges(
+    primary_direction: Direction, reference_direction: Direction
+) -> None:
+    # Direction.NONE is falsy; a truthiness guard would suppress its mismatches.
+    report = reconcile_imbalance_prices(
+        [record("a", direction=primary_direction)],
+        [record("b", direction=reference_direction)],
+    )
+
+    assert kinds(report) == [DivergenceKind.DIRECTION]
+    assert report.divergences[0].detail == f"{primary_direction.name} vs {reference_direction.name}"
+    assert report.identical == 0
+
+
 def test_direction_missing_on_one_side_is_not_a_divergence() -> None:
     report = reconcile_imbalance_prices(
         [record("a", direction=None)], [record("b", direction=Direction.DOWN)]
