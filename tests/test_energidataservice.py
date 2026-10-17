@@ -160,29 +160,48 @@ def test_sends_utc_window_and_zone_filter() -> None:
     assert json.loads(params["filter"]) == {"PriceArea": ["DK1"]}
 
 
-def test_pages_until_total_is_reached() -> None:
+def imbalance_rows(start: datetime, offset: int, count: int) -> list[dict[str, Any]]:
+    return [
+        {
+            **PUBLISHED,
+            "PriceArea": "DK1",
+            "TimeUTC": (start + (offset + i) * INTERVAL).strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        for i in range(count)
+    ]
+
+
+def test_pages_until_a_short_page_even_when_total_equals_the_page_size() -> None:
+    # The API reports `total` as the row count of that page, so a full page always
+    # says total == PAGE_SIZE even while more rows remain.
+    offsets: list[str] = []
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    row_count = 2 * 10_000 + 7
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = int(request.url.params["offset"])
+        offsets.append(request.url.params["offset"])
+        return page(imbalance_rows(start, offset, min(10_000, row_count - offset)))
+
+    prices = client(handler).imbalance_prices(start, start + timedelta(days=210), [BiddingZone.DK1])
+
+    assert offsets == ["0", "10000", "20000"]
+    assert len(prices) == row_count
+
+
+def test_an_exact_multiple_of_the_page_size_ends_on_an_empty_page() -> None:
     offsets: list[str] = []
     start = datetime(2026, 1, 1, tzinfo=UTC)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        limit = int(request.url.params["limit"])
         offset = int(request.url.params["offset"])
         offsets.append(request.url.params["offset"])
-        # A full page each time; the last page carries the single extra row.
-        records = [
-            {
-                **PUBLISHED,
-                "PriceArea": "DK1",
-                "TimeUTC": (start + (offset + i) * INTERVAL).strftime("%Y-%m-%dT%H:%M:%S"),
-            }
-            for i in range(min(limit, limit + 1 - offset))
-        ]
-        return page(records, total=limit + 1)
+        return page(imbalance_rows(start, offset, min(10_000, 20_000 - offset)))
 
-    prices = client(handler).imbalance_prices(start, start + timedelta(days=200), [BiddingZone.DK1])
+    prices = client(handler).imbalance_prices(start, start + timedelta(days=210), [BiddingZone.DK1])
 
-    assert offsets == ["0", "10000"]
-    assert len(prices) == 10001
+    assert offsets == ["0", "10000", "20000"]
+    assert len(prices) == 20_000
 
 
 @pytest.mark.parametrize(
@@ -201,15 +220,16 @@ def test_rejects_missing_or_invalid_total(body: dict[str, Any]) -> None:
         client(lambda _: httpx.Response(200, json=body)).imbalance_prices(START, END)
 
 
-@pytest.mark.parametrize("records", [[], [PUBLISHED]])
-def test_rejects_short_or_empty_page_before_total(records: list[dict[str, Any]]) -> None:
-    with pytest.raises(SourceError, match="before total"):
-        client(lambda _: page(records, total=5)).imbalance_prices(START, END)
-
-
-def test_rejects_row_count_exceeding_total() -> None:
-    with pytest.raises(SourceError, match="exceeds total"):
-        client(lambda _: page([PUBLISHED, NOT_YET_PUBLISHED], total=1)).imbalance_prices(START, END)
+@pytest.mark.parametrize(
+    ("records", "total"),
+    [([PUBLISHED], 5), ([PUBLISHED, NOT_YET_PUBLISHED], 1), ([], 1)],
+)
+def test_rejects_total_not_matching_the_page_row_count(
+    records: list[dict[str, Any]], total: int
+) -> None:
+    message = f"total {total} does not match {len(records)} records"
+    with pytest.raises(SourceError, match=message):
+        client(lambda _: page(records, total=total)).imbalance_prices(START, END)
 
 
 def test_retries_rate_limit_honouring_retry_after() -> None:
@@ -526,38 +546,6 @@ def test_deterministic_transport_errors_are_not_retried() -> None:
 
 
 @pytest.mark.parametrize(
-    ("first_total", "second_total", "second_count"),
-    [
-        (10_002, 10_000, 0),
-        (10_001, 10_002, 2),
-    ],
-)
-def test_rejects_total_changing_across_pages(
-    first_total: int, second_total: int, second_count: int
-) -> None:
-    start = datetime(2026, 1, 1, tzinfo=UTC)
-
-    def records_at(offset: int, count: int) -> list[dict[str, Any]]:
-        return [
-            {
-                **PUBLISHED,
-                "PriceArea": "DK1",
-                "TimeUTC": (start + (offset + i) * INTERVAL).strftime("%Y-%m-%dT%H:%M:%S"),
-            }
-            for i in range(count)
-        ]
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        offset = int(request.url.params["offset"])
-        if offset == 0:
-            return page(records_at(0, 10_000), total=first_total)
-        return page(records_at(offset, second_count), total=second_total)
-
-    with pytest.raises(SourceError, match="changed from"):
-        client(handler).imbalance_prices(start, start + timedelta(days=120), [BiddingZone.DK1])
-
-
-@pytest.mark.parametrize(
     "time_utc",
     [
         "2026-10-09",
@@ -789,24 +777,23 @@ def test_capacity_rejects_bad_arguments_before_http(
         client(handler).capacity_market(product, start, end, zones=zones)
 
 
-def test_capacity_pages_until_total_and_rejects_cross_page_duplicates(
+def test_capacity_pages_until_a_short_page_and_rejects_cross_page_duplicates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("nordic_balancing.sources.energidataservice.PAGE_SIZE", 1)
     offsets: list[str] = []
+    rows = [CAPACITY, {**CAPACITY, "PriceArea": "DK2"}]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        offset = request.url.params["offset"]
-        offsets.append(offset)
-        return page([{**CAPACITY, "PriceArea": "DK1" if offset == "0" else "DK2"}], total=2)
+        offset = int(request.url.params["offset"])
+        offsets.append(request.url.params["offset"])
+        return page(rows[offset : offset + 1])
 
     result = client(handler).capacity_market(ReserveProduct.MFRR, HOUR_START, END)
     assert len(result) == 16
-    assert offsets == ["0", "1"]
+    assert offsets == ["0", "1", "2"]
     with pytest.raises(SourceError, match="duplicate record"):
-        client(lambda _: page([CAPACITY], total=2)).capacity_market(
-            ReserveProduct.MFRR, HOUR_START, END
-        )
+        client(lambda _: page([CAPACITY])).capacity_market(ReserveProduct.MFRR, HOUR_START, END)
 
 
 @pytest.mark.parametrize(
@@ -815,9 +802,9 @@ def test_capacity_pages_until_total_and_rejects_cross_page_duplicates(
         ({"records": []}, "invalid total"),
         ({"total": True, "records": []}, "invalid total"),
         ({"total": 0}, "no 'records' list"),
-        ({"total": 2, "records": [CAPACITY]}, "before total"),
-        ({"total": 1, "records": []}, "before total"),
-        ({"total": 0, "records": [CAPACITY]}, "exceeds total"),
+        ({"total": 2, "records": [CAPACITY]}, "does not match"),
+        ({"total": 1, "records": []}, "does not match"),
+        ({"total": 0, "records": [CAPACITY]}, "does not match"),
     ],
 )
 def test_capacity_reuses_pagination_guards(body: dict[str, Any], message: str) -> None:
@@ -827,10 +814,12 @@ def test_capacity_reuses_pagination_guards(body: dict[str, Any], message: str) -
         )
 
 
-def test_capacity_rejects_total_changing_across_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_capacity_rejects_a_mismatched_total_on_a_later_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr("nordic_balancing.sources.energidataservice.PAGE_SIZE", 1)
-    responses = iter([page([CAPACITY], total=2), page([], total=1)])
-    with pytest.raises(SourceError, match="changed from 2 to 1"):
+    responses = iter([page([CAPACITY]), page([{**CAPACITY, "PriceArea": "DK2"}], total=5)])
+    with pytest.raises(SourceError, match=r"total 5 does not match 1 records.*offset 1"):
         client(lambda _: next(responses)).capacity_market(ReserveProduct.AFRR, HOUR_START, END)
 
 

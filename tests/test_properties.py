@@ -286,9 +286,8 @@ def _eds_handler(request: httpx.Request) -> httpx.Response:
             )
     offset = int(params["offset"])
     limit = int(params["limit"])
-    return httpx.Response(
-        200, json={"total": len(records), "records": records[offset : offset + limit]}
-    )
+    records = records[offset : offset + limit]
+    return httpx.Response(200, json={"total": len(records), "records": records})
 
 
 @given(
