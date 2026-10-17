@@ -264,6 +264,23 @@ def test_rejects_record_that_is_not_an_object(record: object) -> None:
         client(lambda _: httpx.Response(200, json=body)).imbalance_prices(START, END)
 
 
+@pytest.mark.parametrize("column", list(PUBLISHED))
+def test_rejects_missing_columns(column: str) -> None:
+    record = {key: value for key, value in PUBLISHED.items() if key != column}
+
+    with pytest.raises(SourceError, match=f"missing imbalance columns.*{column}"):
+        client(lambda _: page([record])).imbalance_prices(START, END)
+
+
+def test_explicit_null_columns_stay_none() -> None:
+    record = {**PUBLISHED, "ImbalancePriceEUR": None, "SpotPriceEUR": None}
+
+    prices = client(lambda _: page([record])).imbalance_prices(START, END)
+
+    assert prices[0].imbalance_price_eur is None
+    assert prices[0].spot_price_eur is None
+
+
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
 def test_rejects_non_finite_numbers(value: str) -> None:
     record = {**PUBLISHED, "ImbalancePriceEUR": json.loads(value)}
