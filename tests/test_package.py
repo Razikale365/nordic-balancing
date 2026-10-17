@@ -28,12 +28,14 @@ def test_python_floor_is_3_12_and_ci_tests_every_classified_version() -> None:
     )
     assert classified[0] == "3.12"
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    matrix = re.search(r"matrix:\s+python-version: \[(.*?)\]", ci)
-    assert matrix is not None
-    assert sorted(v.strip().strip('"') for v in matrix.group(1).split(",")) == classified
     check_job = re.search(r"^  check:.*?(?=^  \S)", ci, re.DOTALL | re.MULTILINE)
     assert check_job is not None
-    assert "- run: uv run pytest" in check_job.group(0)
+    check_block = check_job.group(0)
+    matrix = re.search(r"matrix:\s+python-version: \[(.*?)\]", check_block)
+    assert matrix is not None
+    assert sorted(v.strip().strip('"') for v in matrix.group(1).split(",")) == classified
+    assert "python-version: ${{ matrix.python-version }}" in check_block
+    assert "- run: uv run pytest" in check_block
 
 
 def test_lowest_direct_installs_the_declared_pandas_floor() -> None:
@@ -47,6 +49,7 @@ def test_lowest_direct_installs_the_declared_pandas_floor() -> None:
 
 def test_live_workflow_scopes_the_api_keys_to_the_two_steps_that_read_them() -> None:
     live = (ROOT / ".github" / "workflows" / "live.yml").read_text(encoding="utf-8")
+    assert not re.search(r"^env:", live, re.MULTILINE)
     header, steps = live.split("    steps:", 1)
     assert "    env:" not in header
     for key in ("FINGRID_API_KEY", "ENTSOE_API_KEY"):
