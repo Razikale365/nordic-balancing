@@ -897,7 +897,11 @@ def _reject_repeated_categories(
 def _position(text: str) -> int:
     if _POSITION_TEXT.fullmatch(text) is None:
         raise SourceError(f"{SOURCE}: unparseable position {text!r}")
-    position = int(text, 10)
+    try:
+        position = int(text, 10)
+    except ValueError as exc:
+        # A digit string past the interpreter's conversion limit still fails here.
+        raise SourceError(f"{SOURCE}: unparseable position {text!r}") from exc
     if position < 1:
         raise SourceError(f"{SOURCE}: position {position} is not 1-based")
     return position

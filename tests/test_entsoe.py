@@ -2,6 +2,7 @@ import io
 import logging
 import os
 import struct
+import sys
 import traceback
 import zipfile
 from collections.abc import Callable
@@ -948,6 +949,29 @@ def test_rejects_malformed_documents(body: str, message: str) -> None:
         client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
             START, END, [BiddingZone.SE3]
         )
+
+
+# A digit string longer than the interpreter's integer conversion limit fails
+# inside int(): the parser must still report it as a SourceError.
+def test_rejects_a_position_beyond_the_integer_conversion_limit() -> None:
+    limit = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(640)
+    try:
+        body = document(
+            series(
+                period(
+                    "2026-01-15T00:00Z",
+                    "2026-01-15T00:15Z",
+                    point("9" * 641, 21.0),
+                )
+            )
+        )
+        with pytest.raises(SourceError, match="unparseable position"):
+            client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+                START, END, [BiddingZone.SE3]
+            )
+    finally:
+        sys.set_int_max_str_digits(limit)
 
 
 # A leading sign, a bare fraction and a trailing dot are legal lexical forms of
