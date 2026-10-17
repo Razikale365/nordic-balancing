@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from nordic_balancing._http import _retry_after as retry_after
-from nordic_balancing._http import get_bytes, get_json
+from nordic_balancing._http import check_base_url, get_bytes, get_json
 from nordic_balancing._validate import finite_number
 from nordic_balancing.errors import RateLimitError, SourceError
 from nordic_balancing.sources.fingrid import FingridClient
@@ -25,7 +25,8 @@ def at_now() -> datetime:
     [
         ("7", 7.0),
         ("2.5", 2.5),
-        ("-3", 0.0),
+        # A signed delay is not delay-seconds: 1*DIGIT carries no sign.
+        ("-3", None),
         ("inf", None),
         ("nan", None),
         ("invalid", None),
@@ -93,6 +94,22 @@ def test_retry_after_beyond_the_cap_raises() -> None:
     assert sleeps == []
 
 
+@pytest.mark.parametrize("value", ["5_0", "1_000", "+120", "5.", "1e400", "-3", " 120 ", ".5"])
+def test_retry_after_rejects_non_digit_delay_seconds(value: str) -> None:
+    assert retry_after(header(value), at_now) is None
+    sleeps: list[float] = []
+    body = fetch([header(value), httpx.Response(200, content=b"ok")], sleeps)
+    assert body == b"ok"
+    assert sleeps == [10.0]
+
+
+def test_retry_after_very_long_delay_seconds_raises() -> None:
+    sleeps: list[float] = []
+    with pytest.raises(RateLimitError):
+        fetch([header("9" * 400), httpx.Response(200, content=b"ok")], sleeps)
+    assert sleeps == []
+
+
 def test_transient_transport_error_is_retried() -> None:
     calls: list[httpx.Request] = []
 
@@ -112,6 +129,60 @@ def test_transient_transport_error_is_retried() -> None:
     assert sleeps == [10.0]
 
 
+def corrupt_gzip(status: int) -> httpx.Response:
+    return httpx.Response(
+        status,
+        headers={"Content-Encoding": "gzip"},
+        content=b"\x1f\x8b\x08\x00truncated-gzip",
+    )
+
+
+def test_undecodable_body_is_retried_then_propagates() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return corrupt_gzip(200)
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    sleeps: list[float] = []
+    with pytest.raises(httpx.DecodingError):
+        get_bytes(
+            http,
+            "https://example.test",
+            "/",
+            {},
+            source="test",
+            max_retries=3,
+            sleep=sleeps.append,
+        )
+    assert len(calls) == 4
+    assert sleeps == [10.0] * 3
+
+
+def test_undecodable_rate_limit_body_is_still_retried() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return corrupt_gzip(429)
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    sleeps: list[float] = []
+    with pytest.raises(httpx.DecodingError):
+        get_bytes(
+            http,
+            "https://example.test",
+            "/",
+            {},
+            source="test",
+            max_retries=3,
+            sleep=sleeps.append,
+        )
+    assert len(calls) == 4
+    assert sleeps == [10.0] * 3
+
+
 def test_error_detail_includes_the_response_body() -> None:
     body = "upstream failure detail: request a1b2c3 rejected"
     http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(400, text=body)))
@@ -126,6 +197,21 @@ def test_error_detail_includes_the_response_body() -> None:
             sleep=lambda _: None,
         )
     assert str(exc_info.value) == f"test: HTTP 400 for /api: {body}"
+
+
+def test_error_detail_is_omitted_for_an_empty_body() -> None:
+    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(400)))
+    with pytest.raises(SourceError) as exc_info:
+        get_bytes(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    assert str(exc_info.value) == "test: HTTP 400 for /api"
 
 
 def test_finite_number_coerces_ints_to_float() -> None:
@@ -304,3 +390,24 @@ def test_http_status_errors_exclude_response_records(status: int, fetch_json: bo
     assert message == f"test: HTTP {status} for /api"
     assert "SYNTHETIC_RECORD" not in message
     assert "SYNTHETIC_SECRET" not in message
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    ["http://[::1", "http://x/\x00", "not-a-url", "ftp://x"],
+)
+def test_check_base_url_rejects_urls_without_http_host(base_url: str) -> None:
+    with pytest.raises(ValueError, match=r"^base_url must be an absolute http or https URL$"):
+        check_base_url(base_url)
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://api.energidataservice.dk",
+        "http://example.test:8080/base",
+        "https://example.test",
+    ],
+)
+def test_check_base_url_accepts_absolute_http_urls(base_url: str) -> None:
+    check_base_url(base_url)
