@@ -249,8 +249,8 @@ bidding zone, product, direction, and 15-minute UTC interval:
 - **Numbers**: numeric source values must be finite JSON numbers convertible to
   `float` (`bool`, `NaN`, and infinities are rejected with `SourceError`).
   ENTSO-E XML values must be ASCII `xs:decimal` text and positions ASCII
-  `xs:positiveInteger` text (`1_0`, `1e5` and non-ASCII digits raise); an element
-  the schema allows once that appears twice raises `SourceError` rather than using
+  `xs:positiveInteger` text (`1_0`, `1e5` and non-ASCII digits raise); a singleton
+  field read by the parser that appears twice raises `SourceError` rather than using
   either value.
 - **Pagination and duplicates**: paginated fetches must match the total row count
   reported by the source. Duplicate source records for the same series key raise
@@ -277,12 +277,16 @@ bidding zone, product, direction, and 15-minute UTC interval:
   `httpx` exceptions. HTTP 429 and 503 responses are retried within `max_retries`
   and then raise `RateLimitError` (or immediately when `Retry-After` exceeds
   300 seconds). `Retry-After` delay-seconds accepts ASCII digits with an optional
-  decimal fraction; other values use the default 10-second delay. HTTP 502/504,
+  decimal fraction; HTTP-date values are converted to a delay, and missing or
+  malformed values use the default 10-second delay. HTTP 502/504,
   timeouts, dropped connections and undecodable response bodies are retried within
   the same `max_retries` budget and then raise `SourceError`. Every client raises
   `ValueError` at construction for a `base_url` that is not an absolute http or https
-  URL. Using a client after `close()` raises the `RuntimeError` from httpx: that is
-  caller misuse, not a source condition.
+  URL. A query that needs HTTP after an owned client is closed raises `RuntimeError`
+  for Energi Data Service, eSett, Fingrid and SvK; ENTSO-E wraps it as
+  `SourceError("entsoe: request failed (RuntimeError)")`. Calling `close()` leaves a
+  caller-supplied HTTP client open, although Fingrid closes its own authenticated
+  wrapper.
 
 ## Supported Python and dependencies
 

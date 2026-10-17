@@ -60,7 +60,7 @@ the project is in beta: the public API is defined in
 - Audit fixes make more malformed input raise. Valid responses from all five providers parse as
   before: the live suite and history scans (Energi Data Service FCR auctions 2021 to date, ENTSO-E
   2024 to date) were rerun on this version.
-  - **ENTSO-E:** an element the schema allows once that appears twice raises `SourceError`
+  - **ENTSO-E:** a singleton field read by the parser that appears twice raises `SourceError`
     instead of using the first value; positions and amounts must be ASCII `xs:positiveInteger` /
     `xs:decimal` text (`1_0`, `1e5` and non-ASCII digits raise; `+2`, `.5` and `5.` stay valid);
     the document namespace must be a complete
