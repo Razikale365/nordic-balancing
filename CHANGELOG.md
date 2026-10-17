@@ -82,6 +82,11 @@ the project is in beta: the public API is defined in
     instead of `entsoe: HTTP 404 for : <detail>`.
 
 ### Fixed
+- **Energi Data Service (High):** queries spanning more than one page were silently truncated to the first
+  10,000 rows: the API reports `total` as the row count of each page, not of the whole query. Paging now
+  continues until a page returns fewer than 10,000 records, and a page whose `total` differs from its record
+  count raises `SourceError`. FcrNdDK2 requests also sort by a key unique per row, which offset paging needs.
+  Also fixed in 0.2.0; 0.1.1 is affected.
 - **Svenska kraftnät:** `capacity_market` with a product SvK does not publish (FCR, FCR-N, FCR-D)
   raises `ValueError` before any request; it previously leaked a `KeyError`.
 - **HTTP:** an undecodable response body (for example a corrupt `Content-Encoding`) is retried
@@ -173,7 +178,7 @@ changed.
 - **Fingrid, SvK (pagination):** an empty or short page before the reported total, or rows
   beyond it, raise `SourceError` at that page, as README contract C2 states. Before, Fingrid
   requested every page before checking, and SvK accepted a short page.
-- **Energi Data Service, SvK (pagination):** the total from the first page is kept; a later
+- **SvK (pagination):** the total from the first page is kept; a later
   page reporting a different total raises. Before, a smaller later total turned an incomplete
   fetch into success.
 - **Energi Data Service, SvK (timestamps):** a date without a time of day, or a non-UTC offset

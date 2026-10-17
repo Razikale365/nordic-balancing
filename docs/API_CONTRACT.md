@@ -253,7 +253,9 @@ bidding zone, product, direction, and 15-minute UTC interval:
   field read by the parser that appears twice raises `SourceError` rather than using
   either value.
 - **Pagination and duplicates**: paginated fetches must match the total row count
-  reported by the source. Duplicate source records for the same series key raise
+  reported by the source. Energi Data Service reports `total` per page: it pages by
+  offset, with a sort key unique per row, until a page returns fewer than the page
+  size, and a page whose `total` differs from its record count raises `SourceError`. Duplicate source records for the same series key raise
   `SourceError`, with the following documented exceptions:
   - ENTSO-E imbalance prices (A85): an interval published under distinct price
     categories (`A04` and `A05`) at the same resolution with an equal price
