@@ -328,7 +328,17 @@ class EnergiDataServiceClient:
             params["filter"] = json.dumps(
                 {"PriceArea": [z.value for z in zones], "ProductName": names}
             )
-        groups: dict[tuple[datetime, BiddingZone, str], list[dict[str, Any]]] = {}
+            # On the October fall-back day FcrNdDK2 has no 00:00 UTC hour: its two 02:00
+            # Danish hours are published as HourUTC 01:00 (really 00:00) and 01:01 (really
+            # 01:00). Always fetch both of that day's first two hours so the gap is checked.
+            for year in {query_start.year, query_end.year}:
+                day = _fall_back_day(year)
+                if query_start < day + 2 * _HOUR and query_end > day:
+                    query_start = min(query_start, day)
+                    query_end = max(query_end, day + 2 * _HOUR)
+            params["start"] = _format(query_start)
+            params["end"] = _format(query_end)
+        parsed: list[tuple[datetime, BiddingZone, str, dict[str, Any]]] = []
         dataset = "FcrDK1" if domestic else "FcrNdDK2"
         for row in self._records(dataset, params):
             if not isinstance(row, dict):
@@ -336,9 +346,11 @@ class EnergiDataServiceClient:
             missing = set(columns) - row.keys()
             if missing:
                 raise SourceError(f"{SOURCE}: missing capacity columns {sorted(missing)}")
-            hour = _parse_time(row["HourUTC"], column="HourUTC")
-            if hour.minute:
-                raise SourceError(f"{SOURCE}: HourUTC is not on the hour")
+            hour = None if domestic else _repeated_hour(row)
+            if hour is None:
+                hour = _parse_time(row["HourUTC"], column="HourUTC")
+                if hour.minute:
+                    raise SourceError(f"{SOURCE}: HourUTC is not on the hour")
             if not query_start <= hour < query_end:
                 raise SourceError(f"{SOURCE}: HourUTC outside requested window")
             area = "DK1" if domestic else row["PriceArea"]
@@ -350,6 +362,22 @@ class EnergiDataServiceClient:
                 raise SourceError(f"{SOURCE}: unknown ProductName {name!r}")
             for column in numeric:
                 _number(row, column)
+            parsed.append((hour, zone, name, row))
+        # Days with a 01:01 row: shift that day's 01:00 rows to 00:00 and 01:01 to 01:00,
+        # but only when the 00:00 hour they stand in for is really missing.
+        repeated = {hour.replace(minute=0) - _HOUR for hour, *_ in parsed if hour.minute}
+        if any(hour in repeated for hour, *_ in parsed):
+            raise SourceError(f"{SOURCE}: HourUTC 01:01 published alongside 00:00 on the same day")
+        groups: dict[tuple[datetime, BiddingZone, str], list[dict[str, Any]]] = {}
+        for hour, zone, name, row in parsed:
+            if hour.minute:
+                hour = hour.replace(minute=0)
+            elif hour - _HOUR in repeated:
+                if row["HourDK"] != f"{hour:%Y-%m-%d}T02:00:00":
+                    raise SourceError(
+                        f"{SOURCE}: HourDK {row['HourDK']!r} for HourUTC 01:00 on a day with 01:01"
+                    )
+                hour -= _HOUR
             groups.setdefault((hour, zone, name), []).append(row)
         capacities: list[ReserveCapacity] = []
         seen: set[tuple[datetime, BiddingZone, str]] = set()
@@ -469,6 +497,31 @@ def _parse_time(value: object, *, column: str = "TimeUTC") -> datetime:
     if parsed.minute % 15 or parsed.second or parsed.microsecond:
         raise SourceError(f"{SOURCE}: {column} {value!r} is not on a 15-minute boundary")
     return parsed
+
+
+def _fall_back_day(year: int) -> datetime:
+    """Return 00:00 UTC on the last Sunday of October, when EU clocks go back."""
+    last = datetime(year, 10, 31, tzinfo=UTC)
+    return last - timedelta(days=(last.weekday() + 1) % 7)
+
+
+def _repeated_hour(row: dict[str, Any]) -> datetime | None:
+    """Return 01:01 UTC for FcrNdDK2's extra row on the October fall-back day.
+
+    Only the exact published pattern qualifies: HourUTC ``01:01:00`` with HourDK
+    ``02:01:00`` on the last Sunday of October. Anything else returns ``None`` and
+    goes through the usual 15-minute check. The caller maps 01:01 to 01:00.
+    """
+    value, local = row["HourUTC"], row["HourDK"]
+    if not isinstance(value, str) or not isinstance(local, str):
+        return None
+    try:
+        day = _fall_back_day(int(value[:4]))
+    except ValueError:
+        return None
+    if value != f"{day:%Y-%m-%d}T01:01:00" or local != f"{day:%Y-%m-%d}T02:01:00":
+        return None
+    return day + timedelta(hours=1, minutes=1)
 
 
 def _number(record: dict[str, Any], column: str) -> float | None:

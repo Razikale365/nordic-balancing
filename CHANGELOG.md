@@ -4,6 +4,20 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the project is in beta: the public API is defined in
 [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it before 1.0 is listed here.
 
+## 0.3.1 — unreleased
+
+### Fixed
+- **Energi Data Service:** FCR-N and FCR-D `capacity_market` no longer raises
+  `SourceError` ("HourUTC '...T01:01:00' is not on a 15-minute boundary") for the day
+  the clocks go back in October (2022-10-30, 2023-10-29, 2024-10-27, 2025-10-26, and
+  2026-10-25 onwards). On that day `FcrNdDK2` has no 00:00 UTC hour; it publishes the
+  two 02:00 Danish hours as HourUTC 01:00 (HourDK 02:00) and 01:01 (HourDK 02:01).
+  The 01:00 row is now returned as 00:00 UTC and the 01:01 row as 01:00 UTC, matching
+  ENTSO-E A81 (UTC) and SvK Mimer for SE3 and DK2 on 2025-10-26. `raw` keeps the
+  published `HourUTC`. Only that exact pattern is mapped; any other off-boundary time
+  still raises, and so does a 01:01 row on a day that also has a 00:00 row. A request
+  that touches 00:00–02:00 UTC on that day now always queries both hours.
+
 ## 0.3.0 — 2026-10-17
 
 First published beta, and the reserve-capacity release. 0.2.0 was never published: its changes

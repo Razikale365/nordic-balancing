@@ -820,3 +820,141 @@ def test_entsoe_capacity_shuts_down_pool_with_pending_cancellation(
     else:
         assert entsoe_fetch(xml)
     assert cancelled == [True]
+
+
+FALL_BACK = datetime(2025, 10, 26, tzinfo=UTC)
+
+
+def fall_back_rows(
+    hours: tuple[tuple[str, str], ...] = (
+        ("2025-10-25T23:00:00", "2025-10-26T01:00:00"),
+        ("2025-10-26T01:00:00", "2025-10-26T02:00:00"),
+        ("2025-10-26T01:01:00", "2025-10-26T02:01:00"),
+        ("2025-10-26T02:00:00", "2025-10-26T03:00:00"),
+    ),
+) -> list[dict[str, Any]]:
+    # FcrNdDK2 as published on 2025-10-26: no 00:00 UTC hour, the two 02:00 Danish hours
+    # as HourUTC 01:00 and 01:01. Prices tell the hours apart.
+    template = [r for r in nd_rows() if r["ProductName"] == "FCR-N"]
+    return [
+        {**r, "HourUTC": utc, "HourDK": local, "PriceTotalEUR": float(i)}
+        for i, (utc, local) in enumerate(hours)
+        for r in template
+    ]
+
+
+def test_eds_nd_maps_fall_back_hours_01_00_and_01_01_to_00_00_and_01_00() -> None:
+    result = eds_fetch(fall_back_rows(), start=FALL_BACK - HOUR, end=FALL_BACK + 3 * HOUR)
+    for zone in (BiddingZone.DK2, BiddingZone.SE3):
+        records = [r for r in result if r.zone is zone]
+        assert [r.start for r in records] == [FALL_BACK - HOUR + i * INTERVAL for i in range(16)]
+        assert [r.price_eur_per_mw for r in records[::4]] == [0.0, 1.0, 2.0, 3.0]
+        # raw keeps the rows as published.
+        assert [r.raw["HourUTC"] for r in records[::4]] == [
+            "2025-10-25T23:00:00",
+            "2025-10-26T01:00:00",
+            "2025-10-26T01:01:00",
+            "2025-10-26T02:00:00",
+        ]
+        assert all(len(r.raw["auctions"]) == 2 for r in records)
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        (FALL_BACK, FALL_BACK + INTERVAL),
+        (FALL_BACK + HOUR, FALL_BACK + 2 * HOUR),
+        (FALL_BACK + HOUR + 3 * INTERVAL, FALL_BACK + 3 * HOUR),
+    ],
+)
+def test_eds_nd_fall_back_query_always_covers_both_repeated_hours(
+    start: datetime, end: datetime
+) -> None:
+    params: list[httpx.QueryParams] = []
+    rows = [r for r in fall_back_rows() if r["HourUTC"] >= "2025-10-26"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params.append(request.url.params)
+        query_start = datetime.fromisoformat(request.url.params["start"]).replace(tzinfo=UTC)
+        query_end = datetime.fromisoformat(request.url.params["end"]).replace(tzinfo=UTC)
+        records = [
+            r
+            for r in rows
+            if query_start <= datetime.fromisoformat(r["HourUTC"]).replace(tzinfo=UTC) < query_end
+        ]
+        return httpx.Response(200, json={"total": len(records), "records": records})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        result = EnergiDataServiceClient(http).capacity_market(
+            ReserveProduct.FCR_N, start, end, zones=(BiddingZone.DK2, BiddingZone.SE3)
+        )
+    assert params[0]["start"] == f"{min(start, FALL_BACK):%Y-%m-%dT%H:%M}"
+    assert params[0]["end"] == f"{max(end, FALL_BACK + 2 * HOUR):%Y-%m-%dT%H:%M}"
+    assert {r.start for r in result} == {
+        start + i * INTERVAL for i in range((end - start) // INTERVAL)
+    }
+    for record in result:
+        hour = record.start.replace(minute=0)
+        assert record.price_eur_per_mw == float((hour - FALL_BACK) // HOUR + 1)
+
+
+@pytest.mark.parametrize(
+    ("hours", "message"),
+    [
+        # 00:00 is published, so 01:01 cannot stand in for it.
+        (
+            (
+                ("2025-10-26T00:00:00", "2025-10-26T02:00:00"),
+                ("2025-10-26T01:00:00", "2025-10-26T02:00:00"),
+                ("2025-10-26T01:01:00", "2025-10-26T02:01:00"),
+            ),
+            "alongside 00:00",
+        ),
+        # A 01:00 row that is not the displaced 02:00 Danish hour.
+        (
+            (
+                ("2025-10-26T01:00:00", "2025-10-26T01:00:00"),
+                ("2025-10-26T01:01:00", "2025-10-26T02:01:00"),
+            ),
+            "HourDK",
+        ),
+        # Not the last Sunday of October.
+        ((("2025-10-19T01:01:00", "2025-10-19T03:01:00"),), "15-minute boundary"),
+        ((("2025-03-30T01:01:00", "2025-03-30T03:01:00"),), "15-minute boundary"),
+        # Wrong HourDK, minute or hour on the right day.
+        ((("2025-10-26T01:01:00", "2025-10-26T03:01:00"),), "15-minute boundary"),
+        ((("2025-10-26T01:02:00", "2025-10-26T02:02:00"),), "15-minute boundary"),
+        ((("2025-10-26T00:01:00", "2025-10-26T02:01:00"),), "15-minute boundary"),
+        ((("2025-10-26T01:01:30", "2025-10-26T02:01:30"),), "15-minute boundary"),
+        ((("2025-10-26T01:01:00Z", "2025-10-26T02:01:00"),), "15-minute boundary"),
+    ],
+)
+def test_eds_nd_rejects_other_off_boundary_hours(
+    hours: tuple[tuple[str, str], ...], message: str
+) -> None:
+    day = datetime.fromisoformat(hours[0][0][:10]).replace(tzinfo=UTC)
+    with pytest.raises(SourceError, match=message):
+        eds_fetch(fall_back_rows(hours), start=day, end=day + 3 * HOUR)
+
+
+def test_eds_domestic_fcr_does_not_map_01_01() -> None:
+    row = {**dk1_rows()[0], "HourUTC": "2025-10-26T01:01:00", "HourDK": "2025-10-26T02:01:00"}
+    with pytest.raises(SourceError, match="15-minute boundary"):
+        eds_fetch(
+            [row],
+            ReserveProduct.FCR,
+            (BiddingZone.DK1,),
+            start=FALL_BACK,
+            end=FALL_BACK + 2 * HOUR,
+        )
+
+
+def test_fall_back_day_is_the_last_sunday_of_october() -> None:
+    assert [energidataservice._fall_back_day(y).date().isoformat() for y in range(2022, 2028)] == [
+        "2022-10-30",
+        "2023-10-29",
+        "2024-10-27",
+        "2025-10-26",
+        "2026-10-25",
+        "2027-10-31",
+    ]

@@ -409,6 +409,24 @@ def test_live_sixty_days_span_more_than_one_page() -> None:
     assert prices[-1].start == start + timedelta(days=60) - INTERVAL
 
 
+@pytest.mark.live
+def test_live_fcr_n_on_the_october_fall_back_day() -> None:
+    # FcrNdDK2 publishes 2025-10-26 00:00 UTC as HourUTC 01:00 and 01:00 UTC as 01:01.
+    # The expected values match ENTSO-E A81 (UTC) and SvK Mimer for SE3, checked 2026-10-17.
+    start = datetime(2025, 10, 25, 23, tzinfo=UTC)
+    with EnergiDataServiceClient() as eds:
+        records = eds.capacity_market(
+            ReserveProduct.FCR_N, start, start + timedelta(hours=4), zones=[BiddingZone.SE3]
+        )
+
+    assert [r.start for r in records] == [start + i * INTERVAL for i in range(16)]
+    hourly = [(r.raw["HourUTC"], r.volume_mw, r.price_eur_per_mw) for r in records[::4]]
+    assert hourly[1:3] == [
+        ("2025-10-26T01:00:00", 48.5, 16.104795),
+        ("2025-10-26T01:01:00", 48.0, 16.352865),
+    ]
+
+
 @pytest.mark.parametrize("zone", [BiddingZone.FI, BiddingZone.NO1, BiddingZone.SE3])
 def test_rejects_non_danish_zone_arguments(zone: BiddingZone) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
