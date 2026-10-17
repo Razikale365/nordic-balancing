@@ -680,6 +680,16 @@ def test_reconcile_swapping_arguments_swaps_missing_counts(
         (reference_keys - primary_keys) & compared_keys
     )
 
+    primary_by_key = {(r.zone, r.start): r for r in primary}
+    reference_by_key = {(r.zone, r.start): r for r in reference}
+    assert counts.get(DivergenceKind.DIRECTION, 0) == sum(
+        1
+        for key in primary_keys & reference_keys
+        if primary_by_key[key].dominating_direction is not None
+        and reference_by_key[key].dominating_direction is not None
+        and primary_by_key[key].dominating_direction != reference_by_key[key].dominating_direction
+    )
+
     swapped = {
         DivergenceKind.MISSING_IN_PRIMARY: DivergenceKind.MISSING_IN_REFERENCE,
         DivergenceKind.MISSING_IN_REFERENCE: DivergenceKind.MISSING_IN_PRIMARY,
