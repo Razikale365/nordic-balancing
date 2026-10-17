@@ -66,6 +66,18 @@ def test_raw_preserves_json_like_types() -> None:
     assert dict(price(raw).raw) == raw
 
 
+def test_raw_deep_copies_other_mutable_containers() -> None:
+    base: dict[str, Any] = {"tags": {1, 2}, "buf": bytearray(b"ab")}
+    first, second = price(base), price(base)
+    base["tags"].add(3)
+    base["buf"][0] = ord("z")
+    assert first.raw["tags"] == {1, 2}
+    assert bytes(first.raw["buf"]) == b"ab"
+    assert first.raw["tags"] is not base["tags"]
+    assert first.raw["tags"] is not second.raw["tags"]
+    assert first.raw["buf"] is not second.raw["buf"]
+
+
 def test_reserve_capacity_raw_is_detached_too() -> None:
     nested = {"v": 1}
     capacity = ReserveCapacity(
@@ -113,6 +125,14 @@ def test_offset_zero_local_start_is_normalised_to_utc(kind: str) -> None:
 def test_non_utc_aware_start_is_rejected_not_normalised(kind: str) -> None:
     # An offset-zero zone is normalised; any other offset must raise.
     start = datetime(2026, 1, 15, 12, 0, tzinfo=ZoneInfo("Europe/Copenhagen"))
+
+    with pytest.raises(ValueError, match="must be a UTC datetime"):
+        replace(price({}), start=start) if kind == "imbalance" else reserve(start)
+
+
+@pytest.mark.parametrize("kind", ["imbalance", "reserve"])
+def test_naive_start_is_rejected(kind: str) -> None:
+    start = datetime(2026, 1, 15, 12, 0)
 
     with pytest.raises(ValueError, match="must be a UTC datetime"):
         replace(price({}), start=start) if kind == "imbalance" else reserve(start)

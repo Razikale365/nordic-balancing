@@ -6,6 +6,7 @@ settlement period.
 """
 
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import IntEnum, StrEnum
@@ -68,7 +69,7 @@ def _copy_raw(value: Any) -> Any:
         return [_copy_raw(item) for item in value]
     if isinstance(value, tuple):
         return tuple(_copy_raw(item) for item in value)
-    return value
+    return deepcopy(value)
 
 
 def to_utc(value: datetime, name: str) -> datetime:

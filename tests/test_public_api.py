@@ -26,9 +26,13 @@ _DUNDERS = ("__init__", "__enter__", "__exit__")
 
 def _format_field(field: dataclasses.Field[Any]) -> str:
     annotation = inspect.formatannotation(field.type)
+    flags = f"(compare={field.compare}, repr={field.repr})"
     if field.default is not dataclasses.MISSING:
-        return f"{field.name}: {annotation} = {field.default!r}"
-    return f"{field.name}: {annotation}"
+        return f"{field.name}: {annotation} = {field.default!r} {flags}"
+    if field.default_factory is not dataclasses.MISSING:
+        name = getattr(field.default_factory, "__qualname__", repr(field.default_factory))
+        return f"{field.name}: {annotation} = <default_factory {name}> {flags}"
+    return f"{field.name}: {annotation} {flags}"
 
 
 def _is_method_descriptor(val: Any) -> bool:
@@ -51,20 +55,42 @@ def _public_properties(cls: type[Any]) -> dict[str, str]:
     }
 
 
+def _public_class_attributes(cls: type[Any]) -> dict[str, str]:
+    field_names = (
+        {field.name for field in dataclasses.fields(cls)}
+        if dataclasses.is_dataclass(cls)
+        else set()
+    )
+    member_names = set(cls.__members__) if issubclass(cls, Enum) else set()
+    return {
+        attr: type(val).__name__
+        for attr, val in sorted(cls.__dict__.items())
+        if not attr.startswith("_")
+        and attr not in field_names
+        and attr not in member_names
+        and not _is_method_descriptor(val)
+        and not isinstance(val, property)
+    }
+
+
 def build_public_api_snapshot() -> dict[str, Any]:
     symbols: dict[str, Any] = {}
     for name in sorted(nordic_balancing.__all__):
         obj = getattr(nordic_balancing, name)
         if isinstance(obj, type) and issubclass(obj, Enum):
             symbols[name] = {
+                "attributes": _public_class_attributes(obj),
                 "bases": [base.__name__ for base in obj.__bases__],
                 "kind": "enum",
                 "members": {
                     member_name: member.value for member_name, member in obj.__members__.items()
                 },
+                "methods": _public_methods(obj),
+                "properties": _public_properties(obj),
             }
         elif dataclasses.is_dataclass(obj) and isinstance(obj, type):
             symbols[name] = {
+                "attributes": _public_class_attributes(obj),
                 "fields": [_format_field(field) for field in dataclasses.fields(obj)],
                 "frozen": obj.__dataclass_params__.frozen,  # type: ignore[attr-defined]
                 "kind": "dataclass",
@@ -74,6 +100,7 @@ def build_public_api_snapshot() -> dict[str, Any]:
             }
         elif isinstance(obj, type):
             symbols[name] = {
+                "attributes": _public_class_attributes(obj),
                 "bases": [base.__name__ for base in obj.__bases__],
                 "kind": "class",
                 "methods": _public_methods(obj),
@@ -242,3 +269,52 @@ def test_snapshot_detects_mutable_unslotted_record_and_enum_base_change(
         snapshot_members = current["symbols"]["BiddingZone"]["members"]
         assert snapshot_members == baseline["symbols"]["BiddingZone"]["members"]
         assert "Removed or changed: BiddingZone" in _diff_message(baseline, current)
+
+
+def test_snapshot_detects_dropped_compare_flag_on_raw(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline: dict[str, Any] = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    raw_field = next(
+        item for item in baseline["symbols"]["ImbalancePrice"]["fields"] if item.startswith("raw:")
+    )
+    assert "(compare=False, repr=False)" in raw_field
+
+    specs = [
+        (f.name, f.type, dataclasses.field(repr=False) if f.name == "raw" else f)
+        for f in dataclasses.fields(nordic_balancing.ImbalancePrice)
+    ]
+    weakened = dataclasses.make_dataclass("ImbalancePrice", specs, frozen=True, slots=True)
+    with monkeypatch.context() as mp:
+        mp.setattr(nordic_balancing, "ImbalancePrice", weakened)
+        current = build_public_api_snapshot()
+    weakened_raw = next(
+        item for item in current["symbols"]["ImbalancePrice"]["fields"] if item.startswith("raw:")
+    )
+    assert "(compare=True, repr=False)" in weakened_raw
+    assert "Removed or changed: ImbalancePrice" in _diff_message(baseline, current)
+
+
+def test_snapshot_detects_enum_method_property_and_class_attribute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline: dict[str, Any] = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+
+    with monkeypatch.context() as mp:
+        mp.setattr(nordic_balancing.BiddingZone, "describe", lambda self: self.value, raising=False)
+        mp.setattr(
+            nordic_balancing.Direction,
+            "label",
+            property(lambda self: self.name),
+            raising=False,
+        )
+        current = build_public_api_snapshot()
+        assert current["symbols"]["BiddingZone"]["methods"]["describe"] == "(self)"
+        assert current["symbols"]["Direction"]["properties"]["label"] == "(self)"
+        assert "Removed or changed: BiddingZone, Direction" in _diff_message(baseline, current)
+
+    with monkeypatch.context() as mp:
+        mp.setattr(nordic_balancing.ImbalancePrice, "UNIT", "EUR/MWh", raising=False)
+        current = build_public_api_snapshot()
+        assert current["symbols"]["ImbalancePrice"]["attributes"]["UNIT"] == "str"
+        assert "Removed or changed: ImbalancePrice" in _diff_message(baseline, current)
