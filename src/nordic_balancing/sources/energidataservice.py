@@ -359,7 +359,18 @@ class EnergiDataServiceClient:
             row = totals[0]
             raw = dict(row)
             if not domestic:
-                raw["auctions"] = [r for r in rows if r["AuctionType"] != "Total"]
+                auctions: set[str] = set()
+                raw["auctions"] = []
+                for r in rows:
+                    if r["AuctionType"] == "Total":
+                        continue
+                    reject_duplicate(
+                        auctions,
+                        json.dumps(r["AuctionType"], sort_keys=True),
+                        source=SOURCE,
+                        detail=f"{r['AuctionType']} for {hour} {zone} {name}",
+                    )
+                    raw["auctions"].append(r)
             volume = _number(row, "FCRdomestic_MW" if domestic else "PurchasedVolumeLocal")
             price = _number(row, "FCRdk_EUR" if domestic else "PriceTotalEUR")
             for quarter in range(4):
@@ -473,6 +484,9 @@ def _direction(record: dict[str, Any]) -> Direction | None:
 def _parse_imbalance(record: object) -> ImbalancePrice:
     if not isinstance(record, dict):
         raise SourceError(f"{SOURCE}: record is not a JSON object: {type(record).__name__}")
+    missing = set(_IMBALANCE_COLUMNS) - record.keys()
+    if missing:
+        raise SourceError(f"{SOURCE}: missing imbalance columns {sorted(missing)}")
     area = record.get("PriceArea")
     if not isinstance(area, str) or area not in _DK:
         raise SourceError(f"{SOURCE}: unknown PriceArea {area!r}")

@@ -209,6 +209,15 @@ def test_eds_nd_rejects_bad_groups(failure: str) -> None:
         eds_fetch(rows)
 
 
+def test_eds_nd_rejects_duplicate_auction_row() -> None:
+    rows = nd_rows()
+    rows.append(
+        next(r.copy() for r in rows if r["AuctionType"] != "Total" and r["ProductName"] == "FCR-N")
+    )
+    with pytest.raises(SourceError, match="duplicate"):
+        eds_fetch(rows)
+
+
 def test_eds_total_without_auctions_and_old_auction_name() -> None:
     row = next(
         r
