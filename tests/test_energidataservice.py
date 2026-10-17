@@ -398,6 +398,17 @@ def test_live_one_hour_of_dk_imbalance_prices() -> None:
     assert all(p.imbalance_price_eur is not None for p in prices)
 
 
+@pytest.mark.live
+def test_live_sixty_days_span_more_than_one_page() -> None:
+    # 60 days x 96 quarters x 2 zones = 11,520 rows: more than one 10,000-row page.
+    start = datetime(2025, 4, 1, tzinfo=UTC)
+    with EnergiDataServiceClient() as eds:
+        prices = eds.imbalance_prices(start, start + timedelta(days=60))
+
+    assert len(prices) == 60 * 96 * 2
+    assert prices[-1].start == start + timedelta(days=60) - INTERVAL
+
+
 @pytest.mark.parametrize("zone", [BiddingZone.FI, BiddingZone.NO1, BiddingZone.SE3])
 def test_rejects_non_danish_zone_arguments(zone: BiddingZone) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
