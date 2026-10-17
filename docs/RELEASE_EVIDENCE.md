@@ -32,11 +32,11 @@ date it was observed. Every claim cites a file, a test, a command or a URL.
 
 | Source | Data | Access | Verification | History start |
 |---|---|---|---|---|
-| Energi Data Service (Energinet) | DK1/DK2 imbalance prices and components; reserve capacity: aFRR (12 zones), mFRR (DK1, DK2), FCR (DK1), FCR-N and FCR-D (DK2, SE1–SE4) | free, no key | live-verified: `test_live_one_hour_of_dk_imbalance_prices`, `test_live_sixty_days_span_more_than_one_page`, `test_live_recent_energidataservice_afrr_capacity`, `test_live_recent_energidataservice_mfrr_capacity`, `test_live_recent_eds_fcr_capacity`; FcrNdDK2 and FcrDK1 history parsed 2021–2026 on 2026-10-17 | imbalance 2025-03-04; aFRR 2022-12-07T23:00Z; mFRR 2023-06-20T22:00Z; FcrDK1 2021-01-18T23:00Z; FcrNdDK2 2021-11-09T23:00Z |
+| Energi Data Service (Energinet) | DK1/DK2 imbalance prices and components; reserve capacity: aFRR (12 zones), mFRR (DK1, DK2), FCR (DK1), FCR-N and FCR-D (DK2, SE1–SE4) | free, no key | live-verified: `test_live_one_hour_of_dk_imbalance_prices`, `test_live_sixty_days_span_more_than_one_page`, `test_live_recent_energidataservice_afrr_capacity`, `test_live_recent_energidataservice_mfrr_capacity`, `test_live_recent_eds_fcr_capacity` | imbalance 2025-03-04; aFRR 2022-12-07T23:00Z; mFRR 2023-06-20T22:00Z; FcrDK1 2021-01-18T23:00Z; FcrNdDK2 2021-11-09T23:00Z |
 | Fingrid | FI imbalance prices, mFRR up/down components, dominating direction (datasets 319, 244, 106, 369); generic `series(dataset_id)`; reserve capacity FCR-N, FCR-D up/down, mFRR up/down (datasets 315–318, 281, 283, 327–330) | free key (`FINGRID_API_KEY`) | live-verified: `test_live_one_hour_of_fi_imbalance_prices`, `test_live_hourly_imbalance_prices_expand_to_quarters`, `test_live_overlap_hour_uses_the_hourly_value_settled_by_esett`, `test_live_recent_fingrid_capacity`, `test_live_recent_fi_mfrr_entsoe_equals_fingrid` | hourly publication until 2025-03-18; 15-minute records from 2025-03-14T23:15Z |
 | Svenska kraftnät | SE1–SE4 mFRR/aFRR capacity market prices and volumes | free (CC-BY-4.0), no key | live-verified: `test_live_mfrr_one_hour_all_zones`, `test_live_afrr_one_hour` | hourly records; earliest hour UNVERIFIED |
 | eSett | Imbalance prices, all 12 zones | free, no key | live-verified: `test_live_one_hour_of_se3_and_fi`, `test_live_hourly_to_quarter_hour_transition` | 2021-10-31T23:00Z |
-| ENTSO-E Transparency Platform | Imbalance prices (document type A85), all 12 zones; reserve capacity (A81): FCR-N NO1–NO5, mFRR NO1–NO5 and FI | free token (`ENTSOE_API_KEY`) | live-verified (2026-10-12): `test_live_one_hour_of_se3_and_fi`, `test_live_one_day_of_dk1`, `test_live_matches_esett_prices_but_not_its_resolution_label`, `test_live_recent_entsoe_no1_fcr_n_capacity`, `test_live_recent_entsoe_mfrr_capacity`, `test_live_entsoe_no1_capacity_sixty_days`; capacity history (FCR-N NO, mFRR NO/FI, 2024–2026) parsed 2026-10-17 | 2021-10-31T23:00Z (FI 2021-10-31T22:00Z) |
+| ENTSO-E Transparency Platform | Imbalance prices (document type A85), all 12 zones; reserve capacity (A81): FCR-N NO1–NO5, mFRR NO1–NO5 and FI | free token (`ENTSOE_API_KEY`) | Imbalance checks verified 2026-10-12: `test_live_one_hour_of_se3_and_fi`, `test_live_one_day_of_dk1`, `test_live_matches_esett_prices_but_not_its_resolution_label`; capacity checks passed in scheduled run [39034830595](https://github.com/Razikale365/nordic-balancing/actions/runs/39034830595) on 2026-10-17 at 7e6d6dd: `test_live_recent_entsoe_no1_fcr_n_capacity`, `test_live_recent_entsoe_mfrr_capacity`, `test_live_entsoe_no1_capacity_sixty_days`. Capacity history (FCR-N NO, mFRR NO/FI, 2024–2026) parsed without error in a maintainer-run scan on 2026-10-17 | imbalance 2021-10-31T23:00Z (FI 2021-10-31T22:00Z); NO FCR-N 2014-09-30T22:00Z; NO mFRR 2024-02-11T23:00Z; FI mFRR 2024-11-12T23:00Z |
 
 ## Observed API behaviour
 
@@ -179,8 +179,8 @@ Observed 2026-10-09 unless noted; file references are under
   - `type` is mandatory and must be A85; a document without it raises.
   - A Period must be a whole number of resolution steps.
   - An interval published at two resolutions raises, even with equal prices.
-- The four ENTSO-E live tests (three in `tests/test_entsoe.py`, one in
-  `tests/test_live_recent.py`) skip without `ENTSOE_API_KEY`.
+- ENTSO-E live tests, including capacity checks and the Fingrid cross-check, skip without
+  `ENTSOE_API_KEY`; the cross-check also requires `FINGRID_API_KEY`.
 
 ## Memory and timing
 

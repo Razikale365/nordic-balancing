@@ -67,8 +67,8 @@ versions: Energi Data Service queries over 10,000 rows were silently truncated (
 - The ENTSO-E request-failure message now ends with the exception class, for example
   `entsoe: request failed (ConnectError)`. Code that compared the whole message must allow for it.
 - Audit fixes make more malformed input raise. Valid responses from all five providers parse as
-  before: the live suite and history scans (Energi Data Service FCR auctions 2021 to date, ENTSO-E
-  2024 to date) were rerun on this version.
+  before: the live suite was rerun on this version, and history scans (Energi Data Service FCR
+  2021 to date, ENTSO-E 2024 to date) were run during the audit fixes.
   - **ENTSO-E:** a singleton field read by the parser that appears twice raises `SourceError`
     instead of using the first value; positions and amounts must be ASCII `xs:positiveInteger` /
     `xs:decimal` text (`1_0`, `1e5` and non-ASCII digits raise; `+2`, `.5` and `5.` stay valid);
@@ -78,7 +78,18 @@ versions: Energi Data Service queries over 10,000 rows were silently truncated (
     instead of reporting its values as `None`; a repeated `FcrNdDK2` auction row (same hour,
     area, product and auction type) raises, as a repeated `Total` already did.
   - **eSett:** `timestampUTC` accepts only the `Z` and `+00:00` designators, as the SvK and
-    Energi Data Service parsers do; `-00:00`, `+00` and `+0000` raise `SourceError`.
+    Energi Data Service parsers do; `-00:00`, `+00` and `+0000` raise `SourceError`. It also
+    rejects date/time separators other than `T`, `t` or space.
+  - **Fingrid:** timestamps require a `Z` or `+00:00` UTC designator; alternate zero-offset forms
+    such as `-00:00`, `+00`, `+0000` and `+00:00:00` raise `SourceError`. An empty later page after
+    the expected total is reached is reported as `page N returned no rows`.
+  - **ENTSO-E timeInterval:** timestamps require extended date/time syntax with `T` and a `Z` or
+    `+00:00` designator; alternate zero-offset forms, space separators and basic layouts raise
+    `SourceError`.
+  - **Energi Data Service FCR:** every numeric column is validated, including those kept only in
+    `raw` and in `raw["auctions"]`.
+  - **JSON responses:** a body whose nesting exhausts the decoder raises `SourceError` instead of a
+    raw `RecursionError`.
   - **All clients:** a `base_url` that is not an absolute http or https URL raises `ValueError`
     at construction instead of a raw `httpx.InvalidURL` or `ValueError` on the first request.
   - **Retry-After:** delay-seconds accepts ASCII digits with an optional decimal fraction. Forms
@@ -95,7 +106,8 @@ versions: Energi Data Service queries over 10,000 rows were silently truncated (
   10,000 rows: the API reports `total` as the row count of each page, not of the whole query. Paging now
   continues until a page returns fewer than 10,000 records, and a page whose `total` differs from its record
   count raises `SourceError`. FcrNdDK2 requests also sort by a key unique per row, which offset paging needs.
-  0.1.1 is affected: re-fetch any Energi Data Service window longer than about 52 days.
+  0.1.1 is affected: re-fetch any Energi Data Service imbalance-price query that returned exactly
+  10,000 records (for both Danish zones, any window longer than about 52 days).
 - **Svenska kraftnät:** `capacity_market` with a product SvK does not publish (FCR, FCR-N, FCR-D)
   raises `ValueError` before any request; it previously leaked a `KeyError`.
 - **HTTP:** an undecodable response body (for example a corrupt `Content-Encoding`) is retried
