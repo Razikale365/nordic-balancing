@@ -24,7 +24,6 @@ Requires the ``benchmarks`` dependency group (psutil); to_frame needs pandas.
 import argparse
 import contextlib
 import functools
-import gc
 import importlib.metadata
 import json
 import math
@@ -188,6 +187,13 @@ def _stage_setup(name: str, http: httpx.Client, timers: dict[str, Timer]) -> lis
                 "_parse_imbalance",
                 timers["parse_validate"].timed(module._parse_imbalance),
             )
+        if workload.provider == "energidataservice":
+            # Capacity rows are parsed inside the method, not _parse_imbalance.
+            patch(
+                module.EnergiDataServiceClient,
+                "_fcr_capacity",
+                timers["parse_validate"].timed(module.EnergiDataServiceClient._fcr_capacity),
+            )
         for record_class in ("ImbalancePrice", "ReserveCapacity"):
             if hasattr(module, record_class):
                 patch(
@@ -207,7 +213,13 @@ def _undo(restores: list) -> None:
         setattr(obj, attr, value)
 
 
-def _child(set_name: str, fixtures_root: Path) -> dict:
+def _child(set_name: str, fixtures_root: Path, mode: str = "e2e") -> dict:
+    """One measurement in a fresh process.
+
+    ``mode="e2e"`` times the real default-concurrency call and ``to_frame``
+    on a clean heap. ``mode="stages"`` runs once, serial and instrumented,
+    so stage wall times add up without thread-contention noise.
+    """
     from nordic_balancing import to_frame
 
     workload = workloads.WORKLOADS[set_name]
@@ -217,40 +229,38 @@ def _child(set_name: str, fixtures_root: Path) -> dict:
     process = psutil.Process()
     result: dict = {"set": set_name, "ok": False}
     with _PeakRss(process) as sampler:
-        # Pass 1: instrumented, serial — stage wall times add up without
-        # thread-contention noise. e2e wall below is the real default.
         http = fixtures.replay_client(set_dir)
-        restores = _stage_setup(set_name, http, timers)
-        serial_error = None
-        serial_began = time.perf_counter()
-        serial_records: list = []
-        try:
-            serial_records = workload.run(http, api_key="replay", max_workers=1)
-        except Exception as exc:
-            serial_error = f"{type(exc).__name__}: {exc}"
-        serial_wall_s = time.perf_counter() - serial_began
-        _undo(restores)
-        serial_count = len(serial_records)
-        del serial_records  # don't let pass-1 objects tax pass-2's GC
-        gc.collect()
+        error = None
+        records: list = []
+        if mode == "stages":
+            restores = _stage_setup(set_name, http, timers)
+            began = time.perf_counter()
+            try:
+                records = workload.run(http, api_key="replay", max_workers=1)
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+            serial_wall_s = time.perf_counter() - began
+            _undo(restores)
+            result["serial_wall_s"] = serial_wall_s
+            wall_s = serial_wall_s
+        else:
+            cpu0 = process.cpu_times()
+            began = time.perf_counter()
+            try:
+                records = workload.run(http, api_key="replay")
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+            wall_s = time.perf_counter() - began
+            cpu = process.cpu_times()
+            result["cpu_s"] = (cpu.user + cpu.system) - (cpu0.user + cpu0.system)
         to_frame([])  # warm the lazy pandas import outside the timed call
-        # Pass 2: unpatched, default concurrency — the measured e2e.
-        http = fixtures.replay_client(set_dir)
-        cpu0 = process.cpu_times()
-        began = time.perf_counter()
-        error = serial_error
-        records = []
+        frame_timer = Timer()
         try:
-            records = workload.run(http, api_key="replay")
-        except Exception as exc:
-            error = f"{type(exc).__name__}: {exc}"
-        wall_s = time.perf_counter() - began
-        cpu = process.cpu_times()
-        try:
-            frame = timers["to_frame"].timed(to_frame)(records) if records else None
+            frame = frame_timer.timed(to_frame)(records) if records else None
         except Exception as exc:
             frame = None
             result["to_frame_error"] = f"{type(exc).__name__}: {exc}"
+        timers["to_frame"] = frame_timer
         peak_rss = sampler.peak()
     top_level = {
         "entsoe": ["transport", "zip_read", "parse_validate", "construction", "dataclass_replace"],
@@ -263,19 +273,18 @@ def _child(set_name: str, fixtures_root: Path) -> dict:
         {
             "ok": error is None,
             "error": error,
-            "serial_wall_s": serial_wall_s,
-            "serial_records": serial_count,
             "records": len(records),
             "frame_rows": len(frame) if frame is not None else 0,
             "requests": info["requests"],
             "response_bytes": info["total_bytes"],
             "live_elapsed_s": info["total_elapsed_s"],
             "wall_s": wall_s,
-            "cpu_s": (cpu.user + cpu.system) - (cpu0.user + cpu0.system),
             "peak_rss_bytes": peak_rss,
             "stages_s": stages,
             "stage_calls": stage_calls,
-            "residual_other_s": serial_wall_s - sum(stages[key] for key in top_level),
+            "residual_other_s": (
+                serial_wall_s - sum(stages[key] for key in top_level) if mode == "stages" else None
+            ),
         }
     )
     return result
@@ -328,21 +337,41 @@ def _p95(values: list[float]) -> float | None:
     return ordered[min(len(ordered) - 1, math.ceil(0.95 * len(ordered)) - 1)]
 
 
+def _spawn_child(name: str, fixtures_root: Path, mode: str, script: str) -> dict:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--child",
+            name,
+            "--mode",
+            mode,
+            "--fixtures-root",
+            str(fixtures_root),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"{mode} child for {name} failed:\n{completed.stderr}")
+    return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
 def _run_set(
     name: str, repeats: int, warmup: int, fixtures_root: Path, results_dir: Path, tag: str
 ) -> dict:
     script = str(Path(__file__).resolve())
+    # Stage attribution: one serial instrumented run in its own process.
+    stage_sample = _spawn_child(name, fixtures_root, "stages", script)
+    print(
+        f"{name} stages: serial_wall={stage_sample['wall_s']:.2f}s "
+        f"records={stage_sample['records']} ok={stage_sample['ok']}",
+        flush=True,
+    )
     samples: list[dict] = []
     for index in range(warmup + repeats):
-        completed = subprocess.run(
-            [sys.executable, script, "--child", name, "--fixtures-root", str(fixtures_root)],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        if completed.returncode != 0:
-            raise RuntimeError(f"child for {name} failed:\n{completed.stderr}")
-        sample = json.loads(completed.stdout.strip().splitlines()[-1])
+        sample = _spawn_child(name, fixtures_root, "e2e", script)
         if index >= warmup:
             samples.append(sample)
         print(
@@ -351,8 +380,8 @@ def _run_set(
             f"ok={sample['ok']}",
             flush=True,
         )
-    metrics = ["wall_s", "serial_wall_s", "cpu_s", "peak_rss_bytes"]
-    stage_names = sorted({key for s in samples for key in s["stages_s"]} | {"residual_other_s"})
+    metrics = ["wall_s", "cpu_s", "peak_rss_bytes"]
+    stage_names = sorted(set(stage_sample["stages_s"]) | {"residual_other_s"})
     summary = {
         "set": name,
         "tag": tag,
@@ -361,21 +390,27 @@ def _run_set(
         "requests": samples[0]["requests"],
         "response_bytes": samples[0]["response_bytes"],
         "live_elapsed_s": samples[0]["live_elapsed_s"],
+        "serial_wall_s": stage_sample["serial_wall_s"],
+        "serial_records": stage_sample["records"],
         "environment": _environment(),
         "samples": samples,
+        "stage_sample": stage_sample,
         "median": {},
         "p95": {},
     }
-    for key in metrics + stage_names:
-        flat = []
-        for s in samples:
-            value = s.get(key) if key in metrics else s["stages_s"].get(key)
-            if key == "residual_other_s":
-                value = s["residual_other_s"]
-            if value is not None:
-                flat.append(value)
+    for key in metrics:
+        flat = [s[key] for s in samples if s.get(key) is not None]
         summary["median"][key] = statistics.median(flat) if flat else None
         summary["p95"][key] = _p95(flat)
+    for key in stage_names:
+        value = (
+            stage_sample["residual_other_s"]
+            if key == "residual_other_s"
+            else stage_sample["stages_s"].get(key)
+        )
+        summary["median"][key] = value
+        summary["p95"][key] = value
+    summary["median"]["to_frame_calls"] = stage_sample["stage_calls"].get("to_frame")
     summary["records_per_s"] = (
         summary["records"] / summary["median"]["wall_s"] if summary["median"]["wall_s"] else None
     )
@@ -389,6 +424,7 @@ def _run_set(
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--child", metavar="SET", help="run one measurement of SET and print JSON")
+    parser.add_argument("--mode", choices=["e2e", "stages"], default="e2e")
     parser.add_argument("--sets", help="comma-separated set names (default: all recorded)")
     parser.add_argument("--tag", default="run", help="label written into results files")
     parser.add_argument("--repeats", type=int, default=0)
@@ -397,7 +433,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR)
     args = parser.parse_args(argv)
     if args.child:
-        print(json.dumps(_child(args.child, args.fixtures_root)))
+        print(json.dumps(_child(args.child, args.fixtures_root, mode=args.mode)))
         return 0
     if args.sets:
         names = args.sets.split(",")
@@ -413,23 +449,9 @@ def main(argv: list[str]) -> int:
     for name in names:
         repeats = args.repeats
         if not repeats:
-            # Probe one child: sub-second workloads get N>=7, year workloads N>=3.
-            probe = subprocess.run(
-                [
-                    sys.executable,
-                    str(Path(__file__).resolve()),
-                    "--child",
-                    name,
-                    "--fixtures-root",
-                    str(args.fixtures_root),
-                ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-            )
-            if probe.returncode != 0:
-                raise RuntimeError(f"probe for {name} failed:\n{probe.stderr}")
-            wall = json.loads(probe.stdout.strip().splitlines()[-1])["wall_s"]
+            # Probe one e2e child: sub-second workloads get N>=7, year N>=3.
+            probe = _spawn_child(name, args.fixtures_root, "e2e", str(Path(__file__).resolve()))
+            wall = probe["wall_s"]
             repeats = 7 if wall < 2.0 else 3
             print(f"{name}: probe wall={wall:.2f}s -> repeats={repeats}", flush=True)
         _run_set(name, repeats, args.warmup, args.fixtures_root, args.results_dir, args.tag)

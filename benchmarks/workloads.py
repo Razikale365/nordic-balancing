@@ -84,6 +84,13 @@ WORKLOADS: dict[str, Workload] = {
         1.0,
         _entsoe_imbalance(_d(2025, 10, 26), _d(2025, 10, 27), _SE3),
     ),
+    "entsoe-imb-SE3-localday-2025-10-26": Workload(
+        "entsoe",
+        "EntsoeClient.imbalance_prices(datetime(2025,10,25,22,tzinfo=UTC), "
+        "datetime(2025,10,26,23,tzinfo=UTC), zones=(BiddingZone.SE3,))",
+        1.0,
+        _entsoe_imbalance(_d(2025, 10, 25, 22), _d(2025, 10, 26, 23), _SE3),
+    ),
     "entsoe-imb-SE3-month-2025-10": Workload(
         "entsoe",
         "EntsoeClient.imbalance_prices(datetime(2025,10,1,tzinfo=UTC), "
