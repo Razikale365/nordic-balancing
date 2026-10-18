@@ -53,6 +53,9 @@ UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api.py
 
 ## Record field semantics and data contracts
 
+Record and report dataclasses are slotted, so they have no `__dict__` and `vars(record)`
+raises `TypeError`. Read fields by attribute access.
+
 ### Capacity market methods
 
 - `EnergiDataServiceClient.capacity_market(product, start, end, *, zones=(DK1, DK2))`
