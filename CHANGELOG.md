@@ -4,6 +4,39 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the project is in beta: the public API is defined in
 [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it before 1.0 is listed here.
 
+## Unreleased
+
+Fixes from the release-candidate audit.
+
+### Fixed
+- **eSett:** a DK1/DK2 interval that is not settled yet is no longer returned as a real
+  price. eSett publishes it with every price at `0.0` and no regulation direction; it is
+  now reported as unpublished (`None` prices and direction), like the null rows of the
+  other zones, and `reconcile_imbalance_prices` classifies it as UNPUBLISHED. Records
+  fetched with 0.3.1 or earlier for the latest DK hours may carry these `0.0` prices;
+  re-fetch them.
+- **Fingrid:** a window with no rows returns `[]` instead of raising `SourceError`
+  ("page 1 has invalid lastPage"); paging follows the page size the server reports.
+- **ENTSO-E:** the API token is redacted from error messages in its percent-encoded
+  forms too.
+- Records and reports can be deep-copied, pickled and passed to `dataclasses.asdict`
+  (`raw` is still a read-only mapping).
+- `reconcile_imbalance_prices` never counts a NaN or infinite price as identical.
+- `changes_between` raises `ValueError` for a `zones` argument that is not an iterable of
+  `BiddingZone` values (a bare zone used to return `[]`) or is empty.
+- A `start`/`end` that is not a `datetime` raises `TypeError`; one outside the years
+  2–9997 raises `ValueError` instead of an `OverflowError`.
+- A 200 response that is not valid JSON is retried like other undecodable bodies, as
+  documented.
+
+### Changed
+- Sources now fail loudly on more provider changes: SvK fetches quarter-hour start times
+  so a switch to 15-minute data raises instead of repeating the hourly value (about four
+  times as many requests for hourly data); eSett and Energi Data Service raise if
+  imbalance rows arrive on the hour only where 15-minute data is expected; Energi Data
+  Service FCR paging stops on a repeated page and raises on an unrequested product.
+- JSON responses are capped at 64 MiB, like ENTSO-E XML.
+
 ## 0.3.1 — 2026-10-18
 
 ### Fixed

@@ -96,6 +96,9 @@ raises `TypeError`. Read fields by attribute access.
   price becomes `None`. Pass `zones=(BiddingZone.DK1,)` for FCR or
   `zones=(BiddingZone.DK2,)` / covered SE zones for FCR-N/FCR-D; the existing
   default `(DK1, DK2)` raises `ValueError` for all three products.
+  On the last Sunday of October `FcrDK1` publishes no 01:00 UTC hour (the
+  second 02:00 local); its other rows are labelled consistently, so that hour is
+  absent from the result rather than mapped.
 - `EntsoeClient.capacity_market(product, start, end, *, zones=(NO1, NO2, NO3, NO4, NO5))`
   returns FCR-N for Norwegian zones from `2014-09-30T22:00Z` (all five zones;
   checked live 2026-10-16), using A81/B95/A52 and market agreement A01. For
