@@ -22,6 +22,9 @@ _TRANSIENT_ERRORS = (
 _DEFAULT_RETRY_AFTER = 10.0
 # A longer requested wait is not slept through: RateLimitError reports it instead.
 _MAX_RETRY_AFTER = 300.0
+# A body larger than this is rejected before decoding; the ENTSO-E path applies
+# the same bound to the raw responses it reads itself.
+_LIMIT = 64 * 1024 * 1024
 
 
 def get_json(
@@ -42,33 +45,8 @@ def get_json(
         source=source,
         max_retries=max_retries,
         sleep=sleep,
-        passthrough_statuses=frozenset(),
         decode=lambda response: response.json(),
     )
-
-
-def get_bytes(
-    http: httpx.Client,
-    base_url: str,
-    path: str,
-    params: Mapping[str, str] | list[tuple[str, str]],
-    *,
-    source: str,
-    max_retries: int,
-    sleep: Callable[[float], None],
-    passthrough_statuses: frozenset[int] = frozenset(),
-) -> tuple[bytes, str]:
-    response = _request(
-        http,
-        base_url,
-        path,
-        params,
-        source=source,
-        max_retries=max_retries,
-        sleep=sleep,
-        passthrough_statuses=passthrough_statuses,
-    )
-    return response.content, response.headers.get("content-type", "")
 
 
 def check_base_url(base_url: str) -> None:
@@ -90,7 +68,7 @@ def _request(
     source: str,
     max_retries: int,
     sleep: Callable[[float], None],
-    passthrough_statuses: frozenset[int],
+    passthrough_statuses: frozenset[int] = frozenset(),
     decode: Callable[[httpx.Response], Any] | None = None,
 ) -> Any:
     query_params = params if isinstance(params, Mapping) else tuple(params)
@@ -117,6 +95,8 @@ def _request(
         else:
             # The body is decoded inside the loop so an uninterpretable one is
             # retried like a transport decoding failure, within the same budget.
+            if len(response.content) > _LIMIT:
+                raise SourceError(f"{source}: response for {path} exceeds {_LIMIT} bytes")
             # A deeply nested body exhausts the decoder's recursion limit; that
             # is still an uninterpretable body, not an internal error.
             try:

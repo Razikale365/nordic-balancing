@@ -33,7 +33,7 @@ from xml.etree import ElementTree
 
 import httpx
 
-from nordic_balancing._http import _request, check_base_url
+from nordic_balancing._http import _LIMIT, _request, check_base_url
 from nordic_balancing.errors import NordicBalancingError, SourceError
 from nordic_balancing.models import (
     INTERVAL,
@@ -54,7 +54,6 @@ _CAPACITY_CHUNK = timedelta(days=7)
 _INSTANCE_LIMIT = "exceeds the allowed maximum"
 _HOUR = timedelta(hours=1)
 _NO = (BiddingZone.NO1, BiddingZone.NO2, BiddingZone.NO3, BiddingZone.NO4, BiddingZone.NO5)
-_LIMIT = 64 * 1024 * 1024
 _MFRR_DIRECTIONS = {"A01": Direction.UP, "A02": Direction.DOWN}
 _NO_DATA = "No matching data found"
 _PASSTHROUGH = frozenset({400})
