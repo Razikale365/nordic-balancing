@@ -238,6 +238,31 @@ def test_eds_nd_paging_sorts_by_a_unique_key(monkeypatch: pytest.MonkeyPatch) ->
     assert result == eds_fetch(rows)
 
 
+def test_eds_nd_stops_paging_when_a_full_page_repeats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A server ignoring `offset` returns the same page forever; checking row-key
+    # uniqueness while paging raises on page two instead of requesting and
+    # buffering without bound (B11 M6, OPUS-2).
+    monkeypatch.setattr(energidataservice, "PAGE_SIZE", 2)
+    rows = [r for r in nd_rows() if r["ProductName"] == "FCR-N"][:2]
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"total": len(rows), "records": rows})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(SourceError, match="duplicate record"):
+            EnergiDataServiceClient(http).capacity_market(
+                ReserveProduct.FCR_N,
+                START,
+                START + HOUR,
+                zones=(BiddingZone.DK2, BiddingZone.SE3),
+            )
+    assert len(calls) == 2
+
+
 @pytest.mark.parametrize("identical", [True, False])
 def test_eds_nd_rejects_duplicate_auction_row(identical: bool) -> None:
     rows = nd_rows()
@@ -762,7 +787,12 @@ def test_eds_nd_ignores_other_product_total_problems(failure: str) -> None:
     rows = nd_rows()
     if failure == "missing":
         rows = [r for r in rows if r["ProductName"] == "FCR-N" or r["AuctionType"] != "Total"]
+        result = eds_fetch(rows)
+        assert len(result) == 8 and all(r.product is ReserveProduct.FCR_N for r in result)
     else:
+        # The row-level duplicate check fires while paging, before the grouping
+        # stage filters products: a repeated row raises even when it names the
+        # unrequested product.
         rows.append(
             next(
                 r.copy()
@@ -770,9 +800,11 @@ def test_eds_nd_ignores_other_product_total_problems(failure: str) -> None:
                 if r["ProductName"] == "FCR-D upp" and r["AuctionType"] == "Total"
             )
         )
-    result = eds_fetch(rows)
-    assert len(result) == 8 and all(r.product is ReserveProduct.FCR_N for r in result)
-    with pytest.raises(SourceError, match="missing Total" if failure == "missing" else "duplicate"):
+        with pytest.raises(SourceError, match="duplicate"):
+            eds_fetch(rows)
+    with pytest.raises(
+        SourceError, match="missing Total" if failure == "missing" else "duplicate"
+    ):
         eds_fetch(rows, ReserveProduct.FCR_D)
 
 

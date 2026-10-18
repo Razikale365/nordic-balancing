@@ -340,6 +340,10 @@ class EnergiDataServiceClient:
             params["end"] = _format(query_end)
         parsed: list[tuple[datetime, BiddingZone, str, dict[str, Any]]] = []
         dataset = "FcrDK1" if domestic else "FcrNdDK2"
+        # Unlike the other paths, rows are buffered before grouping, so the
+        # duplicate check runs while paging: a server ignoring `offset` then
+        # raises on page two instead of requesting and buffering forever.
+        seen_rows: set[tuple[datetime, BiddingZone, str, str]] = set()
         for row in self._records(dataset, params):
             if not isinstance(row, dict):
                 raise SourceError(f"{SOURCE}: record is not a JSON object")
@@ -360,6 +364,12 @@ class EnergiDataServiceClient:
             name = "FCR" if domestic else row["ProductName"]
             if not domestic and (not isinstance(name, str) or name not in _FCR_PRODUCTS):
                 raise SourceError(f"{SOURCE}: unknown ProductName {name!r}")
+            reject_duplicate(
+                seen_rows,
+                (hour, zone, name, json.dumps(row.get("AuctionType"), sort_keys=True)),
+                source=SOURCE,
+                detail=f"record for {hour.isoformat()} {zone} {name}",
+            )
             for column in numeric:
                 _number(row, column)
             parsed.append((hour, zone, name, row))
