@@ -334,7 +334,7 @@ def test_get_json_retries_an_undecodable_body_then_raises() -> None:
 
     http = httpx.Client(transport=httpx.MockTransport(handler))
     sleeps: list[float] = []
-    with pytest.raises(SourceError, match="^test: response for /api is not JSON$"):
+    with pytest.raises(SourceError, match=r"^test: response for /api is not JSON$"):
         get_json(
             http,
             "https://example.test",
