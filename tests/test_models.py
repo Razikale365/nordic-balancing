@@ -334,9 +334,9 @@ def test_entsoe_chunking_at_the_last_supported_year_does_not_overflow() -> None:
     # ENTSO-E chunks by up to 366 days; the year bound must leave room for that, so
     # the request is built and the (mocked) server's answer decides the outcome.
     http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(400)))
-    with EntsoeClient(api_key="test", http=http, max_retries=0) as client:
-        with pytest.raises(NordicBalancingError):
-            client.imbalance_prices(
-                datetime(_MAX_YEAR, 12, 31, tzinfo=UTC),
-                datetime(_MAX_YEAR, 12, 31, 23, 45, tzinfo=UTC),
-            )
+    client = EntsoeClient(api_key="test", http=http, max_retries=0)
+    with client, pytest.raises(NordicBalancingError):
+        client.imbalance_prices(
+            datetime(_MAX_YEAR, 12, 31, tzinfo=UTC),
+            datetime(_MAX_YEAR, 12, 31, 23, 45, tzinfo=UTC),
+        )
