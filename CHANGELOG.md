@@ -18,6 +18,13 @@ the project is in beta: the public API is defined in
   still raises, and so does a 01:01 row on a day that also has a 00:00 row. A request
   that touches 00:00–02:00 UTC on that day now always queries both hours.
 
+### Performance
+- Building records is faster: the per-record copy of `raw` no longer dispatches through
+  `copy.deepcopy` for every JSON value. On replayed one-year queries, end-to-end time fell by
+  19–36 % (eSett, ENTSO-E and Energi Data Service imbalance prices), with identical output and
+  unchanged peak memory. `raw` is still a deep copy per record. Method, results and the
+  competitor comparison are in `benchmarks/`.
+
 ## 0.3.0 — 2026-10-17
 
 First published beta, and the reserve-capacity release. 0.2.0 was never published: its changes
