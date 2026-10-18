@@ -336,6 +336,43 @@ def test_all_zero_row_is_real_for_non_dk_zones() -> None:
     assert prices[0].dominating_direction is Direction.NONE
 
 
+def test_hourly_only_rows_after_the_switch_raise() -> None:
+    # A payload of on-the-hour rows in the 15-minute era is an hourly cadence,
+    # not intervals to emit as single 15-minute records.
+    records = [
+        {**PUBLISHED, "timestampUTC": "2026-01-15T00:00:00Z"},
+        {**PUBLISHED, "timestampUTC": "2026-01-15T01:00:00Z"},
+    ]
+    with pytest.raises(SourceError, match="on the hour only"):
+        client(lambda _: httpx.Response(200, json=records)).imbalance_prices(
+            START, START + timedelta(hours=2), [BiddingZone.SE3]
+        )
+
+
+def test_hour_rows_do_not_raise_when_a_quarter_row_is_present() -> None:
+    records = [
+        {**PUBLISHED, "timestampUTC": "2026-01-15T00:00:00Z"},
+        {**PUBLISHED, "timestampUTC": "2026-01-15T01:00:00Z"},
+        {**PUBLISHED, "timestampUTC": "2026-01-15T01:15:00Z"},
+    ]
+    prices = client(lambda _: httpx.Response(200, json=records)).imbalance_prices(
+        START, START + timedelta(hours=2), [BiddingZone.SE3]
+    )
+    assert [p.start for p in prices] == [
+        START,
+        START + timedelta(hours=1),
+        START + timedelta(hours=1, minutes=15),
+    ]
+    assert all(p.resolution == INTERVAL for p in prices)
+
+
+def test_a_single_hourly_row_does_not_raise() -> None:
+    # One isolated hour cannot be told apart from a 15-minute interval.
+    prices = client(lambda _: httpx.Response(200, json=[PUBLISHED])).imbalance_prices(START, END)
+    assert [p.start for p in prices] == [START]
+    assert prices[0].resolution == INTERVAL
+
+
 def test_rejects_sales_purchase_disagreement() -> None:
     record = {**PUBLISHED, "imblPurchasePrice": 22}
     with pytest.raises(SourceError, match="esett: single-price model violated"):

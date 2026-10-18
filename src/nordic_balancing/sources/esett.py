@@ -140,6 +140,8 @@ class ESettClient:
                 raise SourceError(f"{SOURCE}: request failed for /EXP14/Prices") from None
             if not isinstance(body, list):
                 raise SourceError(f"{SOURCE}: response for /EXP14/Prices is not a JSON array")
+            hourly_hours: dict[BiddingZone, set[datetime]] = {}
+            quarter_zones: set[BiddingZone] = set()
             for record in body:
                 price = _parse_imbalance(record)
                 if price.zone not in zone_list:
@@ -152,11 +154,25 @@ class ESettClient:
                     source=SOURCE,
                     detail=f"record for {price.zone.value} at {price.start.isoformat()}",
                 )
+                if price.start >= _HOURLY_END:
+                    if price.start.minute:
+                        quarter_zones.add(price.zone)
+                    else:
+                        hourly_hours.setdefault(price.zone, set()).add(price.start)
                 quarters = 4 if price.resolution == _HOUR else 1
                 for quarter in range(quarters):
                     interval_start = price.start + quarter * INTERVAL
                     if start_utc <= interval_start < end_utc:
                         prices.append(replace(price, start=interval_start) if quarter else price)
+            # A zone publishing again at hourly cadence lands on the hour in
+            # every hour; sparse 15-minute data still shows a quarter somewhere.
+            # Returning one record per hour labelled 15 minutes would be wrong.
+            for zone, hours in hourly_hours.items():
+                if len(hours) > 1 and zone not in quarter_zones:
+                    raise SourceError(
+                        f"{SOURCE}: {zone.value} rows after {_HOURLY_END:%Y-%m-%dT%H:%MZ} "
+                        "fall on the hour only"
+                    )
             query_start = chunk_end
         prices.sort(key=lambda p: (p.start, p.zone))
         return prices
