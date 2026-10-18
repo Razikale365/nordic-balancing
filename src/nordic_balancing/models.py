@@ -67,16 +67,21 @@ _ATOMIC = frozenset({str, bytes, int, float, bool, type(None)})
 
 def _copy_raw(value: Any) -> Any:
     """Deep-copy a JSON-like value so no nested container is shared."""
-    if isinstance(value, dict):
-        return {key: _copy_raw(item) for key, item in value.items()}
+    # Exact-type checks first: provider JSON is almost all builtin dicts of scalars, and
+    # the abc check behind isinstance(value, Mapping) is the expensive one.
+    kind = type(value)
+    if kind in _ATOMIC:
+        return value  # immutable scalars deep-copy to themselves
+    if kind is dict:
+        return {
+            key: item if type(item) in _ATOMIC else _copy_raw(item) for key, item in value.items()
+        }
     if isinstance(value, Mapping):
         return {key: _copy_raw(item) for key, item in value.items()}
     if isinstance(value, list):
         return [_copy_raw(item) for item in value]
     if isinstance(value, tuple):
         return tuple(_copy_raw(item) for item in value)
-    if type(value) in _ATOMIC:
-        return value  # immutable scalars deep-copy to themselves
     return deepcopy(value)
 
 
