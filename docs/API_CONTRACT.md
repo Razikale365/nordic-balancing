@@ -192,7 +192,10 @@ See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how
   source published an hourly value, it is expanded into four 15-minute records
   across that hour while `resolution` retains `timedelta(hours=1)`.
   `FingridClient.series()` expands hourly records only for datasets 319, 244, 106,
-  and 369; an hourly record in any other dataset raises `SourceError`.
+  and 369; an hourly record in any other dataset raises `SourceError`. The EDS
+  `ImbalancePrice` dataset publishes every quarter hour; a zone whose rows are
+  all on the hour across more than one hour raises `SourceError` rather than
+  returning records mislabelled as 15-minute.
 
 ### `ImbalancePrice`
 
