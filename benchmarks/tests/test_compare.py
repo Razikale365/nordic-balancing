@@ -254,3 +254,52 @@ def test_esett_replay_uses_native_json_parser(tmp_path):
     nb, alt = worker(tmp_path, "nb-records"), worker(tmp_path, "esett-py")
     assert nb["status"] == alt["status"] == "PASS", (nb, alt)
     assert differences(nb["rows"], alt["rows"])["max_abs_price_difference"] == 0
+
+
+def test_area_tables_match_client_identifiers():
+    from benchmarks.areas import ENTSOE_AREAS, ESETT_AREAS
+    from nordic_balancing.sources.entsoe import _EIC_CODES
+    from nordic_balancing.sources.esett import _EIC_CODES as esett_codes
+
+    assert {zone.value: code for zone, code in _EIC_CODES.items()} == ENTSOE_AREAS
+    assert {zone.value: code for zone, code in esett_codes.items()} == ESETT_AREAS
+
+
+def test_publication_oracle_preserves_period_gap(tmp_path):
+    from benchmarks.source_audit import publication
+
+    start = datetime(2022, 1, 1, tzinfo=UTC)
+    end = start + timedelta(hours=3)
+    body = document(
+        period(start, start + timedelta(hours=1), 1, "PT60M"),
+        period(start + timedelta(hours=2), end, 1, "PT60M"),
+    )
+    make_set(tmp_path, body, start, end)
+    native, quarters, evidence = publication(FrozenSet(tmp_path))
+    assert len(native) == 2
+    assert len(quarters) == 8
+    assert ("SE3", (start + timedelta(hours=1)).isoformat()) not in quarters
+    assert evidence["explicit_duplicate_positions"] == 0
+
+
+@pytest.mark.parametrize("amount", [42.0, None])
+def test_publication_oracle_a03_continuation(tmp_path, amount):
+    from benchmarks.source_audit import publication
+
+    end = START + timedelta(hours=1)
+    body = document(period(START, end, 4, positions=[1, 3]))
+    with zipfile.ZipFile(io.BytesIO(body)) as archive:
+        xml = archive.read("document.xml").replace(b"<curveType>A01", b"<curveType>A03")
+    original = b"<Point><position>3</position><imbalance_Price.amount>21.5</imbalance_Price.amount>"
+    replacement = b"<Point><position>3</position>"
+    if amount is not None:
+        replacement += f"<imbalance_Price.amount>{amount}</imbalance_Price.amount>".encode()
+    assert original in xml
+    xml = xml.replace(original, replacement)
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as archive:
+        archive.writestr("document.xml", xml)
+    make_set(tmp_path, stream.getvalue(), START, end)
+    native, quarters, _ = publication(FrozenSet(tmp_path))
+    assert len(native) == len(quarters) == 4
+    assert [quarters[key]["Long"] for key in sorted(quarters)] == [21.5, 21.5, amount, amount]

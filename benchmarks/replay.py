@@ -7,10 +7,12 @@ import io
 import json
 import urllib.error
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import httpx
-import requests
+if TYPE_CHECKING:
+    import httpx
+    import requests
 
 _SECRET_NAMES = frozenset({"securitytoken", "api_key", "apikey", "api-key", "key"})
 
@@ -74,6 +76,8 @@ class FrozenSet:
         }
 
     def httpx(self) -> httpx.Client:
+        import httpx
+
         def respond(request):
             row, body = self.get(request.method, str(request.url))
             return httpx.Response(row["status"], headers=row["headers"], content=body)
@@ -81,6 +85,8 @@ class FrozenSet:
         return httpx.Client(transport=httpx.MockTransport(respond), follow_redirects=False)
 
     def requests(self) -> requests.Session:
+        import requests
+
         frozen = self
 
         class Adapter(requests.adapters.BaseAdapter):
