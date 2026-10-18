@@ -25,7 +25,9 @@ from nordic_balancing.models import (
 SOURCE = "svk"
 BASE_URL = "https://data.svk.se/api/3/action"
 _HOUR = timedelta(hours=1)
-_CHUNK_HOURS = 168
+# Each hour of a chunk contributes its four quarter starts to the exact-match
+# filter, so 42 hours keep the request URL the same size as 168 hour values did.
+_CHUNK_HOURS = 42
 _PAGE_LIMIT = 10_000
 _SE_ZONES = (BiddingZone.SE1, BiddingZone.SE2, BiddingZone.SE3, BiddingZone.SE4)
 _DATASETS = {
@@ -154,7 +156,14 @@ class SvKClient:
             "resource_id": resource_id,
             "filters": json.dumps(
                 {
-                    "start_time_utc": [h.strftime("%Y-%m-%dT%H:00:00") for h in chunk],
+                    # Quarter starts are named too: the filter is exact-match,
+                    # so rows off the hour would otherwise never be fetched and
+                    # the off-hour check in _parse_time could never fire.
+                    "start_time_utc": [
+                        (hour + quarter * INTERVAL).strftime("%Y-%m-%dT%H:%M:00")
+                        for hour in chunk
+                        for quarter in range(4)
+                    ],
                     "bidding_zone": [z.value for z in zones],
                 }
             ),
