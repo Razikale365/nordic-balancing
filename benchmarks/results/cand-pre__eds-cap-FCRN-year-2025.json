@@ -1,0 +1,153 @@
+{
+  "set": "eds-cap-FCRN-year-2025",
+  "tag": "cand-pre",
+  "n": 3,
+  "records": 175200,
+  "requests": 14,
+  "response_bytes": 29105116,
+  "live_elapsed_s": 51.30962400010321,
+  "serial_wall_s": 29.71148830000311,
+  "serial_records": 175200,
+  "environment": {
+    "host": {
+      "platform": "Windows-11-10.0.22621-SP0",
+      "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "logical_cpus": 6,
+      "physical_cpus": 6,
+      "ram_bytes": 34268110848
+    },
+    "python": "3.12.13",
+    "packages": {
+      "nordic-balancing": "0.3.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    },
+    "git_commit": "c26e34971f428944a7fb7896d46762675617c5b8",
+    "in_container": false,
+    "cgroup_limits": "none (not in a cgroup-limited container)",
+    "docker_image": null
+  },
+  "samples": [
+    {
+      "set": "eds-cap-FCRN-year-2025",
+      "ok": true,
+      "cpu_s": 9.5625,
+      "error": null,
+      "records": 175200,
+      "frame_rows": 175200,
+      "requests": 14,
+      "response_bytes": 29105116,
+      "live_elapsed_s": 51.30962400010321,
+      "wall_s": 20.086700699990615,
+      "peak_rss_bytes": 391438336,
+      "stages_s": {
+        "to_frame": 1.7325675999745727
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "eds-cap-FCRN-year-2025",
+      "ok": true,
+      "cpu_s": 10.1875,
+      "error": null,
+      "records": 175200,
+      "frame_rows": 175200,
+      "requests": 14,
+      "response_bytes": 29105116,
+      "live_elapsed_s": 51.30962400010321,
+      "wall_s": 21.445111399982125,
+      "peak_rss_bytes": 391372800,
+      "stages_s": {
+        "to_frame": 1.34196280001197
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "eds-cap-FCRN-year-2025",
+      "ok": true,
+      "cpu_s": 9.4375,
+      "error": null,
+      "records": 175200,
+      "frame_rows": 175200,
+      "requests": 14,
+      "response_bytes": 29105116,
+      "live_elapsed_s": 51.30962400010321,
+      "wall_s": 13.166935799992643,
+      "peak_rss_bytes": 392142848,
+      "stages_s": {
+        "to_frame": 1.134759800042957
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    }
+  ],
+  "stage_sample": {
+    "set": "eds-cap-FCRN-year-2025",
+    "ok": true,
+    "serial_wall_s": 29.71148830000311,
+    "error": null,
+    "records": 175200,
+    "frame_rows": 175200,
+    "requests": 14,
+    "response_bytes": 29105116,
+    "live_elapsed_s": 51.30962400010321,
+    "wall_s": 29.71148830000311,
+    "peak_rss_bytes": 392826880,
+    "stages_s": {
+      "transport": 0.06887890002690256,
+      "zip_read": 0.0,
+      "decode": 0.6141453998861834,
+      "parse_validate": 29.711229800013825,
+      "construction": 13.343309480813332,
+      "dataclass_replace": 0.0,
+      "to_frame": 1.789721000008285
+    },
+    "stage_calls": {
+      "transport": 14,
+      "zip_read": 0,
+      "decode": 14,
+      "parse_validate": 1,
+      "construction": 175200,
+      "dataclass_replace": 0,
+      "to_frame": 1
+    },
+    "residual_other_s": -14.026075280737132
+  },
+  "median": {
+    "wall_s": 20.086700699990615,
+    "cpu_s": 9.5625,
+    "peak_rss_bytes": 391438336,
+    "construction": 13.343309480813332,
+    "dataclass_replace": 0.0,
+    "decode": 0.6141453998861834,
+    "parse_validate": 29.711229800013825,
+    "residual_other_s": -14.026075280737132,
+    "to_frame": 1.789721000008285,
+    "transport": 0.06887890002690256,
+    "zip_read": 0.0,
+    "to_frame_calls": 1
+  },
+  "p95": {
+    "wall_s": 21.445111399982125,
+    "cpu_s": 10.1875,
+    "peak_rss_bytes": 392142848,
+    "construction": 13.343309480813332,
+    "dataclass_replace": 0.0,
+    "decode": 0.6141453998861834,
+    "parse_validate": 29.711229800013825,
+    "residual_other_s": -14.026075280737132,
+    "to_frame": 1.789721000008285,
+    "transport": 0.06887890002690256,
+    "zip_read": 0.0
+  },
+  "records_per_s": 8722.189005389117
+}

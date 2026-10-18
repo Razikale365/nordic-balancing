@@ -1,0 +1,153 @@
+{
+  "set": "entsoe-cap-FCRN-NO-year-2025",
+  "tag": "base-v030q",
+  "n": 3,
+  "records": 175200,
+  "requests": 785,
+  "response_bytes": 3468242,
+  "live_elapsed_s": 4020.4990641984623,
+  "serial_wall_s": 9.515332699986175,
+  "serial_records": 175200,
+  "environment": {
+    "host": {
+      "platform": "Windows-11-10.0.22621-SP0",
+      "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "logical_cpus": 6,
+      "physical_cpus": 6,
+      "ram_bytes": 34268110848
+    },
+    "python": "3.12.13",
+    "packages": {
+      "nordic-balancing": "0.3.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    },
+    "git_commit": "29bcbe2f2a000455438b46b6df4b7a0deaa2a880",
+    "in_container": false,
+    "cgroup_limits": "none (not in a cgroup-limited container)",
+    "docker_image": null
+  },
+  "samples": [
+    {
+      "set": "entsoe-cap-FCRN-NO-year-2025",
+      "ok": true,
+      "cpu_s": 4.203125,
+      "error": null,
+      "records": 175200,
+      "frame_rows": 175200,
+      "requests": 785,
+      "response_bytes": 3468242,
+      "live_elapsed_s": 4020.4990641984623,
+      "wall_s": 9.19934639998246,
+      "peak_rss_bytes": 247648256,
+      "stages_s": {
+        "to_frame": 0.5754448999650776
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "entsoe-cap-FCRN-NO-year-2025",
+      "ok": true,
+      "cpu_s": 5.296875,
+      "error": null,
+      "records": 175200,
+      "frame_rows": 175200,
+      "requests": 785,
+      "response_bytes": 3468242,
+      "live_elapsed_s": 4020.4990641984623,
+      "wall_s": 9.846529600094073,
+      "peak_rss_bytes": 247734272,
+      "stages_s": {
+        "to_frame": 0.44414779997896403
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "entsoe-cap-FCRN-NO-year-2025",
+      "ok": true,
+      "cpu_s": 5.203125,
+      "error": null,
+      "records": 175200,
+      "frame_rows": 175200,
+      "requests": 785,
+      "response_bytes": 3468242,
+      "live_elapsed_s": 4020.4990641984623,
+      "wall_s": 9.271877100109123,
+      "peak_rss_bytes": 247148544,
+      "stages_s": {
+        "to_frame": 0.5097011000616476
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    }
+  ],
+  "stage_sample": {
+    "set": "entsoe-cap-FCRN-NO-year-2025",
+    "ok": true,
+    "serial_wall_s": 9.515332699986175,
+    "error": null,
+    "records": 175200,
+    "frame_rows": 175200,
+    "requests": 785,
+    "response_bytes": 3468242,
+    "live_elapsed_s": 4020.4990641984623,
+    "wall_s": 9.515332699986175,
+    "peak_rss_bytes": 246935552,
+    "stages_s": {
+      "transport": 0.6248958015348762,
+      "zip_read": 0.19691770034842193,
+      "decode": 1.4700017960276455,
+      "parse_validate": 4.8397305947728455,
+      "construction": 2.2207602587295696,
+      "dataclass_replace": 0.5097010019235313,
+      "to_frame": 0.44414070004131645
+    },
+    "stage_calls": {
+      "transport": 785,
+      "zip_read": 785,
+      "decode": 2610,
+      "parse_validate": 2610,
+      "construction": 175200,
+      "dataclass_replace": 87600,
+      "to_frame": 1
+    },
+    "residual_other_s": 1.1233273426769301
+  },
+  "median": {
+    "wall_s": 9.271877100109123,
+    "cpu_s": 5.203125,
+    "peak_rss_bytes": 247648256,
+    "construction": 2.2207602587295696,
+    "dataclass_replace": 0.5097010019235313,
+    "decode": 1.4700017960276455,
+    "parse_validate": 4.8397305947728455,
+    "residual_other_s": 1.1233273426769301,
+    "to_frame": 0.44414070004131645,
+    "transport": 0.6248958015348762,
+    "zip_read": 0.19691770034842193,
+    "to_frame_calls": 1
+  },
+  "p95": {
+    "wall_s": 9.846529600094073,
+    "cpu_s": 5.296875,
+    "peak_rss_bytes": 247734272,
+    "construction": 2.2207602587295696,
+    "dataclass_replace": 0.5097010019235313,
+    "decode": 1.4700017960276455,
+    "parse_validate": 4.8397305947728455,
+    "residual_other_s": 1.1233273426769301,
+    "to_frame": 0.44414070004131645,
+    "transport": 0.6248958015348762,
+    "zip_read": 0.19691770034842193
+  },
+  "records_per_s": 18895.850118412163
+}

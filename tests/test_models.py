@@ -1,9 +1,13 @@
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
+from types import MappingProxyType
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from nordic_balancing import (
     INTERVAL,
@@ -13,7 +17,7 @@ from nordic_balancing import (
     ReserveCapacity,
     ReserveProduct,
 )
-from nordic_balancing.models import to_utc
+from nordic_balancing.models import _copy_raw, to_utc
 
 START = datetime(2026, 1, 15, tzinfo=UTC)
 
@@ -76,6 +80,63 @@ def test_raw_deep_copies_other_mutable_containers() -> None:
     assert first.raw["tags"] is not base["tags"]
     assert first.raw["tags"] is not second.raw["tags"]
     assert first.raw["buf"] is not second.raw["buf"]
+
+
+def test_raw_deep_copies_scalar_subclasses_with_state() -> None:
+    class Tagged(str):
+        tags: list[str]
+
+    value = Tagged("x")
+    value.tags = ["a"]
+    record = price({"value": value})
+    value.tags.append("b")
+    assert record.raw["value"] == "x"
+    assert record.raw["value"] is not value
+    assert record.raw["value"].tags == ["a"]
+
+
+def test_raw_normalises_dict_subclasses_and_other_mappings() -> None:
+    class SubDict(dict[str, Any]):
+        pass
+
+    raw: dict[str, Any] = {
+        "sub": SubDict({"v": [1]}),
+        "proxy": MappingProxyType({"w": [2]}),
+    }
+    record = price(raw)
+    assert type(record.raw["sub"]) is dict
+    assert type(record.raw["proxy"]) is dict
+    record.raw["sub"]["v"].append(9)
+    assert raw["sub"]["v"] == [1]
+
+
+_json_like = st.recursive(
+    st.none()
+    | st.booleans()
+    | st.integers()
+    | st.floats(allow_nan=False)
+    | st.text()
+    | st.binary(),
+    lambda children: (
+        st.lists(children) | st.tuples(children, children) | st.dictionaries(st.text(), children)
+    ),
+    max_leaves=30,
+)
+
+
+@given(_json_like)
+def test_copy_raw_matches_deepcopy_on_json_like_values(value: Any) -> None:
+    copied = _copy_raw(value)
+    assert copied == deepcopy(value)
+    assert type(copied) is type(deepcopy(value))
+
+
+def test_copy_raw_detaches_at_every_level() -> None:
+    inner = {"x": [1]}
+    record = price({"a": {"b": inner}, "c": (inner,)})
+    inner["x"].append(99)
+    assert record.raw["a"]["b"] == {"x": [1]}
+    assert record.raw["c"][0] == {"x": [1]}
 
 
 def test_reserve_capacity_raw_is_detached_too() -> None:
