@@ -81,6 +81,19 @@ def test_raw_deep_copies_other_mutable_containers() -> None:
     assert first.raw["buf"] is not second.raw["buf"]
 
 
+def test_raw_deep_copies_scalar_subclasses_with_state() -> None:
+    class Tagged(str):
+        tags: list[str]
+
+    value = Tagged("x")
+    value.tags = ["a"]
+    record = price({"value": value})
+    value.tags.append("b")
+    assert record.raw["value"] == "x"
+    assert record.raw["value"] is not value
+    assert record.raw["value"].tags == ["a"]
+
+
 _json_like = st.recursive(
     st.none()
     | st.booleans()

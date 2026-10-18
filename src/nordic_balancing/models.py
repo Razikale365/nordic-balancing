@@ -61,7 +61,8 @@ class ReserveProduct(StrEnum):
     FCR = "FCR"
 
 
-_ATOMIC = (str, bytes, int, float, bool, type(None))
+# Exact types only: a subclass instance can carry mutable attributes that deepcopy would clone.
+_ATOMIC = frozenset({str, bytes, int, float, bool, type(None)})
 
 
 def _copy_raw(value: Any) -> Any:
@@ -74,7 +75,7 @@ def _copy_raw(value: Any) -> Any:
         return [_copy_raw(item) for item in value]
     if isinstance(value, tuple):
         return tuple(_copy_raw(item) for item in value)
-    if isinstance(value, _ATOMIC):
+    if type(value) in _ATOMIC:
         return value  # immutable scalars deep-copy to themselves
     return deepcopy(value)
 
