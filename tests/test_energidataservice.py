@@ -341,9 +341,7 @@ def test_rejects_hourly_only_rows_in_the_15_minute_dataset() -> None:
         {**PUBLISHED, "TimeUTC": "2026-10-09T03:00:00"},
     ]
     with pytest.raises(SourceError, match="only on the hour"):
-        client(lambda _: page(rows)).imbalance_prices(
-            HOUR_START, HOUR_START + timedelta(hours=2)
-        )
+        client(lambda _: page(rows)).imbalance_prices(HOUR_START, HOUR_START + timedelta(hours=2))
 
 
 def test_accepts_on_hour_rows_when_a_quarter_row_is_present() -> None:
