@@ -63,7 +63,7 @@ def test_missing_retry_after_is_none() -> None:
 def fetch(responses: list[httpx.Response], sleeps: list[float]) -> bytes:
     replies = iter(responses)
     http = httpx.Client(transport=httpx.MockTransport(lambda _: next(replies)))
-    response = _request(
+    response: httpx.Response = _request(
         http, "https://example.test", "/", {}, source="test", max_retries=3, sleep=sleeps.append
     )
     return response.content
