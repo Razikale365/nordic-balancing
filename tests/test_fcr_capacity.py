@@ -42,9 +42,7 @@ def dk1_rows() -> list[dict[str, Any]]:
 
 def product_rows(rows: list[dict[str, Any]], product: ReserveProduct) -> list[dict[str, Any]]:
     # The request filters on ProductName; a real server returns only these rows.
-    names = {
-        name for name, (p, _) in energidataservice._FCR_PRODUCTS.items() if p is product
-    }
+    names = {name for name, (p, _) in energidataservice._FCR_PRODUCTS.items() if p is product}
     return [r for r in rows if r["ProductName"] in names]
 
 
@@ -193,11 +191,7 @@ def test_eds_domestic_null_values(field: str) -> None:
 def test_eds_nd_rejects_bad_groups(product: ReserveProduct, failure: str) -> None:
     rows = product_rows(nd_rows(), product)
     if failure == "missing":
-        rows = [
-            r
-            for r in rows
-            if not (r["PriceArea"] == "SE3" and r["AuctionType"] == "Total")
-        ]
+        rows = [r for r in rows if not (r["PriceArea"] == "SE3" and r["AuctionType"] == "Total")]
         message = "missing Total"
     elif failure == "duplicate":
         rows.append(next(r.copy() for r in rows if r["AuctionType"] == "Total"))
@@ -323,9 +317,7 @@ def test_eds_fcr_allows_null_numeric_columns(product: ReserveProduct) -> None:
         zones: tuple[BiddingZone, ...] = (BiddingZone.DK1,)
     else:
         nulls = dict.fromkeys(energidataservice._FCR_ND_COLUMNS[5:])
-        rows = product_rows(
-            [{**r, **nulls} for r in nd_rows() if r["PriceArea"] == "DK2"], product
-        )
+        rows = product_rows([{**r, **nulls} for r in nd_rows() if r["PriceArea"] == "DK2"], product)
         zones = (BiddingZone.DK2,)
     result = eds_fetch(rows, product, zones)
     assert len(result) == 4
