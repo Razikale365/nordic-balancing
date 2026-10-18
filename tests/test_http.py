@@ -369,9 +369,7 @@ def test_get_json_rejects_a_body_over_the_size_cap(
     # the cap is shrunk here so the test needs no large body.
     monkeypatch.setattr(_http, "_LIMIT", 8)
     http = httpx.Client(
-        transport=httpx.MockTransport(
-            lambda _: httpx.Response(200, json={"v": "0123456789"})
-        )
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"v": "0123456789"}))
     )
     with pytest.raises(SourceError, match="^test: response for /api exceeds 8 bytes$"):
         get_json(
