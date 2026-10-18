@@ -35,7 +35,20 @@ def test_filters_by_zone() -> None:
     window = (datetime(2025, 1, 1, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC))
 
     assert len(changes_between(*window, zones=[BiddingZone.DK1])) == 3
-    assert changes_between(*window, zones=[]) == []
+    with pytest.raises(ValueError, match="zones must not be empty"):
+        changes_between(*window, zones=[])
+
+
+@pytest.mark.parametrize(
+    "zones",
+    [BiddingZone.DK1, "DK1", ["DK1"], ["garbage"], [42]],
+)
+def test_zones_must_be_a_non_empty_iterable_of_bidding_zones(zones: object) -> None:
+    # A bare BiddingZone/str iterates its characters; every element check must
+    # reject it, matching the client query methods.
+    window = (datetime(2025, 1, 1, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC))
+    with pytest.raises(ValueError, match="zones must contain only BiddingZone values"):
+        changes_between(*window, zones=zones)  # type: ignore[arg-type]
 
 
 def test_fi_window_returns_the_fingrid_and_nordic_changes() -> None:

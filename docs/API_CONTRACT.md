@@ -36,7 +36,10 @@ Everything else is private:
   changes to a capacity market's definition (for example the EDS FCR-N/FCR-D
   price-basis change at `2024-02-01`) are documented per dataset under "Capacity
   market methods", not as `MarketChange` entries. `changes_between` raises
-  `ValueError` when `end` is before `start`.
+  `ValueError` when `end` is before `start`, and when `zones` is given but is
+  empty or contains a value that is not a `BiddingZone` — a bare `BiddingZone`
+  or zone-name string is not an iterable of zones and raises the same
+  `ValueError` the client query methods raise for it.
 
 `tests/test_public_api.py` compares the public surface against
 `tests/api_snapshot.json` and fails on any unrecorded addition, removal, or
