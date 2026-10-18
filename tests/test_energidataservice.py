@@ -332,6 +332,32 @@ def test_rejects_records_outside_the_query_window(time_utc: str) -> None:
         client(lambda _: page([record])).imbalance_prices(START, END)
 
 
+def test_rejects_hourly_only_rows_in_the_15_minute_dataset() -> None:
+    # ImbalancePrice publishes every quarter; a zone returning only on-the-hour
+    # rows across more than one hour is an hourly cadence, not a gap (B11 M8,
+    # DS1-1), and must not be labelled resolution=INTERVAL.
+    rows = [
+        {**PUBLISHED, "TimeUTC": "2026-10-09T02:00:00"},
+        {**PUBLISHED, "TimeUTC": "2026-10-09T03:00:00"},
+    ]
+    with pytest.raises(SourceError, match="only on the hour"):
+        client(lambda _: page(rows)).imbalance_prices(
+            HOUR_START, HOUR_START + timedelta(hours=2)
+        )
+
+
+def test_accepts_on_hour_rows_when_a_quarter_row_is_present() -> None:
+    rows = [
+        {**PUBLISHED, "TimeUTC": "2026-10-09T02:00:00"},
+        {**PUBLISHED, "TimeUTC": "2026-10-09T02:15:00"},
+        {**PUBLISHED, "TimeUTC": "2026-10-09T03:00:00"},
+    ]
+    prices = client(lambda _: page(rows)).imbalance_prices(
+        HOUR_START, HOUR_START + timedelta(hours=2)
+    )
+    assert len(prices) == 3
+
+
 def test_sub_minute_window_bounds_are_rounded_outwards_then_filtered() -> None:
     seen: list[httpx.Request] = []
     before_start = {**PUBLISHED, "TimeUTC": "2026-10-09T02:30:00", "PriceArea": "DK1"}

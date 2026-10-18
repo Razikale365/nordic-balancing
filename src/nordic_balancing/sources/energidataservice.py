@@ -176,6 +176,12 @@ class EnergiDataServiceClient:
         }
         prices: list[ImbalancePrice] = []
         seen: set[tuple[BiddingZone, datetime]] = set()
+        # The dataset publishes every quarter hour. A zone whose rows are all on
+        # the hour across more than one hour has reverted to an hourly cadence,
+        # which `resolution=INTERVAL` would mislabel; a lone :00 row is only a
+        # sparse hour and stays allowed.
+        quartered: set[BiddingZone] = set()
+        on_hour: dict[BiddingZone, set[datetime]] = {}
         for record in self._records("ImbalancePrice", params):
             price = _parse_imbalance(record)
             if price.zone not in zone_list:
@@ -188,8 +194,17 @@ class EnergiDataServiceClient:
                 source=SOURCE,
                 detail=f"record for {price.zone.value} at {price.start.isoformat()}",
             )
+            if price.start.minute:
+                quartered.add(price.zone)
+            else:
+                on_hour.setdefault(price.zone, set()).add(price.start)
             if start_utc <= price.start < end_utc:
                 prices.append(price)
+        for zone, hours in on_hour.items():
+            if len(hours) > 1 and zone not in quartered:
+                raise SourceError(
+                    f"{SOURCE}: ImbalancePrice rows for {zone.value} are only on the hour"
+                )
         prices.sort(key=lambda p: (p.start, p.zone))
         return prices
 
