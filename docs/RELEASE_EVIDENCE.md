@@ -2,13 +2,13 @@
 
 Originally compiled 2026-10-09, before the first PyPI release; updated 2026-10-12
 for the 0.1.0 ENTSO-E live verification and again after it for the committed
-ENTSO-E validation script; updated 2026-10-15 for 0.2.0 (not published) and 2026-10-17
-for 0.3.0. Each live result carries the
+ENTSO-E validation script; updated 2026-10-15 for 0.2.0 (not published), 2026-10-17
+for 0.3.0 and 2026-10-18 for 0.3.1. Each live result carries the
 date it was observed. Every claim cites a file, a test, a command or a URL.
 
 ## Status
 
-- Version `0.3.0` (`pyproject.toml`); **beta** (classifier `Development Status :: 4 -
+- Version `0.3.1` (`pyproject.toml`); **beta** (classifier `Development Status :: 4 -
   Beta`). The public surface is defined and tested (`docs/API_CONTRACT.md`,
   `tests/test_public_api.py`); before 1.0 it can still change between minor versions,
   and any such change is listed in the CHANGELOG. 0.1.0 was the first non-pre-release;
@@ -21,7 +21,10 @@ date it was observed. Every claim cites a file, a test, a command or a URL.
   passed 17 of 17 with none skipped. Scheduled runs on 2026-10-16
   ([38912353249](https://github.com/Razikale365/nordic-balancing/actions/runs/38912353249)) and
   2026-10-17 ([39034830595](https://github.com/Razikale365/nordic-balancing/actions/runs/39034830595))
-  also passed with none skipped. The local live suite for 0.3.0 has 33 tests.
+  also passed with none skipped. The live suite for 0.3.1 has 34 tests (one added for the
+  October fall-back hours); the scheduled run of 2026-10-18 on the release commit's code
+  ([39131176760](https://github.com/Razikale365/nordic-balancing/actions/runs/39131176760))
+  passed 34 of 34.
 - Licence: MIT (`LICENSE`). Retrieved data remains under each source's own terms.
 - Runtime dependency: `httpx>=0.27,<1` only. Optional extra `pandas` (`pandas>=2.1`), used
   only by `to_frame`; CI runs the suite at the lowest allowed version (pandas 2.1, the
@@ -236,20 +239,20 @@ See [API_CONTRACT.md — Known limitations](API_CONTRACT.md#known-limitations).
 
 ## Test coverage
 
-- Offline suite (default; `addopts` deselects `live`): 1402 tests, all passing on
-  2026-10-17. `tests/test_properties.py` holds Hypothesis property tests: for every
+- Offline suite (default; `addopts` deselects `live`): 1421 tests, all passing on
+  2026-10-18. `tests/test_properties.py` holds Hypothesis property tests: for every
   client, splitting the window gives the same records, and every start is on the
   15-minute grid in `[start, end)` with none missing; it also checks reconciliation
   symmetry. `tests/test_public_api.py` fails on any change to the public surface, and
   `tests/test_field_matrix.py` enforces `docs/FIELD_MATRIX.md`.
-- Live suite (`uv run pytest -m live`): 33 tests. The Fingrid tests skip without
+- Live suite (`uv run pytest -m live`): 34 tests. The Fingrid tests skip without
   `FINGRID_API_KEY`, the ENTSO-E tests without `ENTSOE_API_KEY`;
   `tests/test_live_recent.py` checks a recent window for each source daily.
 - Test counts show what runs, not that it is correct. Count them with:
 
 ```
 uv run pytest --co -q | tail -1
-1402/1435 tests collected (33 deselected)
+1421/1455 tests collected (34 deselected)
 ```
 
 Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in

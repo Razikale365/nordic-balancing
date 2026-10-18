@@ -4,7 +4,7 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the project is in beta: the public API is defined in
 [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it before 1.0 is listed here.
 
-## 0.3.1 — unreleased
+## 0.3.1 — 2026-10-18
 
 ### Fixed
 - **Energi Data Service:** FCR-N and FCR-D `capacity_market` no longer raises
