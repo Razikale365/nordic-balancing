@@ -1600,15 +1600,11 @@ def test_redacts_a_percent_encoded_token_echoed_by_the_server(status: int) -> No
     assert encoded != key
     http = httpx.Client(
         transport=httpx.MockTransport(
-            lambda _: httpx.Response(
-                status, text=f"Invalid parameter securityToken={encoded}"
-            )
+            lambda _: httpx.Response(status, text=f"Invalid parameter securityToken={encoded}")
         )
     )
     with pytest.raises(SourceError) as caught:
-        EntsoeClient(key, http, max_retries=0).imbalance_prices(
-            START, END, [BiddingZone.SE3]
-        )
+        EntsoeClient(key, http, max_retries=0).imbalance_prices(START, END, [BiddingZone.SE3])
     message = "".join(traceback.format_exception(caught.value))
     assert key not in message and encoded not in message
     assert "[REDACTED_SECRET]" in message
@@ -1620,9 +1616,7 @@ def test_redacts_a_percent_encoded_token_in_an_acknowledgement() -> None:
     body = acknowledgement(f"rejected securityToken={encoded}")
     http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, text=body)))
     with pytest.raises(SourceError) as caught:
-        EntsoeClient(key, http, max_retries=0).imbalance_prices(
-            START, END, [BiddingZone.SE3]
-        )
+        EntsoeClient(key, http, max_retries=0).imbalance_prices(START, END, [BiddingZone.SE3])
     assert encoded not in str(caught.value)
     assert key not in str(caught.value)
 
