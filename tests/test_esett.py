@@ -271,6 +271,71 @@ def test_purchase_only_price_is_kept_not_dropped() -> None:
     assert price.raw["imblSalesPrice"] is None
 
 
+# Verbatim eSett rows captured live 2026-10-18: while DK intervals are
+# unsettled every price column arrives as exactly 0.0, not null.
+DK_PLACEHOLDER: dict[str, Any] = {
+    "timestamp": "2026-10-18T22:30:00",
+    "timestampUTC": "2026-10-18T20:30:00Z",
+    "mba": "DK2",
+    "imblSalesPrice": 0.0,
+    "imblPurchasePrice": 0.0,
+    "upRegPrice": 0.0,
+    "downRegPrice": 0.0,
+    "mainDirRegPowerPerMBA": 0.0,
+    "imblSpotDifferencePrice": -170.92,
+    "upRegPriceFrrA": 0.0,
+    "downRegPriceFrrA": 0.0,
+    "valueOfAvoidedActivation": None,
+    "incentivisingComponent": None,
+}
+
+
+def test_dk_all_zero_row_is_the_unpublished_placeholder() -> None:
+    prices = client(lambda _: httpx.Response(200, json=[DK_PLACEHOLDER])).imbalance_prices(
+        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
+        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
+        [BiddingZone.DK2],
+    )
+    assert len(prices) == 1
+    placeholder = prices[0]
+    assert placeholder.imbalance_price_eur is None
+    assert placeholder.dominating_direction is None
+    assert placeholder.mfrr_up_price_eur is None
+    assert placeholder.mfrr_down_price_eur is None
+    # raw keeps the published zeros.
+    assert placeholder.raw["imblSalesPrice"] == 0.0
+    assert placeholder.raw["imblSpotDifferencePrice"] == -170.92
+
+
+def test_dk_settled_row_with_a_single_zero_price_is_real() -> None:
+    record = {
+        **DK_PLACEHOLDER,
+        "downRegPrice": 0.0,
+        "imblSalesPrice": 42.0,
+        "imblPurchasePrice": 42.0,
+        "upRegPrice": 50.0,
+    }
+    prices = client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
+        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
+        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
+        [BiddingZone.DK2],
+    )
+    assert prices[0].imbalance_price_eur == 42.0
+    assert prices[0].mfrr_down_price_eur == 0.0
+    assert prices[0].dominating_direction is Direction.NONE
+
+
+def test_all_zero_row_is_real_for_non_dk_zones() -> None:
+    record = {**DK_PLACEHOLDER, "mba": "SE3"}
+    prices = client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
+        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
+        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
+        [BiddingZone.SE3],
+    )
+    assert prices[0].imbalance_price_eur == 0.0
+    assert prices[0].dominating_direction is Direction.NONE
+
+
 def test_rejects_sales_purchase_disagreement() -> None:
     record = {**PUBLISHED, "imblPurchasePrice": 22}
     with pytest.raises(SourceError, match="esett: single-price model violated"):

@@ -254,7 +254,9 @@ bidding zone, product, direction, and 15-minute UTC interval:
   returned record means the source has not published that value yet or does not
   provide that field. eSett, Svenska kraftnät and Energi Data Service records that
   lack a value key or a requested column raise `SourceError`; only an explicit null
-  becomes `None`.
+  becomes `None`, except that eSett DK1/DK2 mark an unsettled interval with `0.0`
+  in every price column (`imblSalesPrice`, `imblPurchasePrice`, `upRegPrice`,
+  `downRegPrice`), which maps to `None` the same way.
 - **Numbers**: numeric source values must be finite JSON numbers convertible to
   `float` (`bool`, `NaN`, and infinities are rejected with `SourceError`).
   ENTSO-E XML values must be ASCII `xs:decimal` text and positions ASCII

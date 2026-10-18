@@ -28,6 +28,9 @@ _VALUE_KEYS = (
     "downRegPrice",
     "mainDirRegPowerPerMBA",
 )
+# DK1/DK2 mark an interval that is not settled yet with 0.0 in every price
+# column instead of null; SE, NO and FI use null, so the signature is DK-only.
+_DK_ZONES = frozenset({BiddingZone.DK1, BiddingZone.DK2})
 _EIC_CODES = {
     BiddingZone.DK1: "10YDK-1--------W",
     BiddingZone.DK2: "10YDK-2--------M",
@@ -217,18 +220,26 @@ def _parse_imbalance(record: object) -> ImbalancePrice:
     # price published in only one column is that price (never observed in ~107k
     # records, 2021-11 to 2026-10, but it must not be dropped as None).
     single = sales if sales is not None else purchase
+    up = _number(record, "upRegPrice")
+    down = _number(record, "downRegPrice")
+    direction = _direction(record)
+    zone = BiddingZone[area]
+    if zone in _DK_ZONES and sales == purchase == up == down == 0.0:
+        # The pre-settlement DK placeholder is not a price; report it as
+        # unpublished, like the null rows the other zones send for it.
+        single = up = down = direction = None
     return ImbalancePrice(
         start=start,
-        zone=BiddingZone[area],
+        zone=zone,
         imbalance_price_eur=single,
         imbalance_price_dkk=None,
         spot_price_eur=None,
-        dominating_direction=_direction(record),
+        dominating_direction=direction,
         satisfied_demand_mw=None,
         afrr_up_vwa_eur=None,
         afrr_down_vwa_eur=None,
-        mfrr_up_price_eur=_number(record, "upRegPrice"),
-        mfrr_down_price_eur=_number(record, "downRegPrice"),
+        mfrr_up_price_eur=up,
+        mfrr_down_price_eur=down,
         source=SOURCE,
         resolution=_HOUR if start < _HOURLY_END else INTERVAL,
         raw=record,
