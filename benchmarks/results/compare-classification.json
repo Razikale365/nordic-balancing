@@ -1,0 +1,258 @@
+{
+  "status": "COMPLETE_WITH_NONCOMPARABLE_WORKLOADS",
+  "date": "2026-10-18",
+  "real_request_mappings": [],
+  "corpus_integrity": "847 response-body fingerprints and set metadata unchanged",
+  "sets": {
+    "entsoe-imb-SE3-day-2025-10-26": {
+      "status": "COMPARED",
+      "price_values": "no difference",
+      "interval_cardinality": {
+        "classification": "no difference",
+        "explanation": "Same interval identities and cardinality.",
+        "nb_only_intervals": 0,
+        "alternative_only_intervals": 0
+      },
+      "calendar_grid_shortfall": {
+        "classification": "no difference",
+        "explanation": "Full quarter-hour coverage."
+      },
+      "timezone_and_order": {
+        "classification": "expected domain difference",
+        "explanation": "Nordic UTC/time-zone sorting versus local-aware per-zone frames or raw source dictionaries; canonical UTC identities and per-zone order agree."
+      },
+      "output_metadata": {
+        "classification": "expected domain difference",
+        "explanation": "Typed normalized fields and raw-record isolation versus native DataFrame columns or unchanged JSON dictionaries; see report retention table."
+      },
+      "evidence": [
+        "compare-real.json#/sets/entsoe-imb-SE3-day-2025-10-26",
+        "compare-source.json#/sets/entsoe-imb-SE3-day-2025-10-26"
+      ]
+    },
+    "entsoe-imb-SE3-localday-2025-10-26": {
+      "status": "COMPARED",
+      "price_values": "no difference",
+      "interval_cardinality": {
+        "classification": "no difference",
+        "explanation": "Same interval identities and cardinality.",
+        "nb_only_intervals": 0,
+        "alternative_only_intervals": 0
+      },
+      "calendar_grid_shortfall": {
+        "classification": "no difference",
+        "explanation": "Full quarter-hour coverage."
+      },
+      "timezone_and_order": {
+        "classification": "expected domain difference",
+        "explanation": "Nordic UTC/time-zone sorting versus local-aware per-zone frames or raw source dictionaries; canonical UTC identities and per-zone order agree."
+      },
+      "output_metadata": {
+        "classification": "expected domain difference",
+        "explanation": "Typed normalized fields and raw-record isolation versus native DataFrame columns or unchanged JSON dictionaries; see report retention table."
+      },
+      "evidence": [
+        "compare-real.json#/sets/entsoe-imb-SE3-localday-2025-10-26",
+        "compare-source.json#/sets/entsoe-imb-SE3-localday-2025-10-26"
+      ]
+    },
+    "entsoe-imb-SE3-month-2025-10": {
+      "status": "COMPARED",
+      "price_values": "no difference",
+      "interval_cardinality": {
+        "classification": "no difference",
+        "explanation": "Same interval identities and cardinality.",
+        "nb_only_intervals": 0,
+        "alternative_only_intervals": 0
+      },
+      "calendar_grid_shortfall": {
+        "classification": "no difference",
+        "explanation": "Full quarter-hour coverage."
+      },
+      "timezone_and_order": {
+        "classification": "expected domain difference",
+        "explanation": "Nordic UTC/time-zone sorting versus local-aware per-zone frames or raw source dictionaries; canonical UTC identities and per-zone order agree."
+      },
+      "output_metadata": {
+        "classification": "expected domain difference",
+        "explanation": "Typed normalized fields and raw-record isolation versus native DataFrame columns or unchanged JSON dictionaries; see report retention table."
+      },
+      "evidence": [
+        "compare-real.json#/sets/entsoe-imb-SE3-month-2025-10",
+        "compare-source.json#/sets/entsoe-imb-SE3-month-2025-10"
+      ]
+    },
+    "entsoe-imb-SE3-year-2025": {
+      "status": "COMPARED",
+      "price_values": "no difference",
+      "interval_cardinality": {
+        "classification": "expected domain difference",
+        "explanation": "Published hourly slots expand into four Nordic quarters; native alternative frequency retained.",
+        "nb_only_intervals": 5457,
+        "alternative_only_intervals": 0
+      },
+      "calendar_grid_shortfall": {
+        "classification": "expected domain difference",
+        "explanation": "Complete calendar grid versus source-supported observations; independent XML audit proves neither client dropped source data. Upstream publication-gap cause remains UNKNOWN."
+      },
+      "timezone_and_order": {
+        "classification": "expected domain difference",
+        "explanation": "Nordic UTC/time-zone sorting versus local-aware per-zone frames or raw source dictionaries; canonical UTC identities and per-zone order agree."
+      },
+      "output_metadata": {
+        "classification": "expected domain difference",
+        "explanation": "Typed normalized fields and raw-record isolation versus native DataFrame columns or unchanged JSON dictionaries; see report retention table."
+      },
+      "evidence": [
+        "compare-real.json#/sets/entsoe-imb-SE3-year-2025",
+        "compare-source.json#/sets/entsoe-imb-SE3-year-2025"
+      ]
+    },
+    "entsoe-imb-all-year-2025": {
+      "status": "COMPARED",
+      "price_values": "no difference",
+      "interval_cardinality": {
+        "classification": "expected domain difference",
+        "explanation": "Published hourly slots expand into four Nordic quarters; native alternative frequency retained.",
+        "nb_only_intervals": 54411,
+        "alternative_only_intervals": 0
+      },
+      "calendar_grid_shortfall": {
+        "classification": "expected domain difference",
+        "explanation": "Complete calendar grid versus source-supported observations; independent XML audit proves neither client dropped source data. Upstream publication-gap cause remains UNKNOWN."
+      },
+      "timezone_and_order": {
+        "classification": "expected domain difference",
+        "explanation": "Nordic UTC/time-zone sorting versus local-aware per-zone frames or raw source dictionaries; canonical UTC identities and per-zone order agree."
+      },
+      "output_metadata": {
+        "classification": "expected domain difference",
+        "explanation": "Typed normalized fields and raw-record isolation versus native DataFrame columns or unchanged JSON dictionaries; see report retention table."
+      },
+      "evidence": [
+        "compare-real.json#/sets/entsoe-imb-all-year-2025",
+        "compare-source.json#/sets/entsoe-imb-all-year-2025"
+      ]
+    },
+    "entsoe-imb-SE3-year-2022": {
+      "status": "COMPARED",
+      "price_values": "no difference",
+      "interval_cardinality": {
+        "classification": "expected domain difference",
+        "explanation": "Published hourly slots expand into four Nordic quarters; native alternative frequency retained.",
+        "nb_only_intervals": 26043,
+        "alternative_only_intervals": 0
+      },
+      "calendar_grid_shortfall": {
+        "classification": "expected domain difference",
+        "explanation": "Complete calendar grid versus source-supported observations; independent XML audit proves neither client dropped source data. Upstream publication-gap cause remains UNKNOWN."
+      },
+      "timezone_and_order": {
+        "classification": "expected domain difference",
+        "explanation": "Nordic UTC/time-zone sorting versus local-aware per-zone frames or raw source dictionaries; canonical UTC identities and per-zone order agree."
+      },
+      "output_metadata": {
+        "classification": "expected domain difference",
+        "explanation": "Typed normalized fields and raw-record isolation versus native DataFrame columns or unchanged JSON dictionaries; see report retention table."
+      },
+      "evidence": [
+        "compare-real.json#/sets/entsoe-imb-SE3-year-2022",
+        "compare-source.json#/sets/entsoe-imb-SE3-year-2022"
+      ]
+    },
+    "entsoe-cap-FCRN-NO-year-2025": {
+      "status": "NOT_COMPARABLE",
+      "classification": "expected domain difference",
+      "explanation": "Public-client request chunk/parameter shape is absent from frozen manifest.",
+      "evidence": [
+        "compare-real.json#/sets/entsoe-cap-FCRN-NO-year-2025"
+      ]
+    },
+    "esett-imb-SE3-year-2025": {
+      "status": "COMPARED",
+      "price_values": "no difference",
+      "interval_cardinality": {
+        "classification": "no difference",
+        "explanation": "Same interval identities and cardinality.",
+        "nb_only_intervals": 0,
+        "alternative_only_intervals": 0
+      },
+      "calendar_grid_shortfall": {
+        "classification": "no difference",
+        "explanation": "Full quarter-hour coverage."
+      },
+      "timezone_and_order": {
+        "classification": "expected domain difference",
+        "explanation": "Nordic UTC/time-zone sorting versus local-aware per-zone frames or raw source dictionaries; canonical UTC identities and per-zone order agree."
+      },
+      "output_metadata": {
+        "classification": "expected domain difference",
+        "explanation": "Typed normalized fields and raw-record isolation versus native DataFrame columns or unchanged JSON dictionaries; see report retention table."
+      },
+      "evidence": [
+        "compare-real.json#/sets/esett-imb-SE3-year-2025"
+      ]
+    },
+    "esett-imb-all-year-2025": {
+      "status": "COMPARED",
+      "price_values": "no difference",
+      "interval_cardinality": {
+        "classification": "no difference",
+        "explanation": "Same interval identities and cardinality.",
+        "nb_only_intervals": 0,
+        "alternative_only_intervals": 0
+      },
+      "calendar_grid_shortfall": {
+        "classification": "no difference",
+        "explanation": "Full quarter-hour coverage."
+      },
+      "timezone_and_order": {
+        "classification": "expected domain difference",
+        "explanation": "Nordic UTC/time-zone sorting versus local-aware per-zone frames or raw source dictionaries; canonical UTC identities and per-zone order agree."
+      },
+      "output_metadata": {
+        "classification": "expected domain difference",
+        "explanation": "Typed normalized fields and raw-record isolation versus native DataFrame columns or unchanged JSON dictionaries; see report retention table."
+      },
+      "evidence": [
+        "compare-real.json#/sets/esett-imb-all-year-2025"
+      ]
+    },
+    "eds-imb-DK-year-2025": {
+      "status": "NOT_COMPARABLE",
+      "classification": "expected domain difference",
+      "explanation": "No equivalent selected-client market function.",
+      "evidence": [
+        "compare-real.json#/sets/eds-imb-DK-year-2025"
+      ]
+    },
+    "eds-cap-FCRN-year-2025": {
+      "status": "NOT_COMPARABLE",
+      "classification": "expected domain difference",
+      "explanation": "No equivalent selected-client market function.",
+      "evidence": [
+        "compare-real.json#/sets/eds-cap-FCRN-year-2025"
+      ]
+    },
+    "eds-cap-aFRR-month-2025-10": {
+      "status": "NOT_COMPARABLE",
+      "classification": "expected domain difference",
+      "explanation": "No equivalent selected-client market function.",
+      "evidence": [
+        "compare-real.json#/sets/eds-cap-aFRR-month-2025-10"
+      ]
+    }
+  },
+  "handmade_regressions": {
+    "duplicate_position": {
+      "classification": "upstream defect",
+      "scope": "injected input only; validation-policy difference"
+    },
+    "missing_optional_category_or_amount": {
+      "classification": "implementation defect",
+      "client": "entsoe-py 0.8.1",
+      "scope": "handmade input only; AttributeError"
+    }
+  },
+  "release_approval": false
+}
