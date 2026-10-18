@@ -403,6 +403,57 @@ def test_rows_reported_with_a_zero_total_still_raise() -> None:
         client(lambda _: httpx.Response(200, json=body)).series(319, START, END)
 
 
+def _paged_server(rows: list[Any], server_page_size: int) -> Handler:
+    def handler(request: httpx.Request) -> httpx.Response:
+        number = int(request.url.params["page"])
+        window = rows[(number - 1) * server_page_size : number * server_page_size]
+        return httpx.Response(
+            200,
+            json={
+                "data": window,
+                "pagination": {
+                    "total": len(rows),
+                    "lastPage": -(-len(rows) // server_page_size),
+                    "perPage": server_page_size,
+                },
+            },
+        )
+
+    return handler
+
+
+def test_pages_follow_the_server_reported_page_size() -> None:
+    # The provider may cap a page below the requested pageSize; a full page is
+    # what the server reports in perPage.
+    rows = [row(quarter=q, value=q) for q in range(192)]
+    values = client(_paged_server(rows, 100)).series(319, START, START + timedelta(days=2))
+    assert values == [(START + q * INTERVAL, float(q)) for q in range(192)]
+
+
+def test_a_page_short_of_the_server_reported_page_size_raises() -> None:
+    rows = [row(quarter=q, value=q) for q in range(192)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        window = rows[:50] if request.url.params["page"] == "1" else rows[100:]
+        return httpx.Response(
+            200,
+            json={
+                "data": window,
+                "pagination": {"total": 192, "lastPage": 2, "perPage": 100},
+            },
+        )
+
+    with pytest.raises(SourceError, match="ended with row count"):
+        client(handler).series(319, START, START + timedelta(days=2))
+
+
+@pytest.mark.parametrize("per_page", [True, 0, -5, "100"])
+def test_rejects_an_invalid_per_page(per_page: Any) -> None:
+    body = {"data": [], "pagination": {"total": 0, "lastPage": 1, "perPage": per_page}}
+    with pytest.raises(SourceError, match="invalid perPage"):
+        client(lambda _: httpx.Response(200, json=body)).series(319, START, END)
+
+
 @pytest.mark.parametrize(
     "rows, message",
     [

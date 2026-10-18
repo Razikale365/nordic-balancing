@@ -386,6 +386,14 @@ class FingridClient:
             last_page = 1
         elif isinstance(last_page, bool) or not isinstance(last_page, int) or last_page < 1:
             raise SourceError(f"{SOURCE}: page 1 has invalid lastPage")
+        # The provider may answer with a smaller page size than requested; a
+        # full page is what the server reports, capped at the request size.
+        per_page = pagination.get("perPage")
+        if per_page is None:
+            per_page = PAGE_SIZE
+        elif isinstance(per_page, bool) or not isinstance(per_page, int) or per_page < 1:
+            raise SourceError(f"{SOURCE}: page 1 has invalid perPage")
+        full_page = min(per_page, PAGE_SIZE)
         rows: list[Any] = []
         for page in range(1, last_page + 1):
             if page > 1:
@@ -396,7 +404,7 @@ class FingridClient:
                     f"{SOURCE}: row count {len(rows)} != page-1 total {total}; "
                     "data changed or truncated"
                 )
-            if len(page_rows) < PAGE_SIZE and len(rows) < total:
+            if len(page_rows) < full_page and len(rows) < total:
                 raise SourceError(
                     f"{SOURCE}: page {page} ended with row count {len(rows)} != page-1 "
                     f"total {total}; data changed or truncated"
