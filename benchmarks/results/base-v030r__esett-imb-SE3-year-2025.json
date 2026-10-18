@@ -1,0 +1,193 @@
+{
+  "set": "esett-imb-SE3-year-2025",
+  "tag": "base-v030r",
+  "n": 5,
+  "records": 35040,
+  "requests": 12,
+  "response_bytes": 12091990,
+  "live_elapsed_s": 7.722129000001587,
+  "serial_wall_s": 1.4042513999156654,
+  "serial_records": 35040,
+  "environment": {
+    "host": {
+      "platform": "Windows-11-10.0.22621-SP0",
+      "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "logical_cpus": 6,
+      "physical_cpus": 6,
+      "ram_bytes": 34268110848
+    },
+    "python": "3.12.13",
+    "packages": {
+      "nordic-balancing": "0.3.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    },
+    "git_commit": "29bcbe2f2a000455438b46b6df4b7a0deaa2a880",
+    "in_container": false,
+    "cgroup_limits": "none (not in a cgroup-limited container)",
+    "docker_image": null
+  },
+  "samples": [
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 0.84375,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.2212454000255093,
+      "peak_rss_bytes": 127143936,
+      "stages_s": {
+        "to_frame": 0.1453725000610575
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 1.25,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.6268861000426114,
+      "peak_rss_bytes": 127365120,
+      "stages_s": {
+        "to_frame": 0.18970650003757328
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 1.03125,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.1876302999444306,
+      "peak_rss_bytes": 127094784,
+      "stages_s": {
+        "to_frame": 0.1270404999377206
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 0.65625,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.1327647999860346,
+      "peak_rss_bytes": 126980096,
+      "stages_s": {
+        "to_frame": 0.1518986999290064
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 0.984375,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.353570400038734,
+      "peak_rss_bytes": 127062016,
+      "stages_s": {
+        "to_frame": 0.15494919999036938
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    }
+  ],
+  "stage_sample": {
+    "set": "esett-imb-SE3-year-2025",
+    "ok": true,
+    "serial_wall_s": 1.4042513999156654,
+    "error": null,
+    "records": 35040,
+    "frame_rows": 35040,
+    "requests": 12,
+    "response_bytes": 12091990,
+    "live_elapsed_s": 7.722129000001587,
+    "wall_s": 1.4042513999156654,
+    "peak_rss_bytes": 127586304,
+    "stages_s": {
+      "transport": 0.026130000362172723,
+      "zip_read": 0.0,
+      "decode": 0.14813300024252385,
+      "parse_validate": 0.9243834039662033,
+      "construction": 0.5675645987503231,
+      "dataclass_replace": 0.0,
+      "to_frame": 0.18087229994125664
+    },
+    "stage_calls": {
+      "transport": 12,
+      "zip_read": 0,
+      "decode": 12,
+      "parse_validate": 35040,
+      "construction": 35040,
+      "dataclass_replace": 0,
+      "to_frame": 1
+    },
+    "residual_other_s": 0.3056049953447655
+  },
+  "median": {
+    "wall_s": 1.2212454000255093,
+    "cpu_s": 0.984375,
+    "peak_rss_bytes": 127094784,
+    "construction": 0.5675645987503231,
+    "dataclass_replace": 0.0,
+    "decode": 0.14813300024252385,
+    "parse_validate": 0.9243834039662033,
+    "residual_other_s": 0.3056049953447655,
+    "to_frame": 0.18087229994125664,
+    "transport": 0.026130000362172723,
+    "zip_read": 0.0,
+    "to_frame_calls": 1
+  },
+  "p95": {
+    "wall_s": 1.6268861000426114,
+    "cpu_s": 1.25,
+    "peak_rss_bytes": 127365120,
+    "construction": 0.5675645987503231,
+    "dataclass_replace": 0.0,
+    "decode": 0.14813300024252385,
+    "parse_validate": 0.9243834039662033,
+    "residual_other_s": 0.3056049953447655,
+    "to_frame": 0.18087229994125664,
+    "transport": 0.026130000362172723,
+    "zip_read": 0.0
+  },
+  "records_per_s": 28692.022094222903
+}

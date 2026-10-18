@@ -95,3 +95,32 @@ identical object graphs, just skips dispatch).
   proportion for the pre-1.0 window. The stage data documenting the
   remaining replace cost is in PERFORMANCE_BASELINE.md for post-1.0 work.
 - No caching, no async, no schema change, no new dependencies.
+
+## Follow-up by the lead (Opus), 2026-10-18
+
+Review of 825e12c found one contract gap: `isinstance(value, _ATOMIC)` also matched `str`/`int`
+subclasses, so a caller-supplied subclass instance with mutable attributes was shared instead of
+deep-copied. **5550457** checks exact types (test `test_raw_deep_copies_scalar_subclasses_with_state`
+fails on 825e12c, passes after).
+
+Profiling eSett SE3 2025 after 825e12c still showed `_copy_raw` at ~45 % of the call: scalars reached
+the fast path only after the abc `isinstance(value, Mapping)` check (455k abc calls for 35k
+records). **a16e844** tests the exact type first and copies a builtin dict's scalar values inline.
+cProfile: `_copy_raw` cumulative 1.69 s -> 0.14 s, function calls 5.27 M -> 2.05 M.
+`compare_outputs.py`: identical on all 12 fixture sets (1.42 M records, `raw` included).
+
+End-to-end, quiet host (no other agents running), N = 5 + 1 warmup per side, sequential,
+`base-v030r` (29bcbe2, run from `perf-base`'s own environment) vs `cand-a16e844`:
+
+| set | v0.3.0 median [min-max] | a16e844 median [min-max] | change | peak RSS |
+|---|---|---|---:|---|
+| esett-imb-SE3-year-2025 | 1.22 s [1.13-1.63] | 0.79 s [0.76-0.81] | -36 % | 121 MiB, unchanged |
+| esett-imb-all-year-2025 | 15.78 s [14.98-18.07] | 10.91 s [10.65-11.00] | -31 % | 685 MiB, unchanged |
+| entsoe-imb-SE3-year-2025 | 4.30 s [4.09-4.95] | 3.40 s [3.24-3.66] | -21 % | 155 MiB, unchanged |
+| entsoe-imb-all-year-2025 | 59.98 s [58.16-72.21] | 48.41 s [47.56-51.45] | -19 % | 1,090 -> 1,081 MiB |
+| eds-imb-DK-year-2025 | 1.75 s [1.74-1.83] | 1.38 s [1.30-1.97] | -21 % | 154 MiB, unchanged |
+
+The ranges do not overlap except one EDS outlier. Remaining gap to esett-py on eSett (Sol's
+comparison: 1.7 s vs 17.2 s before this work) is now validation, datetime parsing and record
+construction that esett-py does not do; it is no longer copying overhead. Not addressed: the
+ENTSO-E duplicate-merge `dataclasses.replace` chain (ranked second), deferred to after 1.0.
