@@ -364,6 +364,8 @@ class EnergiDataServiceClient:
             name = "FCR" if domestic else row["ProductName"]
             if not domestic and (not isinstance(name, str) or name not in _FCR_PRODUCTS):
                 raise SourceError(f"{SOURCE}: unknown ProductName {name!r}")
+            if not domestic and _FCR_PRODUCTS[name][0] is not product:
+                raise SourceError(f"{SOURCE}: unrequested ProductName {name!r}")
             reject_duplicate(
                 seen_rows,
                 (hour, zone, name, json.dumps(row.get("AuctionType"), sort_keys=True)),
@@ -393,11 +395,7 @@ class EnergiDataServiceClient:
         seen: set[tuple[datetime, BiddingZone, str]] = set()
         for key, rows in groups.items():
             hour, zone, name = key
-            row_product, direction = (
-                (ReserveProduct.FCR, Direction.NONE) if domestic else _FCR_PRODUCTS[name]
-            )
-            if row_product is not product:
-                continue
+            direction = Direction.NONE if domestic else _FCR_PRODUCTS[name][1]
             totals = rows if domestic else [r for r in rows if r["AuctionType"] == "Total"]
             if not totals:
                 raise SourceError(f"{SOURCE}: missing Total for {hour.isoformat()} {zone} {name}")

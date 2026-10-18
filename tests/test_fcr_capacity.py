@@ -40,6 +40,14 @@ def dk1_rows() -> list[dict[str, Any]]:
     return rows
 
 
+def product_rows(rows: list[dict[str, Any]], product: ReserveProduct) -> list[dict[str, Any]]:
+    # The request filters on ProductName; a real server returns only these rows.
+    names = {
+        name for name, (p, _) in energidataservice._FCR_PRODUCTS.items() if p is product
+    }
+    return [r for r in rows if r["ProductName"] in names]
+
+
 def eds_fetch(
     rows: list[dict[str, Any]],
     product: ReserveProduct = ReserveProduct.FCR_N,
@@ -70,7 +78,7 @@ def entsoe_fetch(
 @pytest.mark.parametrize("product", ND)
 def test_eds_nd_maps_products_directions_total_and_auctions(product: ReserveProduct) -> None:
     rows = nd_rows()
-    result = eds_fetch(list(reversed(rows)), product)
+    result = eds_fetch(list(reversed(product_rows(rows, product))), product)
     expected_directions = (
         {Direction.NONE}
         if product is ReserveProduct.FCR_N
@@ -136,7 +144,9 @@ def test_eds_dk1_maps_domestic_not_cross_border_and_keeps_raw() -> None:
     "zone", [BiddingZone.DK2, BiddingZone.SE1, BiddingZone.SE2, BiddingZone.SE3, BiddingZone.SE4]
 )
 def test_eds_nd_covers_each_advertised_zone(product: ReserveProduct, zone: BiddingZone) -> None:
-    rows = [{**r, "PriceArea": zone.value} for r in nd_rows() if r["PriceArea"] == "DK2"]
+    rows = product_rows(
+        [{**r, "PriceArea": zone.value} for r in nd_rows() if r["PriceArea"] == "DK2"], product
+    )
     result = eds_fetch(rows, product, (zone,))
     assert result and {r.zone for r in result} == {zone}
 
@@ -159,7 +169,7 @@ def test_eds_fcr_rejects_default_and_uncovered_zones(
 
 @pytest.mark.parametrize("field", ["PurchasedVolumeLocal", "PriceTotalEUR"])
 def test_eds_nd_null_values(field: str) -> None:
-    rows = [{**r, field: None} for r in nd_rows()]
+    rows = product_rows([{**r, field: None} for r in nd_rows()], ReserveProduct.FCR_N)
     result = eds_fetch(rows)
     assert len(result) == 8
     assert all(
@@ -178,34 +188,25 @@ def test_eds_domestic_null_values(field: str) -> None:
     )
 
 
+@pytest.mark.parametrize("product", ND)
 @pytest.mark.parametrize("failure", ["missing", "duplicate", "unknown"])
-def test_eds_nd_rejects_bad_groups(failure: str) -> None:
-    rows = nd_rows()
+def test_eds_nd_rejects_bad_groups(product: ReserveProduct, failure: str) -> None:
+    rows = product_rows(nd_rows(), product)
     if failure == "missing":
         rows = [
             r
             for r in rows
-            if not (
-                r["PriceArea"] == "SE3"
-                and r["ProductName"] == "FCR-N"
-                and r["AuctionType"] == "Total"
-            )
+            if not (r["PriceArea"] == "SE3" and r["AuctionType"] == "Total")
         ]
         message = "missing Total"
     elif failure == "duplicate":
-        rows.append(
-            next(
-                r.copy()
-                for r in rows
-                if r["AuctionType"] == "Total" and r["ProductName"] == "FCR-N"
-            )
-        )
+        rows.append(next(r.copy() for r in rows if r["AuctionType"] == "Total"))
         message = "duplicate"
     else:
         rows[0]["ProductName"] = "future product"
         message = "unknown ProductName"
     with pytest.raises(SourceError, match=message):
-        eds_fetch(rows)
+        eds_fetch(rows, product)
 
 
 def test_eds_nd_paging_sorts_by_a_unique_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -265,7 +266,7 @@ def test_eds_nd_stops_paging_when_a_full_page_repeats(
 
 @pytest.mark.parametrize("identical", [True, False])
 def test_eds_nd_rejects_duplicate_auction_row(identical: bool) -> None:
-    rows = nd_rows()
+    rows = product_rows(nd_rows(), ReserveProduct.FCR_N)
     duplicate = next(
         r.copy() for r in rows if r["AuctionType"] != "Total" and r["ProductName"] == "FCR-N"
     )
@@ -322,7 +323,9 @@ def test_eds_fcr_allows_null_numeric_columns(product: ReserveProduct) -> None:
         zones: tuple[BiddingZone, ...] = (BiddingZone.DK1,)
     else:
         nulls = dict.fromkeys(energidataservice._FCR_ND_COLUMNS[5:])
-        rows = [{**r, **nulls} for r in nd_rows() if r["PriceArea"] == "DK2"]
+        rows = product_rows(
+            [{**r, **nulls} for r in nd_rows() if r["PriceArea"] == "DK2"], product
+        )
         zones = (BiddingZone.DK2,)
     result = eds_fetch(rows, product, zones)
     assert len(result) == 4
@@ -782,30 +785,19 @@ def test_entsoe_capacity_validates_a03_start_even_for_non_overlapping_period() -
         entsoe_fetch(xml, start=START + 25 * HOUR, end=START + 26 * HOUR)
 
 
-@pytest.mark.parametrize("failure", ["missing", "duplicate"])
-def test_eds_nd_ignores_other_product_total_problems(failure: str) -> None:
-    rows = nd_rows()
-    if failure == "missing":
-        rows = [r for r in rows if r["ProductName"] == "FCR-N" or r["AuctionType"] != "Total"]
-        result = eds_fetch(rows)
-        assert len(result) == 8 and all(r.product is ReserveProduct.FCR_N for r in result)
-    else:
-        # The row-level duplicate check fires while paging, before the grouping
-        # stage filters products: a repeated row raises even when it names the
-        # unrequested product.
-        rows.append(
-            next(
-                r.copy()
-                for r in rows
-                if r["ProductName"] == "FCR-D upp" and r["AuctionType"] == "Total"
-            )
-        )
-        with pytest.raises(SourceError, match="duplicate"):
-            eds_fetch(rows)
-    with pytest.raises(
-        SourceError, match="missing Total" if failure == "missing" else "duplicate"
-    ):
-        eds_fetch(rows, ReserveProduct.FCR_D)
+@pytest.mark.parametrize("product", ND)
+def test_eds_nd_rejects_a_known_but_unrequested_product_name(
+    product: ReserveProduct,
+) -> None:
+    # The request filters ProductName to the queried product; a row for another
+    # known product violates that filter and must raise like an unrequested
+    # PriceArea does (B11, SWE1-3).
+    names = energidataservice._FCR_PRODUCTS
+    stray_name = next(name for name in names if names[name][0] is not product)
+    stray = next(r for r in nd_rows() if r["ProductName"] == stray_name)
+    rows = [*product_rows(nd_rows(), product), stray]
+    with pytest.raises(SourceError, match=f"unrequested ProductName {stray_name!r}"):
+        eds_fetch(rows, product)
 
 
 @pytest.mark.parametrize("product", [ReserveProduct.FCR_N, ReserveProduct.FCR])
