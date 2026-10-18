@@ -240,7 +240,7 @@ def _parse_imbalance(record: object) -> ImbalancePrice:
     down = _number(record, "downRegPrice")
     direction = _direction(record)
     zone = BiddingZone[area]
-    if zone in _DK_ZONES and sales == purchase == up == down == 0.0:
+    if zone in _DK_ZONES and sales == purchase == up == down == 0.0 and direction is Direction.NONE:
         # The pre-settlement DK placeholder is not a price; report it as
         # unpublished, like the null rows the other zones send for it.
         single = up = down = direction = None

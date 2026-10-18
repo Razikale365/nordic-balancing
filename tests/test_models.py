@@ -18,7 +18,7 @@ from nordic_balancing import (
     ReserveCapacity,
     ReserveProduct,
 )
-from nordic_balancing.models import _copy_raw, to_utc
+from nordic_balancing.models import _MAX_YEAR, _copy_raw, to_utc
 
 START = datetime(2026, 1, 15, tzinfo=UTC)
 
@@ -304,23 +304,39 @@ def test_to_utc_wraps_utc_conversion_overflow(value: datetime) -> None:
     "value",
     [
         datetime.max.replace(tzinfo=UTC),
-        datetime(9999, 1, 1, tzinfo=UTC),
+        datetime(9998, 1, 1, tzinfo=UTC),
         datetime(1, 6, 1, tzinfo=UTC),
     ],
 )
 def test_to_utc_rejects_years_where_window_arithmetic_overflows(value: datetime) -> None:
-    with pytest.raises(ValueError, match="between years 2 and 9998"):
+    with pytest.raises(ValueError, match="between years 2 and 9997"):
         to_utc(value, "end")
 
 
 def test_to_utc_accepts_the_edges_of_the_supported_range() -> None:
-    assert to_utc(datetime(9998, 12, 31, 23, 45, tzinfo=UTC), "end").year == 9998
+    assert to_utc(datetime(9997, 12, 31, 23, 45, tzinfo=UTC), "end").year == 9997
     assert to_utc(datetime(2, 1, 1, tzinfo=UTC), "start").year == 2
 
 
 def test_query_window_near_datetime_max_raises_value_error_not_overflow() -> None:
-    from nordic_balancing import EnergiDataServiceClient, ESettClient
+    from nordic_balancing import EnergiDataServiceClient, EntsoeClient, ESettClient
 
-    for client in (EnergiDataServiceClient(), ESettClient()):
+    for client in (EnergiDataServiceClient(), ESettClient(), EntsoeClient(api_key="test")):
         with client, pytest.raises(ValueError, match="between years"):
             client.imbalance_prices(START, datetime.max.replace(tzinfo=UTC))
+
+
+def test_entsoe_chunking_at_the_last_supported_year_does_not_overflow() -> None:
+    import httpx
+
+    from nordic_balancing import EntsoeClient, NordicBalancingError
+
+    # ENTSO-E chunks by up to 366 days; the year bound must leave room for that, so
+    # the request is built and the (mocked) server's answer decides the outcome.
+    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(400)))
+    with EntsoeClient(api_key="test", http=http, max_retries=0) as client:
+        with pytest.raises(NordicBalancingError):
+            client.imbalance_prices(
+                datetime(_MAX_YEAR, 12, 31, tzinfo=UTC),
+                datetime(_MAX_YEAR, 12, 31, 23, 45, tzinfo=UTC),
+            )

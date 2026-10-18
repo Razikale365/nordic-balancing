@@ -325,6 +325,19 @@ def test_dk_settled_row_with_a_single_zero_price_is_real() -> None:
     assert prices[0].dominating_direction is Direction.NONE
 
 
+def test_dk_all_zero_prices_with_an_activation_direction_stay_real() -> None:
+    # A settled zero-price interval still reports its regulation direction; only the
+    # placeholder also has mainDirRegPowerPerMBA == 0.
+    record = {**DK_PLACEHOLDER, "mainDirRegPowerPerMBA": 1.0}
+    prices = client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
+        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
+        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
+        [BiddingZone.DK2],
+    )
+    assert prices[0].imbalance_price_eur == 0.0
+    assert prices[0].dominating_direction is Direction.UP
+
+
 def test_all_zero_row_is_real_for_non_dk_zones() -> None:
     record = {**DK_PLACEHOLDER, "mba": "SE3"}
     prices = client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(

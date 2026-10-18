@@ -112,7 +112,7 @@ class _ReadOnlyMapping(Mapping[str, Any]):
 
 # Window rounding and chunking add up to a year; this keeps that arithmetic inside datetime's range.
 _MIN_YEAR = 2
-_MAX_YEAR = 9998
+_MAX_YEAR = 9997
 
 
 def to_utc(value: datetime, name: str) -> datetime:

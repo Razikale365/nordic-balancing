@@ -192,7 +192,7 @@ See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how
   precision of `start` and `end`. A `start`/`end` that is not a `datetime`
   raises `TypeError`; an aware datetime whose UTC conversion overflows the
   representable range (near `datetime.min`/`max`) raises `ValueError`, and so
-  does any `start`/`end` outside the years 2 to 9998 in UTC.
+  does any `start`/`end` outside the years 2 to 9997 in UTC.
   Records returned by a source outside the
   requested query window raise `SourceError`.
 - `resolution` (`timedelta`): the publication interval at which the source
