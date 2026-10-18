@@ -1,6 +1,7 @@
 from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
+from types import MappingProxyType
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -92,6 +93,21 @@ def test_raw_deep_copies_scalar_subclasses_with_state() -> None:
     assert record.raw["value"] == "x"
     assert record.raw["value"] is not value
     assert record.raw["value"].tags == ["a"]
+
+
+def test_raw_normalises_dict_subclasses_and_other_mappings() -> None:
+    class SubDict(dict[str, Any]):
+        pass
+
+    raw: dict[str, Any] = {
+        "sub": SubDict({"v": [1]}),
+        "proxy": MappingProxyType({"w": [2]}),
+    }
+    record = price(raw)
+    assert type(record.raw["sub"]) is dict
+    assert type(record.raw["proxy"]) is dict
+    record.raw["sub"]["v"].append(9)
+    assert raw["sub"]["v"] == [1]
 
 
 _json_like = st.recursive(
