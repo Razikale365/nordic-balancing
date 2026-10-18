@@ -129,6 +129,30 @@ def test_float_noise_at_tolerance_boundary_is_rounding() -> None:
     assert kinds(report) == [DivergenceKind.ROUNDING]
 
 
+@pytest.mark.parametrize(
+    ("primary_price", "reference_price"),
+    [
+        (float("nan"), 5.0),
+        (5.0, float("nan")),
+        (float("nan"), float("nan")),
+        (float("inf"), float("inf")),
+        (float("inf"), 5.0),
+    ],
+)
+def test_non_finite_prices_are_price_divergences(
+    primary_price: float, reference_price: float
+) -> None:
+    # NaN/inf can appear when records are rebuilt from a stored DataFrame
+    # (to_frame turns None into NaN). A non-finite diff is neither equal nor
+    # within the tolerance: it must not be counted as identical.
+    report = reconcile_imbalance_prices(
+        [record("a", price=primary_price)], [record("b", price=reference_price)]
+    )
+
+    assert kinds(report) == [DivergenceKind.PRICE]
+    assert report.identical == 0
+
+
 def test_direction_divergence() -> None:
     report = reconcile_imbalance_prices(
         [record("a", direction=Direction.UP)], [record("b", direction=Direction.DOWN)]

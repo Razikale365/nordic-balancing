@@ -52,7 +52,8 @@ class ReconciliationReport:
     of (zone, start) keys in the union of both inputs over those zones, and
     ``identical`` is how many of them produced no divergence: present in both,
     same ``resolution``, exactly equal prices or both ``None`` (a difference
-    within the tolerance is a ROUNDING divergence), and no conflicting
+    within the tolerance is a ROUNDING divergence, and a non-finite price is
+    always a PRICE divergence), and no conflicting
     ``dominating_direction`` when both sides have one. Other fields (component
     prices, ``raw``) are not compared. Sources are
     empty strings when an input was empty. Zones present in only one input are
@@ -85,8 +86,11 @@ def reconcile_imbalance_prices(
     Each input must come from a single ``source`` and must not repeat a
     (zone, start) key. Only zones present in both inputs are compared; the others are reported
     as ``primary_only_zones`` / ``reference_only_zones``.
-    ``tolerance_eur`` bounds ROUNDING: a price difference above it is PRICE,
-    a non-zero one at or below it is ROUNDING. PRIMARY/REFERENCE names follow
+    ``tolerance_eur`` bounds ROUNDING: a price difference above it is PRICE
+    unless it exceeds the tolerance only through binary float noise
+    (``math.isclose`` against the tolerance), and a non-zero one at or below it
+    is ROUNDING. A non-finite price (NaN or infinity) is never identical or
+    ROUNDING; it is always PRICE. PRIMARY/REFERENCE names follow
     the argument order. Divergences are ordered by ``(start, zone, kind)``.
     The result describes differences; it never merges the series and never
     decides which source is right.
@@ -210,9 +214,13 @@ def _compare(
         )
     elif p is not None and r is not None:
         diff = abs(p - r)
+        # A non-finite diff means a NaN or inf price on at least one side; it is
+        # never equal and never within the tolerance, so it is a PRICE divergence.
         # Sources publish cent-precision decimals; a diff that only exceeds the
         # tolerance through binary float noise (17.53 - 17.52 > 0.01) is ROUNDING.
-        if diff > tolerance_eur and not math.isclose(diff, tolerance_eur):
+        if not math.isfinite(diff) or (
+            diff > tolerance_eur and not math.isclose(diff, tolerance_eur)
+        ):
             divergences.append(
                 Divergence(
                     zone, start, DivergenceKind.PRICE, primary, reference, f"{p} vs {r} EUR/MWh"

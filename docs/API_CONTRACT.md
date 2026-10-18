@@ -391,6 +391,10 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `ReconciliationReport.divergences` is ordered by `(start, zone, kind)`, covered by
   `tests/test_reconcile.py::test_divergences_sorted_by_start_zone_kind` and
   `tests/test_reconcile.py::test_divergences_sort_zones_at_shared_start`.
+  A non-finite `imbalance_price_eur` (NaN or infinity) is neither "exactly
+  equal" nor "within the tolerance": it is always a PRICE divergence, never
+  identical or ROUNDING, covered by
+  `tests/test_reconcile.py::test_non_finite_prices_are_price_divergences`.
 - **Accepted (part of the contract).** `raw` is a read-only mapping over a deep
   copy private to each record. Only the top level rejects writes; nested
   containers are mutable but unshared, so treat them as read-only. Covered by
