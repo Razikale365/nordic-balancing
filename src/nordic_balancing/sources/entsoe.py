@@ -28,6 +28,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from types import TracebackType
 from typing import Any, Self
+from urllib.parse import quote, quote_plus
 from xml.etree import ElementTree
 
 import httpx
@@ -202,7 +203,7 @@ class EntsoeClient:
                 finally:
                     pool.shutdown(cancel_futures=True)
         except SourceError as exc:
-            raise SourceError(str(exc).replace(self._api_key, "[REDACTED_SECRET]")) from None
+            raise SourceError(_redact(str(exc), self._api_key)) from None
         # Each job covers one zone and a disjoint chunk; overlapping keys
         # indicate invalid chunk results, even when the prices agree.
         collected: dict[tuple[BiddingZone, datetime], ImbalancePrice] = {}
@@ -299,7 +300,7 @@ class EntsoeClient:
                 key=lambda r: (r.start, r.zone, r.direction),
             )
         except SourceError as exc:
-            raise SourceError(str(exc).replace(self._api_key, "[REDACTED_SECRET]")) from None
+            raise SourceError(_redact(str(exc), self._api_key)) from None
 
     def _fetch_capacity(
         self,
@@ -443,7 +444,7 @@ class EntsoeClient:
                 name = "Exception"
             raise SourceError(f"{SOURCE}: request failed ({name})") from None
         if response.is_error and response.status_code not in _PASSTHROUGH:
-            detail = response.text.replace(self._api_key, "[REDACTED_SECRET]")
+            detail = _redact(response.text, self._api_key)
             message = f"{SOURCE}: HTTP {response.status_code}"
             if detail:
                 message += f": {detail[:200]}"
@@ -562,6 +563,16 @@ def _format(value: datetime) -> str:
     return value.strftime("%Y%m%d%H%M")
 
 
+def _redact(text: str, api_key: str) -> str:
+    # An error body echoing the request URL or query carries the token as httpx
+    # sent it — percent-encoded — so the raw form alone does not cover it.
+    if not api_key:
+        return text
+    for form in {api_key, quote(api_key, safe=""), quote_plus(api_key)}:
+        text = text.replace(form, "[REDACTED_SECRET]")
+    return text
+
+
 def _local(tag: str) -> str:
     return tag.rpartition("}")[2]
 
@@ -677,7 +688,7 @@ def _acknowledgement(root: ElementTree.Element, api_key: str, *, capacity: bool 
     if not detail:
         raise SourceError(f"{SOURCE}: acknowledgement without a reason")
     if api_key:
-        detail = detail.replace(api_key, "[REDACTED_SECRET]")
+        detail = _redact(detail, api_key)
     message = f"{SOURCE}: acknowledgement: {detail[:200]}"
     if instance_limit:
         raise _CapacityInstanceLimit(message)

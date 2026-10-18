@@ -10,6 +10,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from xml.etree import ElementTree
 
 import httpx
@@ -1588,6 +1589,42 @@ def test_redacts_tokens_before_error_text_truncation(status: int) -> None:
     assert secret[:15] not in "".join(traceback.format_exception(caught.value))
     assert "[REDACTED" in str(caught.value)
     assert " rejected" not in str(caught.value)
+
+
+@pytest.mark.parametrize("status", [401, 500])
+def test_redacts_a_percent_encoded_token_echoed_by_the_server(status: int) -> None:
+    # A token with URL-reserved characters is sent percent-encoded; a server
+    # echoing it must not leak that form either (B11 M3, SWE2-1/OPUS-5).
+    key = "ab+c/=="
+    encoded = quote(key, safe="")
+    assert encoded != key
+    http = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                status, text=f"Invalid parameter securityToken={encoded}"
+            )
+        )
+    )
+    with pytest.raises(SourceError) as caught:
+        EntsoeClient(key, http, max_retries=0).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    message = "".join(traceback.format_exception(caught.value))
+    assert key not in message and encoded not in message
+    assert "[REDACTED_SECRET]" in message
+
+
+def test_redacts_a_percent_encoded_token_in_an_acknowledgement() -> None:
+    key = "ab+c/=="
+    encoded = quote(key, safe="")
+    body = acknowledgement(f"rejected securityToken={encoded}")
+    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, text=body)))
+    with pytest.raises(SourceError) as caught:
+        EntsoeClient(key, http, max_retries=0).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    assert encoded not in str(caught.value)
+    assert key not in str(caught.value)
 
 
 @pytest.mark.parametrize("from_env", [False, True])
