@@ -111,10 +111,15 @@ class _ReadOnlyMapping(Mapping[str, Any]):
 
 
 def to_utc(value: datetime, name: str) -> datetime:
-    """Return ``value`` in UTC, refusing naive datetimes."""
+    """Return ``value`` in UTC, refusing non-datetimes and naive datetimes."""
+    if not isinstance(value, datetime):
+        raise TypeError(f"{name} must be a datetime, got {type(value).__name__}")
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be timezone-aware, got naive {value.isoformat()}")
-    return value.astimezone(UTC)
+    try:
+        return value.astimezone(UTC)
+    except OverflowError as exc:
+        raise ValueError(f"{name} cannot be represented in UTC: {value.isoformat()}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +152,8 @@ class ImbalancePrice:
     raw: Mapping[str, Any] = field(compare=False, repr=False)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.start, datetime):
+            raise TypeError(f"start must be a datetime, got {type(self.start).__name__}")
         if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
             raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
         if self.start.tzinfo is not UTC:
@@ -185,6 +192,8 @@ class ReserveCapacity:
     raw: Mapping[str, Any] = field(compare=False, repr=False)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.start, datetime):
+            raise TypeError(f"start must be a datetime, got {type(self.start).__name__}")
         if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
             raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
         if self.start.tzinfo is not UTC:

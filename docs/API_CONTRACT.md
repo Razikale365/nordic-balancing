@@ -178,7 +178,8 @@ See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how
 ### Intervals and resolution
 
 - `start` (`datetime`): the inclusive start of the 15-minute settlement interval as
-  a timezone-aware UTC `datetime` (`tzinfo` is `datetime.UTC`). Passing a naive
+  a timezone-aware UTC `datetime` (`tzinfo` is `datetime.UTC`). Passing a
+  `start` that is not a `datetime` raises `TypeError`. Passing a naive
   `start`, or one with a non-zero UTC offset, to `ImbalancePrice` or
   `ReserveCapacity` raises `ValueError`; a `start` in another time zone at offset
   zero (for example `Europe/London` in winter) is converted to UTC.
@@ -187,7 +188,10 @@ See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how
 - Query window (`[start, end)`): client query methods require timezone-aware
   `start` and `end` datetimes (converting any UTC offset to UTC) with `end > start`
   and return only intervals whose `start` is in `[start, end)`, at any sub-second
-  precision of `start` and `end`. Records returned by a source outside the
+  precision of `start` and `end`. A `start`/`end` that is not a `datetime`
+  raises `TypeError`; an aware datetime whose UTC conversion overflows the
+  representable range (near `datetime.min`/`max`) raises `ValueError`.
+  Records returned by a source outside the
   requested query window raise `SourceError`.
 - `resolution` (`timedelta`): the publication interval at which the source
   published the record (`timedelta(minutes=15)` or `timedelta(hours=1)`). When a
