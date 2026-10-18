@@ -247,14 +247,16 @@ def test_eds_nd_stops_paging_when_a_full_page_repeats(
         calls.append(request)
         return httpx.Response(200, json={"total": len(rows), "records": rows})
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
-        with pytest.raises(SourceError, match="duplicate record"):
-            EnergiDataServiceClient(http).capacity_market(
-                ReserveProduct.FCR_N,
-                START,
-                START + HOUR,
-                zones=(BiddingZone.DK2, BiddingZone.SE3),
-            )
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        pytest.raises(SourceError, match="duplicate record"),
+    ):
+        EnergiDataServiceClient(http).capacity_market(
+            ReserveProduct.FCR_N,
+            START,
+            START + HOUR,
+            zones=(BiddingZone.DK2, BiddingZone.SE3),
+        )
     assert len(calls) == 2
 
 
