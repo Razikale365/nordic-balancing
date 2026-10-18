@@ -391,6 +391,14 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `ReconciliationReport.divergences` is ordered by `(start, zone, kind)`, covered by
   `tests/test_reconcile.py::test_divergences_sorted_by_start_zone_kind` and
   `tests/test_reconcile.py::test_divergences_sort_zones_at_shared_start`.
+  The exact ROUNDING/PRICE rule is: a difference `diff = abs(p - r)` is PRICE
+  when `diff > tolerance_eur and not math.isclose(diff, tolerance_eur)` — so a
+  difference that exceeds the tolerance only through binary float noise (for
+  example `17.53 - 17.52 > 0.01` with the default `0.01`) is still ROUNDING —
+  and ROUNDING when `diff` is non-zero and does not meet that test. Covered by
+  `tests/test_reconcile.py::test_float_noise_at_tolerance_boundary_is_rounding`,
+  `tests/test_reconcile.py::test_difference_exactly_at_tolerance_is_rounding`,
+  and `tests/test_reconcile.py::test_rounding_divergence_within_tolerance`.
   A non-finite `imbalance_price_eur` (NaN or infinity) is neither "exactly
   equal" nor "within the tolerance": it is always a PRICE divergence, never
   identical or ROUNDING, covered by
