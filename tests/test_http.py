@@ -349,22 +349,17 @@ def test_get_json_retries_an_undecodable_body_then_raises() -> None:
 
 
 def test_get_json_succeeds_when_a_retry_decodes() -> None:
-    replies = iter(
-        [httpx.Response(200, text="not json"), httpx.Response(200, json={"ok": True})]
-    )
+    replies = iter([httpx.Response(200, text="not json"), httpx.Response(200, json={"ok": True})])
     http = httpx.Client(transport=httpx.MockTransport(lambda _: next(replies)))
-    assert (
-        get_json(
-            http,
-            "https://example.test",
-            "/api",
-            {},
-            source="test",
-            max_retries=3,
-            sleep=lambda _: None,
-        )
-        == {"ok": True}
-    )
+    assert get_json(
+        http,
+        "https://example.test",
+        "/api",
+        {},
+        source="test",
+        max_retries=3,
+        sleep=lambda _: None,
+    ) == {"ok": True}
 
 
 def test_get_json_rejects_a_body_over_the_size_cap(
