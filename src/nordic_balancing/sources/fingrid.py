@@ -131,8 +131,12 @@ class FingridClient:
         self._clock = clock
         self._last_request: float | None = None
         # Keep authentication and pacing local, without changing the supplied client.
+        # httpx does not enforce a client timeout around a custom transport, but
+        # keep the wrapper's timeout equal to the wrapped client's so a future
+        # httpx that does enforce it cannot silently shorten every request.
         self._authenticated_http = httpx.Client(
-            transport=_AuthenticatedTransport(self._http, key, self._pace)
+            transport=_AuthenticatedTransport(self._http, key, self._pace),
+            timeout=self._http.timeout,
         )
 
     def __enter__(self) -> Self:
@@ -380,8 +384,20 @@ class FingridClient:
         last_page = pagination.get("lastPage")
         if isinstance(total, bool) or not isinstance(total, int) or total < 0:
             raise SourceError(f"{SOURCE}: page 1 has invalid total")
-        if isinstance(last_page, bool) or not isinstance(last_page, int) or last_page < 1:
+        if total == 0:
+            # A window with no rows may report lastPage 0 or omit it; page 1's
+            # rows are still checked against the reported total below.
+            last_page = 1
+        elif isinstance(last_page, bool) or not isinstance(last_page, int) or last_page < 1:
             raise SourceError(f"{SOURCE}: page 1 has invalid lastPage")
+        # The provider may answer with a smaller page size than requested; a
+        # full page is what the server reports, capped at the request size.
+        per_page = pagination.get("perPage")
+        if per_page is None:
+            per_page = PAGE_SIZE
+        elif isinstance(per_page, bool) or not isinstance(per_page, int) or per_page < 1:
+            raise SourceError(f"{SOURCE}: page 1 has invalid perPage")
+        full_page = min(per_page, PAGE_SIZE)
         rows: list[Any] = []
         for page in range(1, last_page + 1):
             if page > 1:
@@ -392,7 +408,7 @@ class FingridClient:
                     f"{SOURCE}: row count {len(rows)} != page-1 total {total}; "
                     "data changed or truncated"
                 )
-            if len(page_rows) < PAGE_SIZE and len(rows) < total:
+            if len(page_rows) < full_page and len(rows) < total:
                 raise SourceError(
                     f"{SOURCE}: page {page} ended with row count {len(rows)} != page-1 "
                     f"total {total}; data changed or truncated"

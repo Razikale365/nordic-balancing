@@ -453,7 +453,9 @@ def _svk_handler(request: httpx.Request) -> httpx.Response:
         _svk_record(hour, zone, direction, product, index)
         for index, (hour, zone, direction) in enumerate(
             (hour, zone, direction)
-            for hour in sorted(filters["start_time_utc"])
+            # The dataset still holds hourly rows only, so the quarter-hour
+            # values in the filter match nothing.
+            for hour in sorted(h for h in filters["start_time_utc"] if h[14:16] == "00")
             for zone in sorted(filters["bidding_zone"])
             for direction in ("down", "up")
         )

@@ -254,7 +254,9 @@ bidding zone, product, direction, and 15-minute UTC interval:
   returned record means the source has not published that value yet or does not
   provide that field. eSett, Svenska kraftnät and Energi Data Service records that
   lack a value key or a requested column raise `SourceError`; only an explicit null
-  becomes `None`.
+  becomes `None`, except that eSett DK1/DK2 mark an unsettled interval with `0.0`
+  in every price column (`imblSalesPrice`, `imblPurchasePrice`, `upRegPrice`,
+  `downRegPrice`), which maps to `None` the same way.
 - **Numbers**: numeric source values must be finite JSON numbers convertible to
   `float` (`bool`, `NaN`, and infinities are rejected with `SourceError`).
   ENTSO-E XML values must be ASCII `xs:decimal` text and positions ASCII
@@ -450,10 +452,12 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `tests/test_entsoe.py::test_request_params_eic_codes_and_custom_base_url`,
   `tests/test_entsoe.py::test_http_errors_include_status_and_redact_token`, and
   `tests/test_entsoe.py::test_transport_error_does_not_leak_token_or_url`).
-- **Accepted (part of the contract).** SvK: `SvKClient` queries on-the-hour
-  `start_time_utc` timestamps, rejects any record whose `start_time_utc` is not on
-  the hour (`tests/test_svk.py::test_rejects_malformed_records`), and expands each
-  hourly record into four 15-minute records
+- **Accepted (part of the contract).** SvK: `SvKClient` filters on every
+  quarter-hour `start_time_utc` of the requested hours, so a move to 15-minute
+  rows is fetched rather than filtered out; any record whose `start_time_utc`
+  is not on the hour raises `SourceError`
+  (`tests/test_svk.py::test_rejects_malformed_records`), and each hourly record
+  expands into four 15-minute records
   (`tests/test_svk.py::test_expands_hourly_records_and_sorts_by_start_zone_direction`).
   Every record observed so far is hourly, and the dataset has no duration column.
   In `tests/test_live_recent.py`, the daily live sentinel `test_live_recent_svk`

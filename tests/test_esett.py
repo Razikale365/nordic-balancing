@@ -271,6 +271,108 @@ def test_purchase_only_price_is_kept_not_dropped() -> None:
     assert price.raw["imblSalesPrice"] is None
 
 
+# Verbatim eSett rows captured live 2026-10-18: while DK intervals are
+# unsettled every price column arrives as exactly 0.0, not null.
+DK_PLACEHOLDER: dict[str, Any] = {
+    "timestamp": "2026-10-18T22:30:00",
+    "timestampUTC": "2026-10-18T20:30:00Z",
+    "mba": "DK2",
+    "imblSalesPrice": 0.0,
+    "imblPurchasePrice": 0.0,
+    "upRegPrice": 0.0,
+    "downRegPrice": 0.0,
+    "mainDirRegPowerPerMBA": 0.0,
+    "imblSpotDifferencePrice": -170.92,
+    "upRegPriceFrrA": 0.0,
+    "downRegPriceFrrA": 0.0,
+    "valueOfAvoidedActivation": None,
+    "incentivisingComponent": None,
+}
+
+
+def test_dk_all_zero_row_is_the_unpublished_placeholder() -> None:
+    prices = client(lambda _: httpx.Response(200, json=[DK_PLACEHOLDER])).imbalance_prices(
+        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
+        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
+        [BiddingZone.DK2],
+    )
+    assert len(prices) == 1
+    placeholder = prices[0]
+    assert placeholder.imbalance_price_eur is None
+    assert placeholder.dominating_direction is None
+    assert placeholder.mfrr_up_price_eur is None
+    assert placeholder.mfrr_down_price_eur is None
+    # raw keeps the published zeros.
+    assert placeholder.raw["imblSalesPrice"] == 0.0
+    assert placeholder.raw["imblSpotDifferencePrice"] == -170.92
+
+
+def test_dk_settled_row_with_a_single_zero_price_is_real() -> None:
+    record = {
+        **DK_PLACEHOLDER,
+        "downRegPrice": 0.0,
+        "imblSalesPrice": 42.0,
+        "imblPurchasePrice": 42.0,
+        "upRegPrice": 50.0,
+    }
+    prices = client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
+        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
+        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
+        [BiddingZone.DK2],
+    )
+    assert prices[0].imbalance_price_eur == 42.0
+    assert prices[0].mfrr_down_price_eur == 0.0
+    assert prices[0].dominating_direction is Direction.NONE
+
+
+def test_all_zero_row_is_real_for_non_dk_zones() -> None:
+    record = {**DK_PLACEHOLDER, "mba": "SE3"}
+    prices = client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
+        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
+        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
+        [BiddingZone.SE3],
+    )
+    assert prices[0].imbalance_price_eur == 0.0
+    assert prices[0].dominating_direction is Direction.NONE
+
+
+def test_hourly_only_rows_after_the_switch_raise() -> None:
+    # A payload of on-the-hour rows in the 15-minute era is an hourly cadence,
+    # not intervals to emit as single 15-minute records.
+    records = [
+        {**PUBLISHED, "timestampUTC": "2026-01-15T00:00:00Z"},
+        {**PUBLISHED, "timestampUTC": "2026-01-15T01:00:00Z"},
+    ]
+    with pytest.raises(SourceError, match="on the hour only"):
+        client(lambda _: httpx.Response(200, json=records)).imbalance_prices(
+            START, START + timedelta(hours=2), [BiddingZone.SE3]
+        )
+
+
+def test_hour_rows_do_not_raise_when_a_quarter_row_is_present() -> None:
+    records = [
+        {**PUBLISHED, "timestampUTC": "2026-01-15T00:00:00Z"},
+        {**PUBLISHED, "timestampUTC": "2026-01-15T01:00:00Z"},
+        {**PUBLISHED, "timestampUTC": "2026-01-15T01:15:00Z"},
+    ]
+    prices = client(lambda _: httpx.Response(200, json=records)).imbalance_prices(
+        START, START + timedelta(hours=2), [BiddingZone.SE3]
+    )
+    assert [p.start for p in prices] == [
+        START,
+        START + timedelta(hours=1),
+        START + timedelta(hours=1, minutes=15),
+    ]
+    assert all(p.resolution == INTERVAL for p in prices)
+
+
+def test_a_single_hourly_row_does_not_raise() -> None:
+    # One isolated hour cannot be told apart from a 15-minute interval.
+    prices = client(lambda _: httpx.Response(200, json=[PUBLISHED])).imbalance_prices(START, END)
+    assert [p.start for p in prices] == [START]
+    assert prices[0].resolution == INTERVAL
+
+
 def test_rejects_sales_purchase_disagreement() -> None:
     record = {**PUBLISHED, "imblPurchasePrice": 22}
     with pytest.raises(SourceError, match="esett: single-price model violated"):

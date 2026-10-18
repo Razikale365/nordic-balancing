@@ -117,7 +117,12 @@ def test_sends_filters_sort_limit_and_offset() -> None:
     params = seen[0].url.params
     assert params["resource_id"] == RESOURCE_ID
     assert json.loads(params["filters"]) == {
-        "start_time_utc": ["2026-10-08T00:00:00"],
+        "start_time_utc": [
+            "2026-10-08T00:00:00",
+            "2026-10-08T00:15:00",
+            "2026-10-08T00:30:00",
+            "2026-10-08T00:45:00",
+        ],
         "bidding_zone": ["SE1", "SE4"],
     }
     assert params["limit"] == "10000"
@@ -183,27 +188,64 @@ def test_queries_floor_of_start_and_hour_containing_a_non_hour_end() -> None:
         START + timedelta(hours=1, minutes=30),
         [BiddingZone.SE3],
     )
-    assert json.loads(seen[0].url.params["filters"])["start_time_utc"] == ["2026-10-08T00:00:00"]
-    assert json.loads(seen[1].url.params["filters"])["start_time_utc"] == [
+    assert json.loads(seen[0].url.params["filters"])["start_time_utc"] == [
         "2026-10-08T00:00:00",
-        "2026-10-08T01:00:00",
+        "2026-10-08T00:15:00",
+        "2026-10-08T00:30:00",
+        "2026-10-08T00:45:00",
+    ]
+    assert json.loads(seen[1].url.params["filters"])["start_time_utc"] == [
+        f"2026-10-08T0{hour}:{minute:02d}:00" for hour in (0, 1) for minute in (0, 15, 30, 45)
     ]
 
 
-def test_chunks_hour_filters_at_one_week_per_request() -> None:
+def test_chunks_timestamp_filters_at_168_values_per_request() -> None:
     seen: list[httpx.Request] = []
     client(recording(seen)).capacity_market(
         ReserveProduct.MFRR, START, START + timedelta(hours=170), [BiddingZone.SE3]
     )
-    hour_lists = [
+    stamp_lists = [
         json.loads(r.url.params["filters"])["start_time_utc"]
         for r in seen
         if r.url.path.endswith("/datastore_search")
     ]
-    assert [len(hours) for hours in hour_lists] == [168, 2]
-    assert hour_lists[0][0] == "2026-10-08T00:00:00"
-    assert hour_lists[0][-1] == "2026-10-14T23:00:00"
-    assert hour_lists[1] == ["2026-10-15T00:00:00", "2026-10-15T01:00:00"]
+    # 42 hours per chunk at four quarter starts each keeps the URL bounded.
+    assert [len(stamps) for stamps in stamp_lists] == [168, 168, 168, 168, 8]
+    assert stamp_lists[0][0] == "2026-10-08T00:00:00"
+    assert stamp_lists[0][-1] == "2026-10-09T17:45:00"
+    assert stamp_lists[1][0] == "2026-10-09T18:00:00"
+    assert stamp_lists[-1] == [
+        "2026-10-15T0" + suffix
+        for suffix in (
+            "0:00:00",
+            "0:15:00",
+            "0:30:00",
+            "0:45:00",
+            "1:00:00",
+            "1:15:00",
+            "1:30:00",
+            "1:45:00",
+        )
+    ]
+
+
+def test_fetches_quarter_starts_so_off_hour_rows_raise() -> None:
+    # A datastore holding 15-minute rows must see them named in the filter;
+    # they then reach the off-hour check instead of the :00 row covering them.
+    rows = [
+        {**RECORD, "start_time_utc": f"2026-10-08T00:{minute:02d}:00", "price": price}
+        for minute, price in ((0, 7.2), (15, 30.0), (30, 55.0), (45, 1.0))
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        filters = json.loads(request.url.params["filters"])
+        matching = [
+            row for row in rows if all(row[column] in values for column, values in filters.items())
+        ]
+        return httpx.Response(200, json=search(matching))
+
+    with pytest.raises(SourceError, match="not on the hour"):
+        client(handler).capacity_market(ReserveProduct.MFRR, START, END, [BiddingZone.SE3])
 
 
 def test_pages_with_offset_until_rows_reach_total(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -599,7 +641,9 @@ def test_converts_non_utc_aware_datetimes() -> None:
         END.astimezone(local),
         [BiddingZone.SE3],
     )
-    assert json.loads(seen[-1].url.params["filters"])["start_time_utc"] == ["2026-10-08T00:00:00"]
+    assert json.loads(seen[-1].url.params["filters"])["start_time_utc"] == [
+        f"2026-10-08T00:{minute:02d}:00" for minute in (0, 15, 30, 45)
+    ]
 
 
 def test_context_manager_closes_only_owned_client_and_exports() -> None:

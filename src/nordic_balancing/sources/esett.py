@@ -28,6 +28,9 @@ _VALUE_KEYS = (
     "downRegPrice",
     "mainDirRegPowerPerMBA",
 )
+# DK1/DK2 mark an interval that is not settled yet with 0.0 in every price
+# column instead of null; SE, NO and FI use null, so the signature is DK-only.
+_DK_ZONES = frozenset({BiddingZone.DK1, BiddingZone.DK2})
 _EIC_CODES = {
     BiddingZone.DK1: "10YDK-1--------W",
     BiddingZone.DK2: "10YDK-2--------M",
@@ -137,6 +140,8 @@ class ESettClient:
                 raise SourceError(f"{SOURCE}: request failed for /EXP14/Prices") from None
             if not isinstance(body, list):
                 raise SourceError(f"{SOURCE}: response for /EXP14/Prices is not a JSON array")
+            hourly_hours: dict[BiddingZone, set[datetime]] = {}
+            quarter_zones: set[BiddingZone] = set()
             for record in body:
                 price = _parse_imbalance(record)
                 if price.zone not in zone_list:
@@ -149,11 +154,25 @@ class ESettClient:
                     source=SOURCE,
                     detail=f"record for {price.zone.value} at {price.start.isoformat()}",
                 )
+                if price.start >= _HOURLY_END:
+                    if price.start.minute:
+                        quarter_zones.add(price.zone)
+                    else:
+                        hourly_hours.setdefault(price.zone, set()).add(price.start)
                 quarters = 4 if price.resolution == _HOUR else 1
                 for quarter in range(quarters):
                     interval_start = price.start + quarter * INTERVAL
                     if start_utc <= interval_start < end_utc:
                         prices.append(replace(price, start=interval_start) if quarter else price)
+            # A zone publishing again at hourly cadence lands on the hour in
+            # every hour; sparse 15-minute data still shows a quarter somewhere.
+            # Returning one record per hour labelled 15 minutes would be wrong.
+            for zone, hours in hourly_hours.items():
+                if len(hours) > 1 and zone not in quarter_zones:
+                    raise SourceError(
+                        f"{SOURCE}: {zone.value} rows after {_HOURLY_END:%Y-%m-%dT%H:%MZ} "
+                        "fall on the hour only"
+                    )
             query_start = chunk_end
         prices.sort(key=lambda p: (p.start, p.zone))
         return prices
@@ -217,18 +236,26 @@ def _parse_imbalance(record: object) -> ImbalancePrice:
     # price published in only one column is that price (never observed in ~107k
     # records, 2021-11 to 2026-10, but it must not be dropped as None).
     single = sales if sales is not None else purchase
+    up = _number(record, "upRegPrice")
+    down = _number(record, "downRegPrice")
+    direction = _direction(record)
+    zone = BiddingZone[area]
+    if zone in _DK_ZONES and sales == purchase == up == down == 0.0:
+        # The pre-settlement DK placeholder is not a price; report it as
+        # unpublished, like the null rows the other zones send for it.
+        single = up = down = direction = None
     return ImbalancePrice(
         start=start,
-        zone=BiddingZone[area],
+        zone=zone,
         imbalance_price_eur=single,
         imbalance_price_dkk=None,
         spot_price_eur=None,
-        dominating_direction=_direction(record),
+        dominating_direction=direction,
         satisfied_demand_mw=None,
         afrr_up_vwa_eur=None,
         afrr_down_vwa_eur=None,
-        mfrr_up_price_eur=_number(record, "upRegPrice"),
-        mfrr_down_price_eur=_number(record, "downRegPrice"),
+        mfrr_up_price_eur=up,
+        mfrr_down_price_eur=down,
         source=SOURCE,
         resolution=_HOUR if start < _HOURLY_END else INTERVAL,
         raw=record,
