@@ -298,3 +298,29 @@ def test_to_utc_rejects_non_datetimes(value: object) -> None:
 def test_to_utc_wraps_utc_conversion_overflow(value: datetime) -> None:
     with pytest.raises(ValueError, match="cannot be represented in UTC"):
         to_utc(value, "end")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime.max.replace(tzinfo=UTC),
+        datetime(9999, 1, 1, tzinfo=UTC),
+        datetime(1, 6, 1, tzinfo=UTC),
+    ],
+)
+def test_to_utc_rejects_years_where_window_arithmetic_overflows(value: datetime) -> None:
+    with pytest.raises(ValueError, match="between years 2 and 9998"):
+        to_utc(value, "end")
+
+
+def test_to_utc_accepts_the_edges_of_the_supported_range() -> None:
+    assert to_utc(datetime(9998, 12, 31, 23, 45, tzinfo=UTC), "end").year == 9998
+    assert to_utc(datetime(2, 1, 1, tzinfo=UTC), "start").year == 2
+
+
+def test_query_window_near_datetime_max_raises_value_error_not_overflow() -> None:
+    from nordic_balancing import EnergiDataServiceClient, ESettClient
+
+    for client in (EnergiDataServiceClient(), ESettClient()):
+        with client, pytest.raises(ValueError, match="between years"):
+            client.imbalance_prices(START, datetime.max.replace(tzinfo=UTC))

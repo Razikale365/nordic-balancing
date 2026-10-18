@@ -110,16 +110,26 @@ class _ReadOnlyMapping(Mapping[str, Any]):
         return repr(self._data)
 
 
+# Window rounding and chunking add up to a year; this keeps that arithmetic inside datetime's range.
+_MIN_YEAR = 2
+_MAX_YEAR = 9998
+
+
 def to_utc(value: datetime, name: str) -> datetime:
-    """Return ``value`` in UTC, refusing non-datetimes and naive datetimes."""
+    """Return ``value`` in UTC, refusing non-datetimes, naive datetimes and years 1 and 9999."""
     if not isinstance(value, datetime):
         raise TypeError(f"{name} must be a datetime, got {type(value).__name__}")
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be timezone-aware, got naive {value.isoformat()}")
     try:
-        return value.astimezone(UTC)
+        utc = value.astimezone(UTC)
     except OverflowError as exc:
         raise ValueError(f"{name} cannot be represented in UTC: {value.isoformat()}") from exc
+    if not _MIN_YEAR <= utc.year <= _MAX_YEAR:
+        raise ValueError(
+            f"{name} must be between years {_MIN_YEAR} and {_MAX_YEAR}, got {utc.isoformat()}"
+        )
+    return utc
 
 
 @dataclass(frozen=True, slots=True)
