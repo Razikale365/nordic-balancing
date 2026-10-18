@@ -552,6 +552,12 @@ def test_zero_retries_does_not_sleep() -> None:
     assert timer.sleeps == []
 
 
+def test_wrapper_client_inherits_the_wrapped_clients_timeout() -> None:
+    http = httpx.Client(transport=httpx.MockTransport(lambda _: page([])), timeout=123.0)
+    fingrid = FingridClient(KEY, http)
+    assert fingrid._authenticated_http.timeout == http.timeout
+
+
 def test_context_manager_closes_only_owned_client_and_exports() -> None:
     http = httpx.Client(transport=httpx.MockTransport(lambda _: page([])))
     with FingridClient(KEY, http):

@@ -131,8 +131,12 @@ class FingridClient:
         self._clock = clock
         self._last_request: float | None = None
         # Keep authentication and pacing local, without changing the supplied client.
+        # httpx does not enforce a client timeout around a custom transport, but
+        # keep the wrapper's timeout equal to the wrapped client's so a future
+        # httpx that does enforce it cannot silently shorten every request.
         self._authenticated_http = httpx.Client(
-            transport=_AuthenticatedTransport(self._http, key, self._pace)
+            transport=_AuthenticatedTransport(self._http, key, self._pace),
+            timeout=self._http.timeout,
         )
 
     def __enter__(self) -> Self:
