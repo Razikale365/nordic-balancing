@@ -1,3 +1,4 @@
+import pickle
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -126,6 +127,30 @@ def test_float_noise_at_tolerance_boundary_is_rounding() -> None:
     report = reconcile_imbalance_prices([record("a", price=17.53)], [record("b", price=17.52)])
 
     assert kinds(report) == [DivergenceKind.ROUNDING]
+
+
+@pytest.mark.parametrize(
+    ("primary_price", "reference_price"),
+    [
+        (float("nan"), 5.0),
+        (5.0, float("nan")),
+        (float("nan"), float("nan")),
+        (float("inf"), float("inf")),
+        (float("inf"), 5.0),
+    ],
+)
+def test_non_finite_prices_are_price_divergences(
+    primary_price: float, reference_price: float
+) -> None:
+    # NaN/inf can appear when records are rebuilt from a stored DataFrame
+    # (to_frame turns None into NaN). A non-finite diff is neither equal nor
+    # within the tolerance: it must not be counted as identical.
+    report = reconcile_imbalance_prices(
+        [record("a", price=primary_price)], [record("b", price=reference_price)]
+    )
+
+    assert kinds(report) == [DivergenceKind.PRICE]
+    assert report.identical == 0
 
 
 def test_direction_divergence() -> None:
@@ -373,3 +398,15 @@ def test_report_constructs_without_coverage_fields() -> None:
     report = ReconciliationReport("a", "b", (BiddingZone.DK1,), 0, 0, ())
     assert report.primary_only_zones == ()
     assert report.reference_only_zones == ()
+
+
+def test_report_and_divergences_pickle() -> None:
+    # Reports hold records; the whole tree must round-trip through pickle
+    # (multiprocessing, caches) despite raw being read-only.
+    report = reconcile_imbalance_prices([record("a", price=10.5)], [record("b")])
+
+    restored = pickle.loads(pickle.dumps(report))
+
+    assert restored == report
+    primary = restored.divergences[0].primary
+    assert primary is not None and dict(primary.raw) == {}

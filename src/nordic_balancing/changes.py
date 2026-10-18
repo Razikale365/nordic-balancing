@@ -96,13 +96,19 @@ def changes_between(
     """Changes taking effect in ``(start, end]`` for any of ``zones`` (default: all).
 
     A change exactly at ``start`` is excluded: data from ``start`` onwards is
-    already entirely under the new rule.
+    already entirely under the new rule. ``zones`` must be a non-empty iterable
+    of ``BiddingZone`` values, as in the client query methods.
     """
     start_utc = to_utc(start, "start")
     end_utc = to_utc(end, "end")
     if end_utc < start_utc:
         raise ValueError("end must be after start")
     wanted = None if zones is None else frozenset(zones)
+    if wanted is not None:
+        if any(not isinstance(z, BiddingZone) for z in wanted):
+            raise ValueError("zones must contain only BiddingZone values")
+        if not wanted:
+            raise ValueError("zones must not be empty")
     return [
         change
         for change in CHANGES

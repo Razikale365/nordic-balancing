@@ -1,6 +1,7 @@
+import pickle
 from copy import deepcopy
-from dataclasses import replace
-from datetime import UTC, datetime, timedelta, tzinfo
+from dataclasses import asdict, replace
+from datetime import UTC, date, datetime, timedelta, timezone, tzinfo
 from types import MappingProxyType
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -139,6 +140,44 @@ def test_copy_raw_detaches_at_every_level() -> None:
     assert record.raw["c"][0] == {"x": [1]}
 
 
+def test_record_pickles_deepcopies_and_asdicts_with_detached_read_only_raw() -> None:
+    record = price({"mba": "FI", "nested": {"x": 1}})
+
+    restored = pickle.loads(pickle.dumps(record))
+    assert restored == record
+    assert dict(restored.raw) == dict(record.raw)
+    with pytest.raises(TypeError):
+        restored.raw["mba"] = "DK1"
+
+    copied = deepcopy(record)
+    assert copied == record
+    copied.raw["nested"]["x"] = 99
+    assert record.raw["nested"]["x"] == 1
+
+    data = asdict(record)
+    assert data["zone"] == BiddingZone.FI
+    assert dict(data["raw"]) == {"mba": "FI", "nested": {"x": 1}}
+    data["raw"]["nested"]["x"] = 99
+    assert record.raw["nested"]["x"] == 1
+
+
+def test_reserve_capacity_pickles_too() -> None:
+    record = ReserveCapacity(
+        start=START,
+        zone=BiddingZone.SE3,
+        product=ReserveProduct.MFRR,
+        direction=Direction.UP,
+        price_eur_per_mw=1.0,
+        volume_mw=2.0,
+        source="test",
+        resolution=INTERVAL,
+        raw={"v": 1},
+    )
+    restored = pickle.loads(pickle.dumps(record))
+    assert restored == record
+    assert dict(restored.raw) == {"v": 1}
+
+
 def test_reserve_capacity_raw_is_detached_too() -> None:
     nested = {"v": 1}
     capacity = ReserveCapacity(
@@ -199,6 +238,18 @@ def test_naive_start_is_rejected(kind: str) -> None:
         replace(price({}), start=start) if kind == "imbalance" else reserve(start)
 
 
+@pytest.mark.parametrize("kind", ["imbalance", "reserve"])
+def test_non_datetime_start_is_rejected(kind: str) -> None:
+    # A date is the plausible mistake (date.today()); it must fail as a wrong
+    # type, not leak AttributeError from the tzinfo check.
+    with pytest.raises(TypeError, match="start must be a datetime"):
+        (
+            replace(price({}), start=date(2026, 1, 15))  # type: ignore[arg-type]
+            if kind == "imbalance"
+            else reserve(date(2026, 1, 15))  # type: ignore[arg-type]
+        )
+
+
 def test_reserve_capacity_raw_top_level_is_read_only() -> None:
     record = reserve(START)
     with pytest.raises(TypeError):
@@ -227,3 +278,23 @@ def test_to_utc_normalises_non_utc_zone() -> None:
     stamp = to_utc(datetime(2026, 1, 15, 12, 0, tzinfo=ZoneInfo("Europe/Copenhagen")), "start")
     assert stamp.tzinfo is UTC
     assert stamp == datetime(2026, 1, 15, 11, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("value", [date(2026, 1, 15), "2026-01-15", None, 42])
+def test_to_utc_rejects_non_datetimes(value: object) -> None:
+    with pytest.raises(TypeError, match="start must be a datetime"):
+        to_utc(value, "start")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # UTC conversion of an offset-zone bound near the datetime limits
+        # overflows; the caller must get a ValueError, not a raw OverflowError.
+        datetime.max.replace(tzinfo=timezone(timedelta(hours=-1))),
+        datetime.min.replace(tzinfo=timezone(timedelta(hours=1))),
+    ],
+)
+def test_to_utc_wraps_utc_conversion_overflow(value: datetime) -> None:
+    with pytest.raises(ValueError, match="cannot be represented in UTC"):
+        to_utc(value, "end")

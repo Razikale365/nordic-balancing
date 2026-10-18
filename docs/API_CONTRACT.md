@@ -36,7 +36,10 @@ Everything else is private:
   changes to a capacity market's definition (for example the EDS FCR-N/FCR-D
   price-basis change at `2024-02-01`) are documented per dataset under "Capacity
   market methods", not as `MarketChange` entries. `changes_between` raises
-  `ValueError` when `end` is before `start`.
+  `ValueError` when `end` is before `start`, and when `zones` is given but is
+  empty or contains a value that is not a `BiddingZone` — a bare `BiddingZone`
+  or zone-name string is not an iterable of zones and raises the same
+  `ValueError` the client query methods raise for it.
 
 `tests/test_public_api.py` compares the public surface against
 `tests/api_snapshot.json` and fails on any unrecorded addition, removal, or
@@ -175,7 +178,8 @@ See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how
 ### Intervals and resolution
 
 - `start` (`datetime`): the inclusive start of the 15-minute settlement interval as
-  a timezone-aware UTC `datetime` (`tzinfo` is `datetime.UTC`). Passing a naive
+  a timezone-aware UTC `datetime` (`tzinfo` is `datetime.UTC`). Passing a
+  `start` that is not a `datetime` raises `TypeError`. Passing a naive
   `start`, or one with a non-zero UTC offset, to `ImbalancePrice` or
   `ReserveCapacity` raises `ValueError`; a `start` in another time zone at offset
   zero (for example `Europe/London` in winter) is converted to UTC.
@@ -184,7 +188,10 @@ See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how
 - Query window (`[start, end)`): client query methods require timezone-aware
   `start` and `end` datetimes (converting any UTC offset to UTC) with `end > start`
   and return only intervals whose `start` is in `[start, end)`, at any sub-second
-  precision of `start` and `end`. Records returned by a source outside the
+  precision of `start` and `end`. A `start`/`end` that is not a `datetime`
+  raises `TypeError`; an aware datetime whose UTC conversion overflows the
+  representable range (near `datetime.min`/`max`) raises `ValueError`.
+  Records returned by a source outside the
   requested query window raise `SourceError`.
 - `resolution` (`timedelta`): the publication interval at which the source
   published the record (`timedelta(minutes=15)` or `timedelta(hours=1)`). When a
@@ -280,10 +287,12 @@ bidding zone, product, direction, and 15-minute UTC interval:
     transition (datasets 319, 244, 106, 369), the hourly value is kept before
     `2025-03-18T23:00Z` and the 15-minute value from then on, with the other
     preserved in `raw["<dataset>_superseded"]`.
-- **`raw` isolation**: `raw` is a `MappingProxyType` over a deep copy made for that
+- **`raw` isolation**: `raw` is a read-only `Mapping` over a deep copy made for that
   record alone; nested containers are never shared with caller input or across the
   four quarters of an expanded hourly record. Only the top-level mapping rejects
-  writes, so treat nested values as read-only as well. `to_frame()` omits `raw`
+  writes, so treat nested values as read-only as well. Records — and the report
+  dataclasses holding them — support `pickle`, `copy.deepcopy` and
+  `dataclasses.asdict`; each produces detached copies. `to_frame()` omits `raw`
   and accepts records that are all exactly `ImbalancePrice` or all exactly
   `ReserveCapacity`; subclass instances raise `ValueError`.
 - **Transport**: HTTP, network, and protocol errors raise `SourceError`, never raw
@@ -388,6 +397,18 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `ReconciliationReport.divergences` is ordered by `(start, zone, kind)`, covered by
   `tests/test_reconcile.py::test_divergences_sorted_by_start_zone_kind` and
   `tests/test_reconcile.py::test_divergences_sort_zones_at_shared_start`.
+  The exact ROUNDING/PRICE rule is: a difference `diff = abs(p - r)` is PRICE
+  when `diff > tolerance_eur and not math.isclose(diff, tolerance_eur)` — so a
+  difference that exceeds the tolerance only through binary float noise (for
+  example `17.53 - 17.52 > 0.01` with the default `0.01`) is still ROUNDING —
+  and ROUNDING when `diff` is non-zero and does not meet that test. Covered by
+  `tests/test_reconcile.py::test_float_noise_at_tolerance_boundary_is_rounding`,
+  `tests/test_reconcile.py::test_difference_exactly_at_tolerance_is_rounding`,
+  and `tests/test_reconcile.py::test_rounding_divergence_within_tolerance`.
+  A non-finite `imbalance_price_eur` (NaN or infinity) is neither "exactly
+  equal" nor "within the tolerance": it is always a PRICE divergence, never
+  identical or ROUNDING, covered by
+  `tests/test_reconcile.py::test_non_finite_prices_are_price_divergences`.
 - **Accepted (part of the contract).** `raw` is a read-only mapping over a deep
   copy private to each record. Only the top level rejects writes; nested
   containers are mutable but unshared, so treat them as read-only. Covered by

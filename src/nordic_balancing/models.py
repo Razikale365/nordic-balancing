@@ -5,12 +5,11 @@ Every interval is identified by its start instant as a timezone-aware UTC
 settlement period.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import IntEnum, StrEnum
-from types import MappingProxyType
 from typing import Any
 
 INTERVAL = timedelta(minutes=15)
@@ -85,11 +84,42 @@ def _copy_raw(value: Any) -> Any:
     return deepcopy(value)
 
 
+class _ReadOnlyMapping(Mapping[str, Any]):
+    """Read-only mapping over a per-record dict.
+
+    Unlike ``MappingProxyType`` this pickles, deep-copies and survives
+    ``dataclasses.asdict``, so records holding it work with multiprocessing,
+    caches and ``copy``; top-level writes still raise ``TypeError``.
+    """
+
+    __slots__ = ("_data",)
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        self._data = data
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __repr__(self) -> str:
+        return repr(self._data)
+
+
 def to_utc(value: datetime, name: str) -> datetime:
-    """Return ``value`` in UTC, refusing naive datetimes."""
+    """Return ``value`` in UTC, refusing non-datetimes and naive datetimes."""
+    if not isinstance(value, datetime):
+        raise TypeError(f"{name} must be a datetime, got {type(value).__name__}")
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be timezone-aware, got naive {value.isoformat()}")
-    return value.astimezone(UTC)
+    try:
+        return value.astimezone(UTC)
+    except OverflowError as exc:
+        raise ValueError(f"{name} cannot be represented in UTC: {value.isoformat()}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,12 +152,14 @@ class ImbalancePrice:
     raw: Mapping[str, Any] = field(compare=False, repr=False)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.start, datetime):
+            raise TypeError(f"start must be a datetime, got {type(self.start).__name__}")
         if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
             raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
         if self.start.tzinfo is not UTC:
             # Same instant, but interval arithmetic must not run in a local wall clock.
             object.__setattr__(self, "start", self.start.astimezone(UTC))
-        object.__setattr__(self, "raw", MappingProxyType(_copy_raw(self.raw)))
+        object.__setattr__(self, "raw", _ReadOnlyMapping(_copy_raw(self.raw)))
 
     @property
     def end(self) -> datetime:
@@ -160,12 +192,14 @@ class ReserveCapacity:
     raw: Mapping[str, Any] = field(compare=False, repr=False)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.start, datetime):
+            raise TypeError(f"start must be a datetime, got {type(self.start).__name__}")
         if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
             raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
         if self.start.tzinfo is not UTC:
             # Same instant, but interval arithmetic must not run in a local wall clock.
             object.__setattr__(self, "start", self.start.astimezone(UTC))
-        object.__setattr__(self, "raw", MappingProxyType(_copy_raw(self.raw)))
+        object.__setattr__(self, "raw", _ReadOnlyMapping(_copy_raw(self.raw)))
 
     @property
     def end(self) -> datetime:
