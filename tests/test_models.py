@@ -1,5 +1,6 @@
+import pickle
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from types import MappingProxyType
 from typing import Any
@@ -137,6 +138,44 @@ def test_copy_raw_detaches_at_every_level() -> None:
     inner["x"].append(99)
     assert record.raw["a"]["b"] == {"x": [1]}
     assert record.raw["c"][0] == {"x": [1]}
+
+
+def test_record_pickles_deepcopies_and_asdicts_with_detached_read_only_raw() -> None:
+    record = price({"mba": "FI", "nested": {"x": 1}})
+
+    restored = pickle.loads(pickle.dumps(record))
+    assert restored == record
+    assert dict(restored.raw) == dict(record.raw)
+    with pytest.raises(TypeError):
+        restored.raw["mba"] = "DK1"  # type: ignore[index]
+
+    copied = deepcopy(record)
+    assert copied == record
+    copied.raw["nested"]["x"] = 99
+    assert record.raw["nested"]["x"] == 1
+
+    data = asdict(record)
+    assert data["zone"] == BiddingZone.FI
+    assert dict(data["raw"]) == {"mba": "FI", "nested": {"x": 1}}
+    data["raw"]["nested"]["x"] = 99
+    assert record.raw["nested"]["x"] == 1
+
+
+def test_reserve_capacity_pickles_too() -> None:
+    record = ReserveCapacity(
+        start=START,
+        zone=BiddingZone.SE3,
+        product=ReserveProduct.MFRR,
+        direction=Direction.UP,
+        price_eur_per_mw=1.0,
+        volume_mw=2.0,
+        source="test",
+        resolution=INTERVAL,
+        raw={"v": 1},
+    )
+    restored = pickle.loads(pickle.dumps(record))
+    assert restored == record
+    assert dict(restored.raw) == {"v": 1}
 
 
 def test_reserve_capacity_raw_is_detached_too() -> None:

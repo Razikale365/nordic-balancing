@@ -281,10 +281,12 @@ bidding zone, product, direction, and 15-minute UTC interval:
     transition (datasets 319, 244, 106, 369), the hourly value is kept before
     `2025-03-18T23:00Z` and the 15-minute value from then on, with the other
     preserved in `raw["<dataset>_superseded"]`.
-- **`raw` isolation**: `raw` is a `MappingProxyType` over a deep copy made for that
+- **`raw` isolation**: `raw` is a read-only `Mapping` over a deep copy made for that
   record alone; nested containers are never shared with caller input or across the
   four quarters of an expanded hourly record. Only the top-level mapping rejects
-  writes, so treat nested values as read-only as well. `to_frame()` omits `raw`
+  writes, so treat nested values as read-only as well. Records — and the report
+  dataclasses holding them — support `pickle`, `copy.deepcopy` and
+  `dataclasses.asdict`; each produces detached copies. `to_frame()` omits `raw`
   and accepts records that are all exactly `ImbalancePrice` or all exactly
   `ReserveCapacity`; subclass instances raise `ValueError`.
 - **Transport**: HTTP, network, and protocol errors raise `SourceError`, never raw

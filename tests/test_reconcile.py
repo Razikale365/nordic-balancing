@@ -1,3 +1,4 @@
+import pickle
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -373,3 +374,15 @@ def test_report_constructs_without_coverage_fields() -> None:
     report = ReconciliationReport("a", "b", (BiddingZone.DK1,), 0, 0, ())
     assert report.primary_only_zones == ()
     assert report.reference_only_zones == ()
+
+
+def test_report_and_divergences_pickle() -> None:
+    # Reports hold records; the whole tree must round-trip through pickle
+    # (multiprocessing, caches) despite raw being read-only.
+    report = reconcile_imbalance_prices([record("a", price=10.5)], [record("b")])
+
+    restored = pickle.loads(pickle.dumps(report))
+
+    assert restored == report
+    primary = restored.divergences[0].primary
+    assert primary is not None and dict(primary.raw) == {}
