@@ -73,7 +73,8 @@ raises `TypeError`. Read fields by attribute access.
   and `PriceTotalEUR` is EUR/MW per hour. Other auction rows for the same hour,
   area and source product are retained in `raw["auctions"]`; auction rows
   without a Total, a repeated Total or a repeated auction of the same type for one
-  hour, area and product, and unknown product names raise `SourceError`.
+  hour, area and product, an unknown product name, or a row for another known
+  product raise `SourceError`.
   FCR-N is symmetric (`Direction.NONE`); `FCR-D upp` maps to `UP` and
   `FCR-D ned` to `DOWN`. Before `2024-02-01` prices are average prices; from
   that date each auction has a marginal price and Total is the volume-weighted
