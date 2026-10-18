@@ -369,14 +369,37 @@ def test_rejects_non_finite_values(value: int | float) -> None:
         ({"data": []}, "no pagination object"),
         ({"data": [], "pagination": {"total": True, "lastPage": 1}}, "invalid total"),
         ({"data": [], "pagination": {"total": -1, "lastPage": 1}}, "invalid total"),
-        ({"data": [], "pagination": {"total": 0}}, "invalid lastPage"),
-        ({"data": [], "pagination": {"total": 0, "lastPage": False}}, "invalid lastPage"),
-        ({"data": [], "pagination": {"total": 0, "lastPage": 0}}, "invalid lastPage"),
+        ({"data": [], "pagination": {"total": 1}}, "invalid lastPage"),
+        ({"data": [], "pagination": {"total": 1, "lastPage": False}}, "invalid lastPage"),
+        ({"data": [], "pagination": {"total": 1, "lastPage": 0}}, "invalid lastPage"),
         ({"data": [None], "pagination": {"total": 1, "lastPage": 1}}, "not a JSON object"),
     ],
 )
 def test_rejects_malformed_response_shapes(body: object, message: str) -> None:
     with pytest.raises(SourceError, match=message):
+        client(lambda _: httpx.Response(200, json=body)).series(319, START, END)
+
+
+@pytest.mark.parametrize(
+    "pagination",
+    [
+        {"total": 0, "lastPage": 1},
+        {"total": 0, "lastPage": 0},
+        {"total": 0},
+        {"total": 0, "lastPage": None},
+        {"total": 0, "lastPage": False},
+    ],
+)
+def test_a_window_with_no_rows_returns_empty(pagination: dict[str, Any]) -> None:
+    values = client(
+        lambda _: httpx.Response(200, json={"data": [], "pagination": pagination})
+    ).series(319, START, END)
+    assert values == []
+
+
+def test_rows_reported_with_a_zero_total_still_raise() -> None:
+    body = {"data": [PUBLISHED], "pagination": {"total": 0}}
+    with pytest.raises(SourceError, match="!= page-1 total 0"):
         client(lambda _: httpx.Response(200, json=body)).series(319, START, END)
 
 

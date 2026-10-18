@@ -380,7 +380,11 @@ class FingridClient:
         last_page = pagination.get("lastPage")
         if isinstance(total, bool) or not isinstance(total, int) or total < 0:
             raise SourceError(f"{SOURCE}: page 1 has invalid total")
-        if isinstance(last_page, bool) or not isinstance(last_page, int) or last_page < 1:
+        if total == 0:
+            # A window with no rows may report lastPage 0 or omit it; page 1's
+            # rows are still checked against the reported total below.
+            last_page = 1
+        elif isinstance(last_page, bool) or not isinstance(last_page, int) or last_page < 1:
             raise SourceError(f"{SOURCE}: page 1 has invalid lastPage")
         rows: list[Any] = []
         for page in range(1, last_page + 1):
