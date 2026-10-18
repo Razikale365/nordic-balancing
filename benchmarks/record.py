@@ -115,6 +115,17 @@ def _record(name: str, root: Path, secrets: list[bytes]) -> None:
         f"records={records} wall={wall_s:.1f}s statuses={statuses} "
         f"duplicates={len(transport.duplicates)}" + (f" ERROR={error}" if error else "")
     )
+    # A recorded transient error replays identically forever: the client's
+    # retry loop gets the same failure and the real later response is lost.
+    # ENTSO-E 400 acknowledgements are legitimate passthrough data instead.
+    bad = [e for e in manifest if e["status"] in (429, 500, 502, 503, 504)]
+    if bad:
+        print(
+            f"WARNING: {name} recorded {len(bad)} transient-error first response(s) "
+            f"(statuses {sorted({e['status'] for e in bad})}); replay cannot complete "
+            "the call — re-record this set with more pacing",
+            flush=True,
+        )
 
 
 def _finalize(root: Path) -> None:

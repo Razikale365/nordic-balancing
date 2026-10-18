@@ -24,6 +24,7 @@ Requires the ``benchmarks`` dependency group (psutil); to_frame needs pandas.
 import argparse
 import contextlib
 import functools
+import gc
 import importlib.metadata
 import json
 import math
@@ -49,7 +50,11 @@ RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
 
 class Timer:
-    """Thread-safe accumulating wall-time counter."""
+    """Thread-safe accumulating wall-time counter.
+
+    Wrapped calls are only ever made from the serial instrumented pass
+    (``max_workers=1``), so per-call wall time is additive CPU attribution.
+    """
 
     def __init__(self) -> None:
         self.total = 0.0
@@ -183,16 +188,13 @@ def _stage_setup(name: str, http: httpx.Client, timers: dict[str, Timer]) -> lis
                 "_parse_imbalance",
                 timers["parse_validate"].timed(module._parse_imbalance),
             )
-        patch(
-            module,
-            "ImbalancePrice",
-            timers["construction"].wrap_class(module.ImbalancePrice),
-        )
-        patch(
-            module,
-            "ReserveCapacity",
-            timers["construction"].wrap_class(module.ReserveCapacity),
-        )
+        for record_class in ("ImbalancePrice", "ReserveCapacity"):
+            if hasattr(module, record_class):
+                patch(
+                    module,
+                    record_class,
+                    timers["construction"].wrap_class(getattr(module, record_class)),
+                )
         if workload.provider == "esett":
             # Hourly records expand to quarters through dataclasses.replace;
             # each replacement re-runs __post_init__ and the raw deep copy.
@@ -211,16 +213,32 @@ def _child(set_name: str, fixtures_root: Path) -> dict:
     workload = workloads.WORKLOADS[set_name]
     set_dir = fixtures_root / set_name
     info = fixtures.load_set(set_dir)  # fixture loading is outside every timer
-    http = fixtures.replay_client(set_dir)
     timers: dict[str, Timer] = {}
     process = psutil.Process()
-    restores = _stage_setup(set_name, http, timers)
-    to_frame([])  # warm the lazy pandas import outside the timed call
     result: dict = {"set": set_name, "ok": False}
     with _PeakRss(process) as sampler:
+        # Pass 1: instrumented, serial — stage wall times add up without
+        # thread-contention noise. e2e wall below is the real default.
+        http = fixtures.replay_client(set_dir)
+        restores = _stage_setup(set_name, http, timers)
+        serial_error = None
+        serial_began = time.perf_counter()
+        serial_records: list = []
+        try:
+            serial_records = workload.run(http, api_key="replay", max_workers=1)
+        except Exception as exc:
+            serial_error = f"{type(exc).__name__}: {exc}"
+        serial_wall_s = time.perf_counter() - serial_began
+        _undo(restores)
+        serial_count = len(serial_records)
+        del serial_records  # don't let pass-1 objects tax pass-2's GC
+        gc.collect()
+        to_frame([])  # warm the lazy pandas import outside the timed call
+        # Pass 2: unpatched, default concurrency — the measured e2e.
+        http = fixtures.replay_client(set_dir)
         cpu0 = process.cpu_times()
         began = time.perf_counter()
-        error = None
+        error = serial_error
         records = []
         try:
             records = workload.run(http, api_key="replay")
@@ -233,7 +251,6 @@ def _child(set_name: str, fixtures_root: Path) -> dict:
         except Exception as exc:
             frame = None
             result["to_frame_error"] = f"{type(exc).__name__}: {exc}"
-        _undo(restores)
         peak_rss = sampler.peak()
     top_level = {
         "entsoe": ["transport", "zip_read", "parse_validate", "construction", "dataclass_replace"],
@@ -246,6 +263,8 @@ def _child(set_name: str, fixtures_root: Path) -> dict:
         {
             "ok": error is None,
             "error": error,
+            "serial_wall_s": serial_wall_s,
+            "serial_records": serial_count,
             "records": len(records),
             "frame_rows": len(frame) if frame is not None else 0,
             "requests": info["requests"],
@@ -256,7 +275,7 @@ def _child(set_name: str, fixtures_root: Path) -> dict:
             "peak_rss_bytes": peak_rss,
             "stages_s": stages,
             "stage_calls": stage_calls,
-            "residual_other_s": wall_s - sum(stages[key] for key in top_level),
+            "residual_other_s": serial_wall_s - sum(stages[key] for key in top_level),
         }
     )
     return result
@@ -266,9 +285,12 @@ def _environment() -> dict:
     import nordic_balancing
 
     root = Path(nordic_balancing.__file__).resolve().parents[2]
-    commit = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True
-    ).stdout.strip()
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True
+        ).stdout.strip()
+    except OSError:  # the slim benchmark image has no git
+        commit = os.environ.get("NB_GIT_COMMIT", "unavailable")
     cgroups: dict = {}
     for name, path in (
         ("cpu.max", "/sys/fs/cgroup/cpu.max"),
@@ -329,7 +351,7 @@ def _run_set(
             f"ok={sample['ok']}",
             flush=True,
         )
-    metrics = ["wall_s", "cpu_s", "peak_rss_bytes"]
+    metrics = ["wall_s", "serial_wall_s", "cpu_s", "peak_rss_bytes"]
     stage_names = sorted({key for s in samples for key in s["stages_s"]} | {"residual_other_s"})
     summary = {
         "set": name,
@@ -405,6 +427,8 @@ def main(argv: list[str]) -> int:
                 text=True,
                 encoding="utf-8",
             )
+            if probe.returncode != 0:
+                raise RuntimeError(f"probe for {name} failed:\n{probe.stderr}")
             wall = json.loads(probe.stdout.strip().splitlines()[-1])["wall_s"]
             repeats = 7 if wall < 2.0 else 3
             print(f"{name}: probe wall={wall:.2f}s -> repeats={repeats}", flush=True)

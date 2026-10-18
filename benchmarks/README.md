@@ -53,6 +53,7 @@ docker run --rm --cpus=2 --memory=4g ^
   -v C:\Docker\nb-perf-fixtures:/fixtures:ro ^
   -v %cd%\benchmarks\results:/work/benchmarks/results ^
   -e NB_FIXTURES=/fixtures -e NB_DOCKER_IMAGE=nb-perf ^
+  -e NB_GIT_COMMIT=%COMMIT_SHA% ^
   nb-perf --sets entsoe-imb-SE3-year-2025 --tag docker-baseline
 ```
 

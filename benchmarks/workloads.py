@@ -137,7 +137,8 @@ WORKLOADS: dict[str, Workload] = {
         "energidataservice",
         "EnergiDataServiceClient.imbalance_prices(datetime(2025,1,1,tzinfo=UTC), "
         "datetime(2026,1,1,tzinfo=UTC), zones=(BiddingZone.DK1, BiddingZone.DK2))",
-        3.0,
+        # EDS rate-limits per dataset; 3 s pacing still produced a 429 mid-year.
+        8.0,
         _eds_imbalance(_d(2025, 1, 1), _d(2026, 1, 1)),
     ),
     "eds-cap-FCRN-year-2025": Workload(
@@ -146,7 +147,8 @@ WORKLOADS: dict[str, Workload] = {
         "datetime(2025,1,1,tzinfo=UTC), datetime(2026,1,1,tzinfo=UTC), "
         "zones=(BiddingZone.DK2, BiddingZone.SE1, BiddingZone.SE2, BiddingZone.SE3, "
         "BiddingZone.SE4))",
-        3.0,
+        # FcrNdDK2's Retry-After is ~113 s; first responses must stay clean.
+        130.0,
         _eds_capacity(ReserveProduct.FCR_N, _d(2025, 1, 1), _d(2026, 1, 1), _FCR_ND_ZONES),
     ),
     "eds-cap-aFRR-month-2025-10": Workload(
@@ -154,7 +156,7 @@ WORKLOADS: dict[str, Workload] = {
         "EnergiDataServiceClient.capacity_market(ReserveProduct.AFRR, "
         "datetime(2025,10,1,tzinfo=UTC), datetime(2025,11,1,tzinfo=UTC), "
         "zones=tuple(BiddingZone))",
-        3.0,
+        8.0,
         _eds_capacity(ReserveProduct.AFRR, _d(2025, 10, 1), _d(2025, 11, 1), _ALL_ZONES),
     ),
 }
