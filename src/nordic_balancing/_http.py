@@ -34,7 +34,7 @@ def get_json(
     max_retries: int,
     sleep: Callable[[float], None],
 ) -> Any:
-    response = _request(
+    return _request(
         http,
         base_url,
         path,
@@ -43,13 +43,8 @@ def get_json(
         max_retries=max_retries,
         sleep=sleep,
         passthrough_statuses=frozenset(),
+        decode=lambda response: response.json(),
     )
-    try:
-        return response.json()
-    except (ValueError, RecursionError) as exc:
-        # A deeply nested body exhausts the decoder's recursion limit; that is
-        # still an uninterpretable body, not an internal error.
-        raise SourceError(f"{source}: response for {path} is not JSON") from exc
 
 
 def get_bytes(
@@ -96,7 +91,8 @@ def _request(
     max_retries: int,
     sleep: Callable[[float], None],
     passthrough_statuses: frozenset[int],
-) -> httpx.Response:
+    decode: Callable[[httpx.Response], Any] | None = None,
+) -> Any:
     query_params = params if isinstance(params, Mapping) else tuple(params)
     for attempt in range(max_retries + 1):
         last = attempt == max_retries
@@ -116,8 +112,19 @@ def _request(
             sleep(retry_after if retry_after is not None else _DEFAULT_RETRY_AFTER)
         elif response.status_code in _TRANSIENT_STATUSES and not last:
             sleep(_DEFAULT_RETRY_AFTER)
-        else:
+        elif decode is None or response.status_code != 200:
             break
+        else:
+            # The body is decoded inside the loop so an uninterpretable one is
+            # retried like a transport decoding failure, within the same budget.
+            # A deeply nested body exhausts the decoder's recursion limit; that
+            # is still an uninterpretable body, not an internal error.
+            try:
+                return decode(response)
+            except (ValueError, RecursionError) as exc:
+                if last:
+                    raise SourceError(f"{source}: response for {path} is not JSON") from exc
+                sleep(_DEFAULT_RETRY_AFTER)
     # Only 200 carries a complete body: 204 has none, 202 is not yet processed and 206
     # is a partial body.
     if response.status_code != 200 and response.status_code not in passthrough_statuses:

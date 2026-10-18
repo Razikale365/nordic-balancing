@@ -323,6 +323,50 @@ def test_get_json_rejects_non_2xx_and_204_statuses(status: int, body: bytes) -> 
     assert "SYNTHETIC_RECORD" not in str(exc_info.value)
 
 
+def test_get_json_retries_an_undecodable_body_then_raises() -> None:
+    # A 200 body that is not JSON is an undecodable body: it is retried within
+    # the max_retries budget like a Content-Encoding failure (B11, OPUS-6/DS4-2).
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, text="not json")
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    sleeps: list[float] = []
+    with pytest.raises(SourceError, match="^test: response for /api is not JSON$"):
+        get_json(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=3,
+            sleep=sleeps.append,
+        )
+    assert len(calls) == 4
+    assert sleeps == [10.0] * 3
+
+
+def test_get_json_succeeds_when_a_retry_decodes() -> None:
+    replies = iter(
+        [httpx.Response(200, text="not json"), httpx.Response(200, json={"ok": True})]
+    )
+    http = httpx.Client(transport=httpx.MockTransport(lambda _: next(replies)))
+    assert (
+        get_json(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=3,
+            sleep=lambda _: None,
+        )
+        == {"ok": True}
+    )
+
+
 def test_get_json_reports_a_deeply_nested_body_as_not_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
