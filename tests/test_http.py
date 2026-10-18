@@ -5,8 +5,8 @@ import httpx
 import pytest
 
 from nordic_balancing import BiddingZone, _http
-from nordic_balancing._http import _request, _retry_after as retry_after
-from nordic_balancing._http import check_base_url, get_json
+from nordic_balancing._http import _request, check_base_url, get_json
+from nordic_balancing._http import _retry_after as retry_after
 from nordic_balancing._validate import finite_number
 from nordic_balancing.errors import RateLimitError, SourceError
 from nordic_balancing.sources.energidataservice import EnergiDataServiceClient
@@ -371,7 +371,7 @@ def test_get_json_rejects_a_body_over_the_size_cap(
     http = httpx.Client(
         transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"v": "0123456789"}))
     )
-    with pytest.raises(SourceError, match="^test: response for /api exceeds 8 bytes$"):
+    with pytest.raises(SourceError, match=r"^test: response for /api exceeds 8 bytes$"):
         get_json(
             http,
             "https://example.test",
