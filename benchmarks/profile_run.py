@@ -19,8 +19,8 @@ import tracemalloc
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fixtures  # noqa: E402
-import workloads  # noqa: E402
+import fixtures
+import workloads
 
 FIXTURES_ROOT = Path(r"C:\Docker\nb-perf-fixtures")
 

@@ -1,0 +1,162 @@
+{
+  "set": "entsoe-imb-SE3-year-2022",
+  "tag": "base-v030",
+  "n": 3,
+  "records": 34724,
+  "requests": 1,
+  "response_bytes": 101034,
+  "live_elapsed_s": 2.6190589000470936,
+  "environment": {
+    "host": {
+      "platform": "Windows-11-10.0.22621-SP0",
+      "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "logical_cpus": 6,
+      "physical_cpus": 6,
+      "ram_bytes": 34268110848
+    },
+    "python": "3.12.13",
+    "packages": {
+      "nordic-balancing": "0.3.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    },
+    "git_commit": "29bcbe2f2a000455438b46b6df4b7a0deaa2a880",
+    "in_container": false,
+    "cgroup_limits": "none (not in a cgroup-limited container)",
+    "docker_image": null
+  },
+  "samples": [
+    {
+      "set": "entsoe-imb-SE3-year-2022",
+      "ok": true,
+      "error": null,
+      "serial_wall_s": 5.476112899952568,
+      "serial_records": 34724,
+      "records": 34724,
+      "frame_rows": 34724,
+      "requests": 1,
+      "response_bytes": 101034,
+      "live_elapsed_s": 2.6190589000470936,
+      "wall_s": 3.8771803999552503,
+      "cpu_s": 3.359375,
+      "peak_rss_bytes": 178319360,
+      "stages_s": {
+        "transport": 0.001335199922323227,
+        "zip_read": 0.009031599969603121,
+        "decode": 0.11412609997205436,
+        "parse_validate": 0.7953342000255361,
+        "construction": 2.2994380936725065,
+        "dataclass_replace": 1.2903753969585523,
+        "to_frame": 0.13445949996821582
+      },
+      "stage_calls": {
+        "transport": 1,
+        "zip_read": 1,
+        "decode": 1,
+        "parse_validate": 1,
+        "construction": 69448,
+        "dataclass_replace": 52086,
+        "to_frame": 1
+      },
+      "residual_other_s": 1.0805984094040468
+    },
+    {
+      "set": "entsoe-imb-SE3-year-2022",
+      "ok": true,
+      "error": null,
+      "serial_wall_s": 3.6307007999857888,
+      "serial_records": 34724,
+      "records": 34724,
+      "frame_rows": 34724,
+      "requests": 1,
+      "response_bytes": 101034,
+      "live_elapsed_s": 2.6190589000470936,
+      "wall_s": 4.716518100001849,
+      "cpu_s": 2.984375,
+      "peak_rss_bytes": 177774592,
+      "stages_s": {
+        "transport": 0.0010354999685660005,
+        "zip_read": 0.0073026999598369,
+        "decode": 0.11669580009765923,
+        "parse_validate": 0.6279700000304729,
+        "construction": 1.4465560056269169,
+        "dataclass_replace": 0.8552865057718009,
+        "to_frame": 0.12395849998574704
+      },
+      "stage_calls": {
+        "transport": 1,
+        "zip_read": 1,
+        "decode": 1,
+        "parse_validate": 1,
+        "construction": 69448,
+        "dataclass_replace": 52086,
+        "to_frame": 1
+      },
+      "residual_other_s": 0.6925500886281952
+    },
+    {
+      "set": "entsoe-imb-SE3-year-2022",
+      "ok": true,
+      "error": null,
+      "serial_wall_s": 6.841991699999198,
+      "serial_records": 34724,
+      "records": 34724,
+      "frame_rows": 34724,
+      "requests": 1,
+      "response_bytes": 101034,
+      "live_elapsed_s": 2.6190589000470936,
+      "wall_s": 6.717746500042267,
+      "cpu_s": 3.421875,
+      "peak_rss_bytes": 178163712,
+      "stages_s": {
+        "transport": 0.0017558999825268984,
+        "zip_read": 0.0071255998918786645,
+        "decode": 0.12501000007614493,
+        "parse_validate": 0.876865700003691,
+        "construction": 3.2129091089591384,
+        "dataclass_replace": 1.3703963896259665,
+        "to_frame": 0.2555096000432968
+      },
+      "stage_calls": {
+        "transport": 1,
+        "zip_read": 1,
+        "decode": 1,
+        "parse_validate": 1,
+        "construction": 69448,
+        "dataclass_replace": 52086,
+        "to_frame": 1
+      },
+      "residual_other_s": 1.3729390015359968
+    }
+  ],
+  "median": {
+    "wall_s": 4.716518100001849,
+    "serial_wall_s": 5.476112899952568,
+    "cpu_s": 3.359375,
+    "peak_rss_bytes": 178163712,
+    "construction": 2.2994380936725065,
+    "dataclass_replace": 1.2903753969585523,
+    "decode": 0.11669580009765923,
+    "parse_validate": 0.7953342000255361,
+    "residual_other_s": 1.0805984094040468,
+    "to_frame": 0.13445949996821582,
+    "transport": 0.001335199922323227,
+    "zip_read": 0.0073026999598369
+  },
+  "p95": {
+    "wall_s": 6.717746500042267,
+    "serial_wall_s": 6.841991699999198,
+    "cpu_s": 3.421875,
+    "peak_rss_bytes": 178319360,
+    "construction": 3.2129091089591384,
+    "dataclass_replace": 1.3703963896259665,
+    "decode": 0.12501000007614493,
+    "parse_validate": 0.876865700003691,
+    "residual_other_s": 1.3729390015359968,
+    "to_frame": 0.2555096000432968,
+    "transport": 0.0017558999825268984,
+    "zip_read": 0.009031599969603121
+  },
+  "records_per_s": 7362.210695213146
+}

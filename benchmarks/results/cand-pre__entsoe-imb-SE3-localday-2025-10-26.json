@@ -1,0 +1,233 @@
+{
+  "set": "entsoe-imb-SE3-localday-2025-10-26",
+  "tag": "cand-pre",
+  "n": 7,
+  "records": 100,
+  "requests": 1,
+  "response_bytes": 1970,
+  "live_elapsed_s": 17.86225020000711,
+  "serial_wall_s": 0.028012100025080144,
+  "serial_records": 100,
+  "environment": {
+    "host": {
+      "platform": "Windows-11-10.0.22621-SP0",
+      "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "logical_cpus": 6,
+      "physical_cpus": 6,
+      "ram_bytes": 34268110848
+    },
+    "python": "3.12.13",
+    "packages": {
+      "nordic-balancing": "0.3.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    },
+    "git_commit": "c26e34971f428944a7fb7896d46762675617c5b8",
+    "in_container": false,
+    "cgroup_limits": "none (not in a cgroup-limited container)",
+    "docker_image": null
+  },
+  "samples": [
+    {
+      "set": "entsoe-imb-SE3-localday-2025-10-26",
+      "ok": true,
+      "cpu_s": 0.015625,
+      "error": null,
+      "records": 100,
+      "frame_rows": 100,
+      "requests": 1,
+      "response_bytes": 1970,
+      "live_elapsed_s": 17.86225020000711,
+      "wall_s": 0.013732499908655882,
+      "peak_rss_bytes": 75182080,
+      "stages_s": {
+        "to_frame": 0.022776099969632924
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "entsoe-imb-SE3-localday-2025-10-26",
+      "ok": true,
+      "cpu_s": 0.015625,
+      "error": null,
+      "records": 100,
+      "frame_rows": 100,
+      "requests": 1,
+      "response_bytes": 1970,
+      "live_elapsed_s": 17.86225020000711,
+      "wall_s": 0.03947999991942197,
+      "peak_rss_bytes": 75055104,
+      "stages_s": {
+        "to_frame": 0.005491300020366907
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "entsoe-imb-SE3-localday-2025-10-26",
+      "ok": true,
+      "cpu_s": 0.015625,
+      "error": null,
+      "records": 100,
+      "frame_rows": 100,
+      "requests": 1,
+      "response_bytes": 1970,
+      "live_elapsed_s": 17.86225020000711,
+      "wall_s": 0.024975999956950545,
+      "peak_rss_bytes": 75108352,
+      "stages_s": {
+        "to_frame": 0.008255799999460578
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "entsoe-imb-SE3-localday-2025-10-26",
+      "ok": true,
+      "cpu_s": 0.0,
+      "error": null,
+      "records": 100,
+      "frame_rows": 100,
+      "requests": 1,
+      "response_bytes": 1970,
+      "live_elapsed_s": 17.86225020000711,
+      "wall_s": 0.061675500008277595,
+      "peak_rss_bytes": 75259904,
+      "stages_s": {
+        "to_frame": 0.004863300011493266
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "entsoe-imb-SE3-localday-2025-10-26",
+      "ok": true,
+      "cpu_s": 0.0,
+      "error": null,
+      "records": 100,
+      "frame_rows": 100,
+      "requests": 1,
+      "response_bytes": 1970,
+      "live_elapsed_s": 17.86225020000711,
+      "wall_s": 0.022240900085307658,
+      "peak_rss_bytes": 75100160,
+      "stages_s": {
+        "to_frame": 0.030874400050379336
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "entsoe-imb-SE3-localday-2025-10-26",
+      "ok": true,
+      "cpu_s": 0.046875,
+      "error": null,
+      "records": 100,
+      "frame_rows": 100,
+      "requests": 1,
+      "response_bytes": 1970,
+      "live_elapsed_s": 17.86225020000711,
+      "wall_s": 0.026796100079081953,
+      "peak_rss_bytes": 75280384,
+      "stages_s": {
+        "to_frame": 0.01997070002835244
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "entsoe-imb-SE3-localday-2025-10-26",
+      "ok": true,
+      "cpu_s": 0.0,
+      "error": null,
+      "records": 100,
+      "frame_rows": 100,
+      "requests": 1,
+      "response_bytes": 1970,
+      "live_elapsed_s": 17.86225020000711,
+      "wall_s": 0.016423200024291873,
+      "peak_rss_bytes": 75075584,
+      "stages_s": {
+        "to_frame": 0.021088700043037534
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    }
+  ],
+  "stage_sample": {
+    "set": "entsoe-imb-SE3-localday-2025-10-26",
+    "ok": true,
+    "serial_wall_s": 0.028012100025080144,
+    "error": null,
+    "records": 100,
+    "frame_rows": 100,
+    "requests": 1,
+    "response_bytes": 1970,
+    "live_elapsed_s": 17.86225020000711,
+    "wall_s": 0.028012100025080144,
+    "peak_rss_bytes": 75079680,
+    "stages_s": {
+      "transport": 0.0062562000239267945,
+      "zip_read": 0.0003255000337958336,
+      "decode": 0.00307740003336221,
+      "parse_validate": 0.009170599980279803,
+      "construction": 0.006429199944250286,
+      "dataclass_replace": 0.0044507995480671525,
+      "to_frame": 0.029806199949234724
+    },
+    "stage_calls": {
+      "transport": 1,
+      "zip_read": 1,
+      "decode": 1,
+      "parse_validate": 1,
+      "construction": 200,
+      "dataclass_replace": 300,
+      "to_frame": 1
+    },
+    "residual_other_s": 0.0013798004947602749
+  },
+  "median": {
+    "wall_s": 0.024975999956950545,
+    "cpu_s": 0.015625,
+    "peak_rss_bytes": 75108352,
+    "construction": 0.006429199944250286,
+    "dataclass_replace": 0.0044507995480671525,
+    "decode": 0.00307740003336221,
+    "parse_validate": 0.009170599980279803,
+    "residual_other_s": 0.0013798004947602749,
+    "to_frame": 0.029806199949234724,
+    "transport": 0.0062562000239267945,
+    "zip_read": 0.0003255000337958336,
+    "to_frame_calls": 1
+  },
+  "p95": {
+    "wall_s": 0.061675500008277595,
+    "cpu_s": 0.046875,
+    "peak_rss_bytes": 75280384,
+    "construction": 0.006429199944250286,
+    "dataclass_replace": 0.0044507995480671525,
+    "decode": 0.00307740003336221,
+    "parse_validate": 0.009170599980279803,
+    "residual_other_s": 0.0013798004947602749,
+    "to_frame": 0.029806199949234724,
+    "transport": 0.0062562000239267945,
+    "zip_read": 0.0003255000337958336
+  },
+  "records_per_s": 4003.843696843501
+}

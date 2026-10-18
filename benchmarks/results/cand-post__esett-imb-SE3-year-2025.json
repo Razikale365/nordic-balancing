@@ -1,0 +1,233 @@
+{
+  "set": "esett-imb-SE3-year-2025",
+  "tag": "cand-post",
+  "n": 7,
+  "records": 35040,
+  "requests": 12,
+  "response_bytes": 12091990,
+  "live_elapsed_s": 7.722129000001587,
+  "serial_wall_s": 1.0975221000844613,
+  "serial_records": 35040,
+  "environment": {
+    "host": {
+      "platform": "Windows-11-10.0.22621-SP0",
+      "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "logical_cpus": 6,
+      "physical_cpus": 6,
+      "ram_bytes": 34268110848
+    },
+    "python": "3.12.13",
+    "packages": {
+      "nordic-balancing": "0.3.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    },
+    "git_commit": "825e12c4c760f37d6353a712539970c175c7c9ad",
+    "in_container": false,
+    "cgroup_limits": "none (not in a cgroup-limited container)",
+    "docker_image": null
+  },
+  "samples": [
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 0.71875,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.0519756999565288,
+      "peak_rss_bytes": 125673472,
+      "stages_s": {
+        "to_frame": 0.14775360003113747
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 0.734375,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.1004487000172958,
+      "peak_rss_bytes": 126078976,
+      "stages_s": {
+        "to_frame": 0.10700640000868589
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 0.765625,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.0137802000390366,
+      "peak_rss_bytes": 125931520,
+      "stages_s": {
+        "to_frame": 0.09897560009267181
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 0.640625,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.0468745999969542,
+      "peak_rss_bytes": 125894656,
+      "stages_s": {
+        "to_frame": 0.11630180000793189
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 0.71875,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.009046999970451,
+      "peak_rss_bytes": 126115840,
+      "stages_s": {
+        "to_frame": 0.11495159997139126
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 0.640625,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.018296999973245,
+      "peak_rss_bytes": 125726720,
+      "stages_s": {
+        "to_frame": 0.11837230005767196
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-SE3-year-2025",
+      "ok": true,
+      "cpu_s": 0.953125,
+      "error": null,
+      "records": 35040,
+      "frame_rows": 35040,
+      "requests": 12,
+      "response_bytes": 12091990,
+      "live_elapsed_s": 7.722129000001587,
+      "wall_s": 1.1462830000091344,
+      "peak_rss_bytes": 125698048,
+      "stages_s": {
+        "to_frame": 0.1387524000601843
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    }
+  ],
+  "stage_sample": {
+    "set": "esett-imb-SE3-year-2025",
+    "ok": true,
+    "serial_wall_s": 1.0975221000844613,
+    "error": null,
+    "records": 35040,
+    "frame_rows": 35040,
+    "requests": 12,
+    "response_bytes": 12091990,
+    "live_elapsed_s": 7.722129000001587,
+    "wall_s": 1.0975221000844613,
+    "peak_rss_bytes": 125526016,
+    "stages_s": {
+      "transport": 0.01834660000167787,
+      "zip_read": 0.0,
+      "decode": 0.12483039975631982,
+      "parse_validate": 0.7283809038344771,
+      "construction": 0.46449779137037694,
+      "dataclass_replace": 0.0,
+      "to_frame": 0.1587193999439478
+    },
+    "stage_calls": {
+      "transport": 12,
+      "zip_read": 0,
+      "decode": 12,
+      "parse_validate": 35040,
+      "construction": 35040,
+      "dataclass_replace": 0,
+      "to_frame": 1
+    },
+    "residual_other_s": 0.2259641964919865
+  },
+  "median": {
+    "wall_s": 1.0468745999969542,
+    "cpu_s": 0.71875,
+    "peak_rss_bytes": 125894656,
+    "construction": 0.46449779137037694,
+    "dataclass_replace": 0.0,
+    "decode": 0.12483039975631982,
+    "parse_validate": 0.7283809038344771,
+    "residual_other_s": 0.2259641964919865,
+    "to_frame": 0.1587193999439478,
+    "transport": 0.01834660000167787,
+    "zip_read": 0.0,
+    "to_frame_calls": 1
+  },
+  "p95": {
+    "wall_s": 1.1462830000091344,
+    "cpu_s": 0.953125,
+    "peak_rss_bytes": 126115840,
+    "construction": 0.46449779137037694,
+    "dataclass_replace": 0.0,
+    "decode": 0.12483039975631982,
+    "parse_validate": 0.7283809038344771,
+    "residual_other_s": 0.2259641964919865,
+    "to_frame": 0.1587193999439478,
+    "transport": 0.01834660000167787,
+    "zip_read": 0.0
+  },
+  "records_per_s": 33471.05756515818
+}

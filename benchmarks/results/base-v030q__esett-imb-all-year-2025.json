@@ -1,0 +1,153 @@
+{
+  "set": "esett-imb-all-year-2025",
+  "tag": "base-v030q",
+  "n": 3,
+  "records": 420480,
+  "requests": 12,
+  "response_bytes": 145038320,
+  "live_elapsed_s": 13.1302717999788,
+  "serial_wall_s": 16.783187399967574,
+  "serial_records": 420480,
+  "environment": {
+    "host": {
+      "platform": "Windows-11-10.0.22621-SP0",
+      "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "logical_cpus": 6,
+      "physical_cpus": 6,
+      "ram_bytes": 34268110848
+    },
+    "python": "3.12.13",
+    "packages": {
+      "nordic-balancing": "0.3.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    },
+    "git_commit": "29bcbe2f2a000455438b46b6df4b7a0deaa2a880",
+    "in_container": false,
+    "cgroup_limits": "none (not in a cgroup-limited container)",
+    "docker_image": null
+  },
+  "samples": [
+    {
+      "set": "esett-imb-all-year-2025",
+      "ok": true,
+      "cpu_s": 11.46875,
+      "error": null,
+      "records": 420480,
+      "frame_rows": 420480,
+      "requests": 12,
+      "response_bytes": 145038320,
+      "live_elapsed_s": 13.1302717999788,
+      "wall_s": 16.880936500034295,
+      "peak_rss_bytes": 716947456,
+      "stages_s": {
+        "to_frame": 2.027406799956225
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-all-year-2025",
+      "ok": true,
+      "cpu_s": 9.9375,
+      "error": null,
+      "records": 420480,
+      "frame_rows": 420480,
+      "requests": 12,
+      "response_bytes": 145038320,
+      "live_elapsed_s": 13.1302717999788,
+      "wall_s": 15.272713000071235,
+      "peak_rss_bytes": 717635584,
+      "stages_s": {
+        "to_frame": 1.793016199953854
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "esett-imb-all-year-2025",
+      "ok": true,
+      "cpu_s": 9.75,
+      "error": null,
+      "records": 420480,
+      "frame_rows": 420480,
+      "requests": 12,
+      "response_bytes": 145038320,
+      "live_elapsed_s": 13.1302717999788,
+      "wall_s": 15.412864199955948,
+      "peak_rss_bytes": 717217792,
+      "stages_s": {
+        "to_frame": 1.9387136000441387
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    }
+  ],
+  "stage_sample": {
+    "set": "esett-imb-all-year-2025",
+    "ok": true,
+    "serial_wall_s": 16.783187399967574,
+    "error": null,
+    "records": 420480,
+    "frame_rows": 420480,
+    "requests": 12,
+    "response_bytes": 145038320,
+    "live_elapsed_s": 13.1302717999788,
+    "wall_s": 16.783187399967574,
+    "peak_rss_bytes": 717254656,
+    "stages_s": {
+      "transport": 0.0938403996406123,
+      "zip_read": 0.0,
+      "decode": 1.430231700069271,
+      "parse_validate": 11.550746285356581,
+      "construction": 8.229128508130088,
+      "dataclass_replace": 0.0,
+      "to_frame": 1.604095199960284
+    },
+    "stage_calls": {
+      "transport": 12,
+      "zip_read": 0,
+      "decode": 12,
+      "parse_validate": 420480,
+      "construction": 420480,
+      "dataclass_replace": 0,
+      "to_frame": 1
+    },
+    "residual_other_s": 3.708369014901109
+  },
+  "median": {
+    "wall_s": 15.412864199955948,
+    "cpu_s": 9.9375,
+    "peak_rss_bytes": 717217792,
+    "construction": 8.229128508130088,
+    "dataclass_replace": 0.0,
+    "decode": 1.430231700069271,
+    "parse_validate": 11.550746285356581,
+    "residual_other_s": 3.708369014901109,
+    "to_frame": 1.604095199960284,
+    "transport": 0.0938403996406123,
+    "zip_read": 0.0,
+    "to_frame_calls": 1
+  },
+  "p95": {
+    "wall_s": 16.880936500034295,
+    "cpu_s": 11.46875,
+    "peak_rss_bytes": 717635584,
+    "construction": 8.229128508130088,
+    "dataclass_replace": 0.0,
+    "decode": 1.430231700069271,
+    "parse_validate": 11.550746285356581,
+    "residual_other_s": 3.708369014901109,
+    "to_frame": 1.604095199960284,
+    "transport": 0.0938403996406123,
+    "zip_read": 0.0
+  },
+  "records_per_s": 27281.107167686703
+}

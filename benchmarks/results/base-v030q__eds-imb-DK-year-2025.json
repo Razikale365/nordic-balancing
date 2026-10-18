@@ -1,0 +1,153 @@
+{
+  "set": "eds-imb-DK-year-2025",
+  "tag": "base-v030q",
+  "n": 3,
+  "records": 58086,
+  "requests": 6,
+  "response_bytes": 18379281,
+  "live_elapsed_s": 17.084894300089218,
+  "serial_wall_s": 1.8771095999982208,
+  "serial_records": 58086,
+  "environment": {
+    "host": {
+      "platform": "Windows-11-10.0.22621-SP0",
+      "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "logical_cpus": 6,
+      "physical_cpus": 6,
+      "ram_bytes": 34268110848
+    },
+    "python": "3.12.13",
+    "packages": {
+      "nordic-balancing": "0.3.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    },
+    "git_commit": "29bcbe2f2a000455438b46b6df4b7a0deaa2a880",
+    "in_container": false,
+    "cgroup_limits": "none (not in a cgroup-limited container)",
+    "docker_image": null
+  },
+  "samples": [
+    {
+      "set": "eds-imb-DK-year-2025",
+      "ok": true,
+      "cpu_s": 0.9375,
+      "error": null,
+      "records": 58086,
+      "frame_rows": 58086,
+      "requests": 6,
+      "response_bytes": 18379281,
+      "live_elapsed_s": 17.084894300089218,
+      "wall_s": 1.7776082000928,
+      "peak_rss_bytes": 160329728,
+      "stages_s": {
+        "to_frame": 0.2316045000916347
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "eds-imb-DK-year-2025",
+      "ok": true,
+      "cpu_s": 0.9375,
+      "error": null,
+      "records": 58086,
+      "frame_rows": 58086,
+      "requests": 6,
+      "response_bytes": 18379281,
+      "live_elapsed_s": 17.084894300089218,
+      "wall_s": 1.804134099977091,
+      "peak_rss_bytes": 160067584,
+      "stages_s": {
+        "to_frame": 0.2902695999946445
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "eds-imb-DK-year-2025",
+      "ok": true,
+      "cpu_s": 1.0625,
+      "error": null,
+      "records": 58086,
+      "frame_rows": 58086,
+      "requests": 6,
+      "response_bytes": 18379281,
+      "live_elapsed_s": 17.084894300089218,
+      "wall_s": 1.8884930000640452,
+      "peak_rss_bytes": 160288768,
+      "stages_s": {
+        "to_frame": 0.35190470004454255
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    }
+  ],
+  "stage_sample": {
+    "set": "eds-imb-DK-year-2025",
+    "ok": true,
+    "serial_wall_s": 1.8771095999982208,
+    "error": null,
+    "records": 58086,
+    "frame_rows": 58086,
+    "requests": 6,
+    "response_bytes": 18379281,
+    "live_elapsed_s": 17.084894300089218,
+    "wall_s": 1.8771095999982208,
+    "peak_rss_bytes": 160075776,
+    "stages_s": {
+      "transport": 0.015411200001835823,
+      "zip_read": 0.0,
+      "decode": 0.19997680000960827,
+      "parse_validate": 1.3485121061094105,
+      "construction": 0.8257521081250161,
+      "dataclass_replace": 0.0,
+      "to_frame": 0.3053148000035435
+    },
+    "stage_calls": {
+      "transport": 6,
+      "zip_read": 0,
+      "decode": 6,
+      "parse_validate": 58086,
+      "construction": 58086,
+      "dataclass_replace": 0,
+      "to_frame": 1
+    },
+    "residual_other_s": -0.5125426142476499
+  },
+  "median": {
+    "wall_s": 1.804134099977091,
+    "cpu_s": 0.9375,
+    "peak_rss_bytes": 160288768,
+    "construction": 0.8257521081250161,
+    "dataclass_replace": 0.0,
+    "decode": 0.19997680000960827,
+    "parse_validate": 1.3485121061094105,
+    "residual_other_s": -0.5125426142476499,
+    "to_frame": 0.3053148000035435,
+    "transport": 0.015411200001835823,
+    "zip_read": 0.0,
+    "to_frame_calls": 1
+  },
+  "p95": {
+    "wall_s": 1.8884930000640452,
+    "cpu_s": 1.0625,
+    "peak_rss_bytes": 160329728,
+    "construction": 0.8257521081250161,
+    "dataclass_replace": 0.0,
+    "decode": 0.19997680000960827,
+    "parse_validate": 1.3485121061094105,
+    "residual_other_s": -0.5125426142476499,
+    "to_frame": 0.3053148000035435,
+    "transport": 0.015411200001835823,
+    "zip_read": 0.0
+  },
+  "records_per_s": 32196.054606327536
+}

@@ -1,0 +1,233 @@
+{
+  "set": "eds-cap-FCRN-year-2025",
+  "tag": "base-v030",
+  "n": 7,
+  "records": 0,
+  "requests": 14,
+  "response_bytes": 29105116,
+  "live_elapsed_s": 51.30962400010321,
+  "serial_wall_s": 1.0399816000135615,
+  "serial_records": 0,
+  "environment": {
+    "host": {
+      "platform": "Windows-11-10.0.22621-SP0",
+      "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "logical_cpus": 6,
+      "physical_cpus": 6,
+      "ram_bytes": 34268110848
+    },
+    "python": "3.12.13",
+    "packages": {
+      "nordic-balancing": "0.3.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    },
+    "git_commit": "29bcbe2f2a000455438b46b6df4b7a0deaa2a880",
+    "in_container": false,
+    "cgroup_limits": "none (not in a cgroup-limited container)",
+    "docker_image": null
+  },
+  "samples": [
+    {
+      "set": "eds-cap-FCRN-year-2025",
+      "ok": false,
+      "cpu_s": 0.828125,
+      "error": "SourceError: energidataservice: HourUTC '2025-10-26T01:01:00' is not on a 15-minute boundary",
+      "records": 0,
+      "frame_rows": 0,
+      "requests": 14,
+      "response_bytes": 29105116,
+      "live_elapsed_s": 51.30962400010321,
+      "wall_s": 1.2618719999445602,
+      "peak_rss_bytes": 118857728,
+      "stages_s": {
+        "to_frame": 0.0
+      },
+      "stage_calls": {
+        "to_frame": 0
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "eds-cap-FCRN-year-2025",
+      "ok": false,
+      "cpu_s": 0.875,
+      "error": "SourceError: energidataservice: HourUTC '2025-10-26T01:01:00' is not on a 15-minute boundary",
+      "records": 0,
+      "frame_rows": 0,
+      "requests": 14,
+      "response_bytes": 29105116,
+      "live_elapsed_s": 51.30962400010321,
+      "wall_s": 1.0902233000379056,
+      "peak_rss_bytes": 118763520,
+      "stages_s": {
+        "to_frame": 0.0
+      },
+      "stage_calls": {
+        "to_frame": 0
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "eds-cap-FCRN-year-2025",
+      "ok": false,
+      "cpu_s": 0.828125,
+      "error": "SourceError: energidataservice: HourUTC '2025-10-26T01:01:00' is not on a 15-minute boundary",
+      "records": 0,
+      "frame_rows": 0,
+      "requests": 14,
+      "response_bytes": 29105116,
+      "live_elapsed_s": 51.30962400010321,
+      "wall_s": 0.9639793999958783,
+      "peak_rss_bytes": 118669312,
+      "stages_s": {
+        "to_frame": 0.0
+      },
+      "stage_calls": {
+        "to_frame": 0
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "eds-cap-FCRN-year-2025",
+      "ok": false,
+      "cpu_s": 0.9375,
+      "error": "SourceError: energidataservice: HourUTC '2025-10-26T01:01:00' is not on a 15-minute boundary",
+      "records": 0,
+      "frame_rows": 0,
+      "requests": 14,
+      "response_bytes": 29105116,
+      "live_elapsed_s": 51.30962400010321,
+      "wall_s": 1.2869538000086322,
+      "peak_rss_bytes": 119431168,
+      "stages_s": {
+        "to_frame": 0.0
+      },
+      "stage_calls": {
+        "to_frame": 0
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "eds-cap-FCRN-year-2025",
+      "ok": false,
+      "cpu_s": 0.671875,
+      "error": "SourceError: energidataservice: HourUTC '2025-10-26T01:01:00' is not on a 15-minute boundary",
+      "records": 0,
+      "frame_rows": 0,
+      "requests": 14,
+      "response_bytes": 29105116,
+      "live_elapsed_s": 51.30962400010321,
+      "wall_s": 1.0802925999742001,
+      "peak_rss_bytes": 118906880,
+      "stages_s": {
+        "to_frame": 0.0
+      },
+      "stage_calls": {
+        "to_frame": 0
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "eds-cap-FCRN-year-2025",
+      "ok": false,
+      "cpu_s": 0.90625,
+      "error": "SourceError: energidataservice: HourUTC '2025-10-26T01:01:00' is not on a 15-minute boundary",
+      "records": 0,
+      "frame_rows": 0,
+      "requests": 14,
+      "response_bytes": 29105116,
+      "live_elapsed_s": 51.30962400010321,
+      "wall_s": 1.0894326000707224,
+      "peak_rss_bytes": 118775808,
+      "stages_s": {
+        "to_frame": 0.0
+      },
+      "stage_calls": {
+        "to_frame": 0
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "eds-cap-FCRN-year-2025",
+      "ok": false,
+      "cpu_s": 0.9375,
+      "error": "SourceError: energidataservice: HourUTC '2025-10-26T01:01:00' is not on a 15-minute boundary",
+      "records": 0,
+      "frame_rows": 0,
+      "requests": 14,
+      "response_bytes": 29105116,
+      "live_elapsed_s": 51.30962400010321,
+      "wall_s": 1.3214091000845656,
+      "peak_rss_bytes": 118763520,
+      "stages_s": {
+        "to_frame": 0.0
+      },
+      "stage_calls": {
+        "to_frame": 0
+      },
+      "residual_other_s": null
+    }
+  ],
+  "stage_sample": {
+    "set": "eds-cap-FCRN-year-2025",
+    "ok": false,
+    "serial_wall_s": 1.0399816000135615,
+    "error": "SourceError: energidataservice: HourUTC '2025-10-26T01:01:00' is not on a 15-minute boundary",
+    "records": 0,
+    "frame_rows": 0,
+    "requests": 14,
+    "response_bytes": 29105116,
+    "live_elapsed_s": 51.30962400010321,
+    "wall_s": 1.0399816000135615,
+    "peak_rss_bytes": 118845440,
+    "stages_s": {
+      "transport": 0.03452070022467524,
+      "zip_read": 0.0,
+      "decode": 0.28126089996658266,
+      "parse_validate": 1.0109682000475004,
+      "construction": 0.0,
+      "dataclass_replace": 0.0,
+      "to_frame": 0.0
+    },
+    "stage_calls": {
+      "transport": 11,
+      "zip_read": 0,
+      "decode": 11,
+      "parse_validate": 1,
+      "construction": 0,
+      "dataclass_replace": 0,
+      "to_frame": 0
+    },
+    "residual_other_s": -0.2867682002251968
+  },
+  "median": {
+    "wall_s": 1.0902233000379056,
+    "cpu_s": 0.875,
+    "peak_rss_bytes": 118775808,
+    "construction": 0.0,
+    "dataclass_replace": 0.0,
+    "decode": 0.28126089996658266,
+    "parse_validate": 1.0109682000475004,
+    "residual_other_s": -0.2867682002251968,
+    "to_frame": 0.0,
+    "transport": 0.03452070022467524,
+    "zip_read": 0.0,
+    "to_frame_calls": 0
+  },
+  "p95": {
+    "wall_s": 1.3214091000845656,
+    "cpu_s": 0.9375,
+    "peak_rss_bytes": 119431168,
+    "construction": 0.0,
+    "dataclass_replace": 0.0,
+    "decode": 0.28126089996658266,
+    "parse_validate": 1.0109682000475004,
+    "residual_other_s": -0.2867682002251968,
+    "to_frame": 0.0,
+    "transport": 0.03452070022467524,
+    "zip_read": 0.0
+  },
+  "records_per_s": 0.0
+}

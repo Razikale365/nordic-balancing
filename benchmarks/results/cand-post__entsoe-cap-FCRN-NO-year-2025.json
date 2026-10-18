@@ -1,0 +1,153 @@
+{
+  "set": "entsoe-cap-FCRN-NO-year-2025",
+  "tag": "cand-post",
+  "n": 3,
+  "records": 175200,
+  "requests": 785,
+  "response_bytes": 3468242,
+  "live_elapsed_s": 4020.4990641984623,
+  "serial_wall_s": 13.733883199980482,
+  "serial_records": 175200,
+  "environment": {
+    "host": {
+      "platform": "Windows-11-10.0.22621-SP0",
+      "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "logical_cpus": 6,
+      "physical_cpus": 6,
+      "ram_bytes": 34268110848
+    },
+    "python": "3.12.13",
+    "packages": {
+      "nordic-balancing": "0.3.0",
+      "httpx": "0.28.1",
+      "pandas": "3.0.6",
+      "psutil": "7.2.2"
+    },
+    "git_commit": "825e12c4c760f37d6353a712539970c175c7c9ad",
+    "in_container": false,
+    "cgroup_limits": "none (not in a cgroup-limited container)",
+    "docker_image": null
+  },
+  "samples": [
+    {
+      "set": "entsoe-cap-FCRN-NO-year-2025",
+      "ok": true,
+      "cpu_s": 7.890625,
+      "error": null,
+      "records": 175200,
+      "frame_rows": 175200,
+      "requests": 785,
+      "response_bytes": 3468242,
+      "live_elapsed_s": 4020.4990641984623,
+      "wall_s": 11.1391680999659,
+      "peak_rss_bytes": 248049664,
+      "stages_s": {
+        "to_frame": 0.6212762000504881
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "entsoe-cap-FCRN-NO-year-2025",
+      "ok": true,
+      "cpu_s": 7.046875,
+      "error": null,
+      "records": 175200,
+      "frame_rows": 175200,
+      "requests": 785,
+      "response_bytes": 3468242,
+      "live_elapsed_s": 4020.4990641984623,
+      "wall_s": 10.647645500022918,
+      "peak_rss_bytes": 246935552,
+      "stages_s": {
+        "to_frame": 0.5999969999538735
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    },
+    {
+      "set": "entsoe-cap-FCRN-NO-year-2025",
+      "ok": true,
+      "cpu_s": 7.6875,
+      "error": null,
+      "records": 175200,
+      "frame_rows": 175200,
+      "requests": 785,
+      "response_bytes": 3468242,
+      "live_elapsed_s": 4020.4990641984623,
+      "wall_s": 11.146161999902688,
+      "peak_rss_bytes": 246378496,
+      "stages_s": {
+        "to_frame": 0.6070476999739185
+      },
+      "stage_calls": {
+        "to_frame": 1
+      },
+      "residual_other_s": null
+    }
+  ],
+  "stage_sample": {
+    "set": "entsoe-cap-FCRN-NO-year-2025",
+    "ok": true,
+    "serial_wall_s": 13.733883199980482,
+    "error": null,
+    "records": 175200,
+    "frame_rows": 175200,
+    "requests": 785,
+    "response_bytes": 3468242,
+    "live_elapsed_s": 4020.4990641984623,
+    "wall_s": 13.733883199980482,
+    "peak_rss_bytes": 247578624,
+    "stages_s": {
+      "transport": 0.9054319992428645,
+      "zip_read": 0.2911719992989674,
+      "decode": 2.477548099355772,
+      "parse_validate": 7.616929702926427,
+      "construction": 2.6887401232961565,
+      "dataclass_replace": 0.7836527039762586,
+      "to_frame": 0.6226682999404147
+    },
+    "stage_calls": {
+      "transport": 785,
+      "zip_read": 785,
+      "decode": 2610,
+      "parse_validate": 2610,
+      "construction": 175200,
+      "dataclass_replace": 87600,
+      "to_frame": 1
+    },
+    "residual_other_s": 1.4479566712398082
+  },
+  "median": {
+    "wall_s": 11.1391680999659,
+    "cpu_s": 7.6875,
+    "peak_rss_bytes": 246935552,
+    "construction": 2.6887401232961565,
+    "dataclass_replace": 0.7836527039762586,
+    "decode": 2.477548099355772,
+    "parse_validate": 7.616929702926427,
+    "residual_other_s": 1.4479566712398082,
+    "to_frame": 0.6226682999404147,
+    "transport": 0.9054319992428645,
+    "zip_read": 0.2911719992989674,
+    "to_frame_calls": 1
+  },
+  "p95": {
+    "wall_s": 11.146161999902688,
+    "cpu_s": 7.890625,
+    "peak_rss_bytes": 248049664,
+    "construction": 2.6887401232961565,
+    "dataclass_replace": 0.7836527039762586,
+    "decode": 2.477548099355772,
+    "parse_validate": 7.616929702926427,
+    "residual_other_s": 1.4479566712398082,
+    "to_frame": 0.6226682999404147,
+    "transport": 0.9054319992428645,
+    "zip_read": 0.2911719992989674
+  },
+  "records_per_s": 15728.284053863621
+}
