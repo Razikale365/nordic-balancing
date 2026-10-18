@@ -76,7 +76,8 @@ raises `TypeError`. Read fields by attribute access.
   and `PriceTotalEUR` is EUR/MW per hour. Other auction rows for the same hour,
   area and source product are retained in `raw["auctions"]`; auction rows
   without a Total, a repeated Total or a repeated auction of the same type for one
-  hour, area and product, and unknown product names raise `SourceError`.
+  hour, area and product, an unknown product name, or a row for another known
+  product raise `SourceError`.
   FCR-N is symmetric (`Direction.NONE`); `FCR-D upp` maps to `UP` and
   `FCR-D ned` to `DOWN`. Before `2024-02-01` prices are average prices; from
   that date each auction has a marginal price and Total is the volume-weighted
@@ -198,7 +199,10 @@ See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how
   source published an hourly value, it is expanded into four 15-minute records
   across that hour while `resolution` retains `timedelta(hours=1)`.
   `FingridClient.series()` expands hourly records only for datasets 319, 244, 106,
-  and 369; an hourly record in any other dataset raises `SourceError`.
+  and 369; an hourly record in any other dataset raises `SourceError`. The EDS
+  `ImbalancePrice` dataset publishes every quarter hour; a zone whose rows are
+  all on the hour across more than one hour raises `SourceError` rather than
+  returning records mislabelled as 15-minute.
 
 ### `ImbalancePrice`
 

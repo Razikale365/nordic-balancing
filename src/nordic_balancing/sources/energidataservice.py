@@ -176,6 +176,12 @@ class EnergiDataServiceClient:
         }
         prices: list[ImbalancePrice] = []
         seen: set[tuple[BiddingZone, datetime]] = set()
+        # The dataset publishes every quarter hour. A zone whose rows are all on
+        # the hour across more than one hour has reverted to an hourly cadence,
+        # which `resolution=INTERVAL` would mislabel; a lone :00 row is only a
+        # sparse hour and stays allowed.
+        quartered: set[BiddingZone] = set()
+        on_hour: dict[BiddingZone, set[datetime]] = {}
         for record in self._records("ImbalancePrice", params):
             price = _parse_imbalance(record)
             if price.zone not in zone_list:
@@ -188,8 +194,17 @@ class EnergiDataServiceClient:
                 source=SOURCE,
                 detail=f"record for {price.zone.value} at {price.start.isoformat()}",
             )
+            if price.start.minute:
+                quartered.add(price.zone)
+            else:
+                on_hour.setdefault(price.zone, set()).add(price.start)
             if start_utc <= price.start < end_utc:
                 prices.append(price)
+        for zone, hours in on_hour.items():
+            if len(hours) > 1 and zone not in quartered:
+                raise SourceError(
+                    f"{SOURCE}: ImbalancePrice rows for {zone.value} are only on the hour"
+                )
         prices.sort(key=lambda p: (p.start, p.zone))
         return prices
 
@@ -340,6 +355,10 @@ class EnergiDataServiceClient:
             params["end"] = _format(query_end)
         parsed: list[tuple[datetime, BiddingZone, str, dict[str, Any]]] = []
         dataset = "FcrDK1" if domestic else "FcrNdDK2"
+        # Unlike the other paths, rows are buffered before grouping, so the
+        # duplicate check runs while paging: a server ignoring `offset` then
+        # raises on page two instead of requesting and buffering forever.
+        seen_rows: set[tuple[datetime, BiddingZone, str, str]] = set()
         for row in self._records(dataset, params):
             if not isinstance(row, dict):
                 raise SourceError(f"{SOURCE}: record is not a JSON object")
@@ -360,6 +379,14 @@ class EnergiDataServiceClient:
             name = "FCR" if domestic else row["ProductName"]
             if not domestic and (not isinstance(name, str) or name not in _FCR_PRODUCTS):
                 raise SourceError(f"{SOURCE}: unknown ProductName {name!r}")
+            if not domestic and _FCR_PRODUCTS[name][0] is not product:
+                raise SourceError(f"{SOURCE}: unrequested ProductName {name!r}")
+            reject_duplicate(
+                seen_rows,
+                (hour, zone, name, json.dumps(row.get("AuctionType"), sort_keys=True)),
+                source=SOURCE,
+                detail=f"record for {hour.isoformat()} {zone} {name}",
+            )
             for column in numeric:
                 _number(row, column)
             parsed.append((hour, zone, name, row))
@@ -383,11 +410,7 @@ class EnergiDataServiceClient:
         seen: set[tuple[datetime, BiddingZone, str]] = set()
         for key, rows in groups.items():
             hour, zone, name = key
-            row_product, direction = (
-                (ReserveProduct.FCR, Direction.NONE) if domestic else _FCR_PRODUCTS[name]
-            )
-            if row_product is not product:
-                continue
+            direction = Direction.NONE if domestic else _FCR_PRODUCTS[name][1]
             totals = rows if domestic else [r for r in rows if r["AuctionType"] == "Total"]
             if not totals:
                 raise SourceError(f"{SOURCE}: missing Total for {hour.isoformat()} {zone} {name}")
