@@ -61,14 +61,21 @@ class ReserveProduct(StrEnum):
     FCR = "FCR"
 
 
+_ATOMIC = (str, bytes, int, float, bool, type(None))
+
+
 def _copy_raw(value: Any) -> Any:
     """Deep-copy a JSON-like value so no nested container is shared."""
+    if isinstance(value, dict):
+        return {key: _copy_raw(item) for key, item in value.items()}
     if isinstance(value, Mapping):
         return {key: _copy_raw(item) for key, item in value.items()}
     if isinstance(value, list):
         return [_copy_raw(item) for item in value]
     if isinstance(value, tuple):
         return tuple(_copy_raw(item) for item in value)
+    if isinstance(value, _ATOMIC):
+        return value  # immutable scalars deep-copy to themselves
     return deepcopy(value)
 
 

@@ -1,9 +1,12 @@
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from nordic_balancing import (
     INTERVAL,
@@ -13,7 +16,7 @@ from nordic_balancing import (
     ReserveCapacity,
     ReserveProduct,
 )
-from nordic_balancing.models import to_utc
+from nordic_balancing.models import _copy_raw, to_utc
 
 START = datetime(2026, 1, 15, tzinfo=UTC)
 
@@ -76,6 +79,35 @@ def test_raw_deep_copies_other_mutable_containers() -> None:
     assert first.raw["tags"] is not base["tags"]
     assert first.raw["tags"] is not second.raw["tags"]
     assert first.raw["buf"] is not second.raw["buf"]
+
+
+_json_like = st.recursive(
+    st.none()
+    | st.booleans()
+    | st.integers()
+    | st.floats(allow_nan=False)
+    | st.text()
+    | st.binary(),
+    lambda children: (
+        st.lists(children) | st.tuples(children, children) | st.dictionaries(st.text(), children)
+    ),
+    max_leaves=30,
+)
+
+
+@given(_json_like)
+def test_copy_raw_matches_deepcopy_on_json_like_values(value: Any) -> None:
+    copied = _copy_raw(value)
+    assert copied == deepcopy(value)
+    assert type(copied) is type(deepcopy(value))
+
+
+def test_copy_raw_detaches_at_every_level() -> None:
+    inner = {"x": [1]}
+    record = price({"a": {"b": inner}, "c": (inner,)})
+    inner["x"].append(99)
+    assert record.raw["a"]["b"] == {"x": [1]}
+    assert record.raw["c"][0] == {"x": [1]}
 
 
 def test_reserve_capacity_raw_is_detached_too() -> None:
