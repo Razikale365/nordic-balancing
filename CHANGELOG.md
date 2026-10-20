@@ -87,8 +87,8 @@ earlier versions: Energi Data Service queries over 10,000 rows were silently tru
   Lone zero series are retained; nonzero one-Point series and malformed series
   remain subject to the existing validation and conflict rules. This was observed
   on delivery day 2025-06-05 (starting 2025-06-04T22:00Z) for NO1-NO5 and FI:
-  Opus's FI cross-check matched Fingrid on 24/24 hours for the real series and
-  0/24 for the placeholders. Supplied live
+  a live FI cross-check matched Fingrid on 24/24 hours for the real series and
+  0/24 for the placeholders. Live
   evidence matched all 48 hour-directions against Fingrid FI and SvK SE3 on 2026-10-08.
 - **Energi Data Service:** `EnergiDataServiceClient.capacity_market(product, start, end, *,
   zones=(DK1, DK2))` returns `ReserveCapacity` records: aFRR for all 12 Nordic zones (from

@@ -1,7 +1,7 @@
 # ArcticGrid as a reference consumer of nordic-balancing
 
-Status: specification plus the smallest runnable integration, 2026-10-18. Written by the lead
-(Opus) after reading ArcticGrid at `main` f7d4e64. Not independently reviewed.
+Status: specification plus the smallest runnable integration, 2026-10-18, against
+[ArcticGrid](https://github.com/Razikale365/ArcticGrid) at `main` f7d4e64.
 
 ## 1. The question this integration answers
 
@@ -68,7 +68,7 @@ uv run --no-project --with "arcticgrid @ git+https://github.com/Razikale365/Arct
     python benchmarks/arcticgrid_reference/replay_battery.py <dir>/se3-2025.json
 ```
 
-Results (2026-10-18, Windows host, ArcticGrid f7d4e64, nordic-balancing `wp/perf` a16e844 for the
+Results (2026-10-18, Windows host, ArcticGrid f7d4e64, nordic-balancing a16e844 for the
 export; battery 1 MW / 2 MWh, efficiencies 0.95/0.95, SoC 10-90 %, start 50 %):
 
 | dataset | intervals | resolution mix | unpublished | gaps | replay x2 |
@@ -106,11 +106,11 @@ and needs its own design review; nothing in nordic-balancing has to change for i
 
 Purpose: measure how a service built on nordic-balancing behaves when many users ask for
 overlapping data, after single-process performance is understood (it now is, see
-`PERFORMANCE_BASELINE.md`).
+[../README.md](../README.md)).
 
 - **System under test:** a thin FastAPI service (ArcticGrid's API is the natural host) that answers
   `GET /prices?zones&start&end` from nordic-balancing clients, with an optional shared cache keyed
-  by (source, zone, UTC day). The library itself stays synchronous (decision D8); the service runs
+  by (source, zone, UTC day). The library itself stays synchronous; the service runs
   calls in a bounded thread pool.
 - **Load:** 1, 10, 50, 200 concurrent virtual users; request mix of one day / one month / one year,
   one zone / all zones; 30-50 % overlapping windows. Upstream is the frozen-fixture replay
@@ -120,7 +120,7 @@ overlapping data, after single-process performance is understood (it now is, see
   request count (cache effectiveness), and correctness (responses byte-equal to single-user
   results).
 - **Constraints already known:** a one-year all-zone ENTSO-E result holds about 413k records and
-  ~640 MiB peak RSS in one process (Sol's comparison), so year-scale requests per user will not
+  ~640 MiB peak RSS in one process (see [../README.md](../README.md)), so year-scale requests per user will not
   fit naively in memory at 50+ users. Expect the design to need day-granular caching and
   streaming responses before the multi-user numbers mean anything. Provider rate limits
   (Energi Data Service in particular) make request coalescing a correctness requirement, not

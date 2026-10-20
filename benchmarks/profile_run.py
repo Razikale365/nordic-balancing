@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fixtures
 import workloads
 
-FIXTURES_ROOT = Path(r"C:\Docker\nb-perf-fixtures")
+FIXTURES_ROOT = fixtures.FIXTURES_ROOT
 
 
 def main(argv: list[str]) -> int:

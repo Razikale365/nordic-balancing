@@ -1,72 +1,79 @@
-# Benchmark harness (performance investigation)
+# Benchmarks
 
-Offline, fixture-driven benchmarking for `nordic-balancing`. Live provider
-responses are recorded once into `C:\Docker\nb-perf-fixtures` (outside the
-repo, never committed or redistributed — they are API payload bytes) and
-replayed through `httpx` transports passed to each client's public `http=`
-parameter. See `../.jpcp/perf/FIXTURES.md` for the shared fixture contract.
+How fast `nordic-balancing` is, how it compares with other Python clients for the same data, and
+the harness that measures it.
 
-## Files
+**Method in two sentences.** Real provider responses were recorded once and replayed byte for byte
+through each client's public `http=` parameter, so network latency is excluded and every client
+parses identical input. Each measurement runs in a fresh subprocess after one warmup; medians of
+3 runs (year windows) or 7 (shorter), on a Windows 11 workstation (i5-9400F, 6 cores, 32 GiB,
+Python 3.12) that was not isolated, so expect run-to-run variation of tens of percent.
 
-- `fixtures.py` — `RecordTransport` / `ReplayTransport` implementing the
-  FIXTURES.md manifest format; `replay_client(set_dir)` returns an
-  `httpx.Client` for a recorded set. Replay misses raise `ReplayMissError`.
-- `workloads.py` — the single source of truth for the recorded client calls;
-  record, run and compare all use it.
-- `record.py` — records one named set per invocation on the v0.3.0 code (see
-  the module docstring for the exact `uv run --project` command). Requests
-  are serial and paced; API keys come from the environment and are scanned
-  for afterwards. `--finalize` writes `C:\Docker\nb-perf-fixtures\READY`.
-- `run.py` — the measurement harness. Each measurement is a fresh
-  subprocess; a warmup child then N measured children per set (N=7 when the
-  probe is sub-second, else 3; override with `--repeats`). Per child it
-  reports wall, CPU user+sys, peak RSS (psutil), per-stage times measured on
-  the real code path (transport, ZIP read, decode, parse+validate, record
-  construction incl. the `raw` deep copy, merge `replace`), `to_frame`, a
-  residual (dedupe/merge/expansion/sort), records/s and output cardinality.
-  Live provider latency is reported only from the recorded `elapsed_s`.
-  Output: `benchmarks/results/<tag>__<set>.json`.
-- `compare_outputs.py` — dumps canonical JSONL of every record (fields +
-  `raw`, in order) per set per version, and diffs two dumps. Run before and
-  after any optimization commit.
-- `memory_contamination.py` — measures how much of
-  `examples/benchmarks/memory.py`'s timed wall is synthetic payload
-  generation inside the mock handler.
-- `Dockerfile` — pinned container build (Python 3.12, deps from `uv.lock`).
+## Compared with other clients (2026-10-17, v0.3.0)
 
-## Running
+Same recorded bytes for both sides; wall time in seconds, peak resident memory in MiB.
 
-Locally (the `benchmarks` dependency group provides psutil and pandas):
+| Workload | nordic-balancing | Other client | Prices identical |
+|---|---:|---:|---|
+| ENTSO-E imbalance, SE3, October 2025 | 0.73 s / 43 MiB | entsoe-py 0.8.1: 2.79 s / 113 MiB | yes, 2,976 of 2,976 |
+| ENTSO-E imbalance, SE3, 2025 | 8.2 s / 140 MiB | entsoe-py: 25.9 s / 384 MiB | yes, on every common interval |
+| ENTSO-E imbalance, 12 zones, 2025 | 87 s / 641 MiB | entsoe-py: 238 s / 472 MiB | yes, on every common interval |
+| eSett imbalance, SE3, 2025 | 1.04 s / 89 MiB | esett-py 0.1.0: 0.12 s / 71 MiB | yes, 35,040 of 35,040 |
+| eSett imbalance, 12 zones, 2025 | 17.2 s / 700 MiB | esett-py: 1.7 s / 526 MiB | yes, 420,480 of 420,480 |
 
-```
+- **ENTSO-E:** faster than entsoe-py on all six recorded sets (1.4 to 3.8 times); uses more
+  memory on the all-zone year.
+- **eSett:** esett-py is about 10 times faster. It returns the raw JSON dictionaries; this
+  library parses timestamps, validates every record against the [data contracts](../README.md#data-contracts)
+  and builds typed records. After the optimisation below the gap is roughly 6 to 7 times (separate
+  runs, so approximate), and what is left is that work, not copying overhead.
+- **Row counts differ on yearly ENTSO-E windows** because this library expands hourly-published
+  values to four quarters (SE3 2025: 35,020 rows against 29,563). An independent XML decoder
+  (`source_audit.py`) confirmed that neither client dropped or changed a published value.
+- No other maintained client covers the Energi Data Service, Fingrid or Svenska kraftnät
+  balancing workloads here, so those are measured only on their own.
+
+## Optimisation (2026-10-18)
+
+Profiling showed the deep copy of each record's `raw` source data was the largest cost on every
+provider, almost all of it per-value dispatch rather than copying. Copying builtin JSON types
+directly cut end-to-end time on year workloads with output byte-identical on all 12 recorded sets
+(1.42 M records, `raw` included); peak memory is unchanged.
+
+| Workload (2025) | v0.3.0 | after | change |
+|---|---:|---:|---:|
+| eSett SE3 | 1.22 s | 0.79 s | -36 % |
+| eSett, 12 zones | 15.8 s | 10.9 s | -31 % |
+| ENTSO-E SE3 | 4.30 s | 3.40 s | -21 % |
+| ENTSO-E, 12 zones | 60.0 s | 48.4 s | -19 % |
+| Energi Data Service DK | 1.75 s | 1.38 s | -21 % |
+
+Not done yet: the duplicate-merge chain in the ENTSO-E parser builds some records three times;
+it is the next-largest cost.
+
+## Harness
+
+The recorded responses are API payloads and are not redistributed. Scripts read them from
+`$NB_FIXTURES`, or from the git-ignored `benchmarks/.fixtures/` when it is unset.
+Result JSON files are written to `benchmarks/results/` and are not committed.
+
+- `fixtures.py`: record and replay `httpx` transports; a request that was not recorded raises.
+- `workloads.py`: the client calls that are recorded and measured.
+- `record.py`: records one named set of live responses (API keys come from the environment).
+- `run.py`: wall, CPU, peak memory and per-stage timings (transport, decode, parse, record
+  construction, merge) per set.
+- `compare_outputs.py`: dumps every record as canonical JSONL and diffs two versions; run before
+  and after any optimisation.
+- `compare.py`, `source_audit.py`: the comparison with other clients and the independent XML check.
+- `Dockerfile`: pinned container build for repeatable runs.
+- `arcticgrid_reference/`: a downstream consumer replaying a recorded dataset
+  ([README](arcticgrid_reference/README.md)).
+
+```bash
 uv run --group benchmarks python benchmarks/run.py --sets <set>[,<set>...] --tag <label>
-uv run --group benchmarks python benchmarks/compare_outputs.py dump --tag <label>
 uv run --group benchmarks python benchmarks/compare_outputs.py diff <labelA> <labelB>
+uv run --locked --group benchmarks-compare python -m benchmarks.compare
 ```
 
-In Docker (repeatability, not hardware independence — the container still
-shares the host kernel scheduler and is affected by host load):
-
-```
-docker build -f benchmarks/Dockerfile -t nb-perf .
-docker run --rm --cpus=2 --memory=4g ^
-  -v C:\Docker\nb-perf-fixtures:/fixtures:ro ^
-  -v %cd%\benchmarks\results:/work/benchmarks/results ^
-  -e NB_FIXTURES=/fixtures -e NB_DOCKER_IMAGE=nb-perf ^
-  -e NB_GIT_COMMIT=%COMMIT_SHA% ^
-  nb-perf --sets entsoe-imb-SE3-year-2025 --tag docker-baseline
-```
-
-Every result JSON records the environment: host CPU/cores/RAM/OS, Python and
-package versions, the git commit, the effective cgroup limits read from
-`/sys/fs/cgroup`, and the image tag passed via `NB_DOCKER_IMAGE`.
-
-## Stage semantics
-
-Stage timers wrap the real code path during one end-to-end call and are
-*inclusive* where nested: ENTSO-E `parse_validate` contains `decode`;
-eSett/EDS `parse_validate` (`_parse_imbalance`) contains `construction`.
-`dataclass_replace` (ENTSO-E) counts the merge `replace` calls plus cheap
-`_Point` replacements. `residual_other_s` is e2e wall minus the top-level
-stages: dedupe, merging, hourly expansion bookkeeping, final sorting, and
-EDS capacity's inline record parsing. `to_frame` is timed outside e2e.
+Memory for a full year of all 12 zones, measured with synthetic responses, is in
+[examples/benchmarks/](../examples/benchmarks/README.md).

@@ -126,7 +126,7 @@ Caller-visible behavior, read from entsoe-py 0.8.1 source:
 - Every A85 response was a ZIP holding one schema-4.4 document with `curveType` A03
   and categories A04 + A05 at equal prices.
 - #529 reproduces live for FI (section 1).
-- Full detail: `docs/RELEASE_EVIDENCE.md`, ENTSO-E section.
+- Full detail: `docs/SOURCE_NOTES.md`, ENTSO-E section.
 
 Notes: entsoe-py issues #435/#523 concern `query_procured_balancing_capacity`
 (Slovakia) — a reliability signal for capacity queries, not imbalance prices.

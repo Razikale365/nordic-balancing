@@ -1,14 +1,30 @@
 # nordic-balancing
 
-Python client for Nordic electricity **balancing** and **imbalance** data, normalised to
-15-minute UTC intervals.
+[![PyPI](https://img.shields.io/pypi/v/nordic-balancing)](https://pypi.org/project/nordic-balancing/)
+[![CI](https://github.com/Razikale365/nordic-balancing/actions/workflows/ci.yml/badge.svg)](https://github.com/Razikale365/nordic-balancing/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/nordic-balancing)](https://pypi.org/project/nordic-balancing/)
 
-> **Status: beta.** Releases are on [PyPI](https://pypi.org/project/nordic-balancing/).
-> The public API is defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md) and the fields
-> each source provides in [docs/FIELD_MATRIX.md](docs/FIELD_MATRIX.md); a test fails on any
-> change to either. Every source is checked against its live API daily. Before 1.0 the API
-> can still change between minor versions; every change is listed in
-> [CHANGELOG.md](CHANGELOG.md).
+Typed Python clients for Nordic electricity **balancing** data: imbalance prices and reserve
+capacity from eSett, Energinet, Fingrid, Svenska kraftnät and ENTSO-E, all on 15-minute UTC
+intervals, with every source quirk handled explicitly instead of silently.
+
+## Why it exists: the data is not what it says
+
+eSett has published Nordic imbalance prices every 15 minutes since May 2023. But until
+**19 March 2025** the four quarters of every hour carried the same price: across 192,108
+zone-hours before that date, not one had differing quarters. Since then they differ in most
+hours; in DK, FI, SE3 and SE4 the average spread within an hour is over 100 EUR/MWh.
+
+![Share of hours where all four quarter-hour imbalance prices match, December 2024 to May 2025](https://raw.githubusercontent.com/Razikale365/nordic-balancing/main/examples/mfrr_transition/summary.png)
+
+A backtest of quarter-hour flexibility, or a model trained across that date, would treat
+repeated hourly prices as real quarter-hour ones. The switch is also not the mFRR energy
+market go-live on 4 March 2025 that most people would guess.
+[Full analysis](examples/mfrr_transition/README.md).
+
+`nordic-balancing` records that kind of change as data. Every record keeps the resolution the
+source published at, and `changes_between(start, end)` returns the dated market changes
+(resolution switches, price-formula changes) inside any window.
 
 ## Install
 
@@ -19,151 +35,107 @@ pip install "nordic-balancing[pandas]"  # adds to_frame()
 
 Python 3.12 or newer.
 
-## Why
-
-Nordic balancing data is spread across several transmission system operators and eSett,
-each with its own API, authentication, time zone handling and resolution history. The
-Nordic markets moved to 15-minute resolution in stages (imbalance settlement in 2023,
-mFRR energy activation and intraday in 2025, day-ahead in October 2025), so the same
-series can change resolution mid-history.
-
-`nordic-balancing` aims to give one typed interface over these sources, with every series
-in UTC on 15-minute intervals and a dated record of resolution and price-formula changes.
-
-## Usage
+## Quick start
 
 ```python
 from datetime import UTC, datetime, timedelta
 
-from nordic_balancing import BiddingZone, ESettClient, EnergiDataServiceClient
+from nordic_balancing import ESettClient, to_frame
 
 start = datetime(2026, 1, 15, tzinfo=UTC)
-with EnergiDataServiceClient() as eds:
-    prices = eds.imbalance_prices(start, start + timedelta(hours=1), [BiddingZone.DK1])
-
 with ESettClient() as esett:
-    nordic_prices = esett.imbalance_prices(start, start + timedelta(hours=1))  # all 12 zones
+    prices = esett.imbalance_prices(start, start + timedelta(days=1))  # all 12 zones
 
-for p in prices:
+for p in prices[:4]:
     print(p.start, p.zone, p.imbalance_price_eur, p.dominating_direction)
+
+frame = to_frame(prices).set_index(["start", "zone"])  # needs the pandas extra
 ```
 
-With the `pandas` extra, `to_frame` turns any list of records into a DataFrame: one row
-per record, one column per field except `raw`, `start` in UTC, `None` as `NaN`, and
-directions as nullable integers.
+## Which client to use
 
-```python
-from nordic_balancing import to_frame
+| You want | Use | Key |
+|---|---|---|
+| Imbalance prices for all 12 Nordic zones | `ESettClient().imbalance_prices(start, end)` | none |
+| The same prices from ENTSO-E, e.g. to cross-check | `EntsoeClient().imbalance_prices(start, end)` | `ENTSOE_API_KEY` |
+| DK1/DK2 imbalance prices with their components | `EnergiDataServiceClient().imbalance_prices(start, end, zones)` | none |
+| FI imbalance prices and mFRR components, or any Fingrid dataset | `FingridClient().imbalance_prices(start, end)`, `.series(dataset_id, start, end)` | `FINGRID_API_KEY` |
+| Reserve capacity (FCR, aFRR, mFRR) prices and volumes | `capacity_market(product, start, end)` on: `SvKClient` (SE mFRR, aFRR), `EnergiDataServiceClient` (DK; aFRR for all zones; FCR for SE), `FingridClient` (FI), `EntsoeClient` (NO; FI mFRR) | as above |
+| Where two sources disagree | `reconcile_imbalance_prices(primary, reference)` | none |
 
-frame = to_frame(nordic_prices).set_index(["start", "zone"])
-```
-
-Every query takes timezone-aware datetimes and returns intervals starting in
-`[start, end)`, keyed by their UTC start. A price of `None` means the source has
-not published it yet or does not provide it. `resolution` retains the source's
-publication interval; historical hourly values are expanded into four quarters.
-`raw` is a read-only mapping over a deep copy of the source record, private to
-that record; only its top level rejects writes, so treat nested values as read-only too.
-
-Set `FINGRID_API_KEY` to a free key from https://developer-data.fingrid.fi.
-Use `with FingridClient() as fingrid:` after importing it from `nordic_balancing`.
-Call `fingrid.imbalance_prices(start, end)` for FI prices, or `series(dataset_id, start, end)`.
-`series()` expands hourly records only for datasets 319, 244, 106 and 369; any other
-dataset must be 15-minute, and an hourly record raises `SourceError`.
-
-Call `FingridClient().capacity_market(ReserveProduct.FCR_N, start, end)` for Finnish hourly-market capacity. FCR-D and mFRR are also supported; volumes exclude yearly-market procurement.
-Use `EntsoeClient().capacity_market(ReserveProduct.MFRR, start, end, zones=[BiddingZone.FI])` for Finnish mFRR, or omit `zones` for NO1–NO5. Finnish FCR is available through Fingrid.
-
-Svenska kraftnät needs no key.
-Call `SvKClient().capacity_market(ReserveProduct.MFRR, start, end)` for SE1–SE4 capacity prices and volumes.
+Keys are free: ENTSO-E from the [Transparency Platform](https://transparency.entsoe.eu/),
+Fingrid from [developer-data.fingrid.fi](https://developer-data.fingrid.fi). Coverage and
+history start per source are in [docs/FIELD_MATRIX.md](docs/FIELD_MATRIX.md) and
+[docs/SOURCE_NOTES.md](docs/SOURCE_NOTES.md).
 
 ## Data contracts
 
-Every client enforces the same contracts; a violation raises `SourceError`.
+Every client enforces the same rules and raises `SourceError` when a source breaks them.
+The full text is in [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
 
-- **C1 Window.** Queries take aware datetimes and return exactly the intervals
-  whose start is in `[start, end)`, at any sub-second precision of `start`/`end`.
-- **C2 Pagination.** Rows fetched must equal the total the source reported; a
-  missing or invalid total, a short or empty page before the total is reached,
-  or a mismatch is an error.
-- **C3 Duplicates.** Two source records for the same series key (zone and
-  interval start, plus product and direction for SvK) are an error, even when
-  the values are equal. Documented exceptions:
-  - ENTSO-E: an interval published under distinct price categories (A04 and
-    A05) with one equal price collapses to that price, with every category kept
-    in `raw`. The same category twice (or two records without one), unequal
-    prices, equal prices at different resolutions, or two points at the same
-    position within one Period raise.
-  - ENTSO-E FCR-N and mFRR capacity (A81): identical quantity/price repeats across
-    documents, ZIP members or TimeSeries collapse by zone, interval and direction
-    after A03 filling. Differing values and repeated positions within a Period
-    raise. The documented zero-placeholder exception remains mFRR-only.
-  - Fingrid: around its 2025-03 switch an hourly and a 15-minute record can cover
-    the same quarter. The hourly value is kept before 2025-03-18T23:00Z and the
-    15-minute value from then on; the other stays in `raw["<dataset>_superseded"]`.
-    Two records with the same start and resolution raise.
-- **C4 Missing vs unpublished.** An interval the source did not return is absent
-  from the result; a record returned with a null value has that field set to
-  `None`. Clients never fill gaps.
-- **C5 Numbers.** Values must be JSON numbers (`bool` rejected), finite and
-  convertible to `float`.
-- **C6 Outside window.** Records outside the requested query window are an error.
-- **C7 Resolution.** `resolution` is the source's publication interval; hourly
-  records are repeated across four quarters. Sources can label the same price
-  differently: ENTSO-E kept `PT60M` for SE and NO until 2025-03-18T00:00Z, eSett
-  switched to 15 minutes on 2023-05-21T22:00Z (see
-  [docs/RELEASE_EVIDENCE.md](docs/RELEASE_EVIDENCE.md)).
-- **C8 Transport.** Network and protocol failures surface as `SourceError`, never as
-  raw `httpx` exceptions. HTTP 429/503 are retried, then raise `RateLimitError`, which
-  is raised at once when `Retry-After` exceeds 300 s. HTTP 502/504, timeouts,
-  dropped connections and undecodable bodies are retried within the same
-  `max_retries` budget, then raise `SourceError`.
+- **Exact windows.** Timezone-aware `[start, end)` in, exactly the intervals starting in it out.
+- **No gap filling.** An interval the source did not return is absent; a value it has not
+  published is `None`, never `0`.
+- **Duplicates raise**, even with equal values, except for a few documented source patterns.
+- **Pagination is checked** against the total the source reports.
+- **Numbers are validated**: finite JSON numbers only.
+- **Resolution is kept**: hourly values are expanded to four quarters and labelled hourly.
+- **Transport errors are typed**: retries for 429/5xx/timeouts, then `RateLimitError` or
+  `SourceError`, never a raw `httpx` exception.
 
-`reconcile_imbalance_prices` reports differences between two sources; it never merges
-series or picks a source. `identical` counts intervals present in both with the same
-resolution, exactly equal prices (a difference within the tolerance is a ROUNDING
-divergence) and, when both sides have one, the same dominating direction; other fields
-are not compared. Zones present in only one input are listed in
-`primary_only_zones` / `reference_only_zones` rather than dropped silently.
+`reconcile_imbalance_prices` reports differences between two sources by kind (rounding,
+price, direction, resolution, missing, unpublished); it never merges series or picks a winner.
 
-See [docs/RELEASE_EVIDENCE.md](docs/RELEASE_EVIDENCE.md) for provider verification
-status, observed API behaviour and known limitations.
+## What it has found in the real data
 
-## Sources
+Each is reproducible with a script in [examples/](examples/).
 
-| Source | Client | Data | Access | Verified against the live API |
-|---|---|---|---|---|
-| Energinet — Energi Data Service | `EnergiDataServiceClient` | DK1/DK2 imbalance prices and components, from 2025-03-04; aFRR capacity for all 12 Nordic zones from 2022-12-07T23:00Z; mFRR capacity for DK1/DK2 from 2023-06-20T22:00Z; FCR-N/FCR-D capacity for DK2/SE1–SE4 (Total rows only); symmetric FCR capacity for DK1 (hourly, expanded to 15 minutes) | free, no key (CC BY 4.0) | yes |
-| Fingrid | `FingridClient` | FI imbalance prices, mFRR up/down prices, dominating direction; FI hourly-market FCR-N, FCR-D and mFRR capacity prices/volumes via `capacity_market()` (hourly, expanded to quarters); any 15-minute dataset via `series()` | free API key | yes |
-| Svenska kraftnät | `SvKClient` | SE1–SE4 mFRR and aFRR capacity market prices and volumes (hourly, expanded to 15 minutes) | free (CC-BY-4.0) | yes |
-| eSett | `ESettClient` | Imbalance prices, all 12 Nordic zones, from 2021-10-31T23:00Z | free, no key | yes |
-| ENTSO-E Transparency Platform | `EntsoeClient` | Imbalance prices (A85), all 12 Nordic zones, from 2021-10-31T23:00Z (FI 22:00Z); symmetric FCR-N capacity (A81), NO1–NO5, product inferred from SE/DK2 comparisons; mFRR capacity (A81/A47) for NO1–NO5 from 2024-02-11T23:00Z (delivery day 2024-02-12) and FI from 2024-11-12T23:00Z (delivery day 2024-11-13), product verified against Fingrid/SvK | free token (`ENTSOE_API_KEY`) | yes |
+- **ENTSO-E is missing 7,361 zone-quarters of 2025** that eSett has, and 86 DK quarters read
+  `0.0` where eSett has a price ([entsoe_validation](examples/entsoe_validation/README.md)).
+- **eSett marks unsettled DK intervals with `0.0`** in every price column instead of null.
+  This library returns `None` for them, as for any unpublished value.
+- **Reading "unpublished" as zero is invisible downstream.** In a battery replay on
+  [ArcticGrid](benchmarks/arcticgrid_reference/README.md), one unpublished quarter read as
+  0 EUR/MWh changed the dispatch but left the cash total identical.
+- **Energi Data Service reads query times as Danish local time** unless told otherwise, so a
+  naive query shifts by one or two hours.
+- **Fingrid's hourly and 15-minute series overlapped for four days in March 2025** with
+  different values; the client keeps the hourly value, which is the one eSett settled.
+- **ENTSO-E labels SE and NO prices hourly until 2025-03-18** although eSett has published them
+  per quarter since 2023; the prices agree, the labels do not.
+- **A dropped row in entsoe-py** at its yearly query boundary
+  ([issue #529](https://github.com/EnergieID/entsoe-py/issues/529)), reproduced offline
+  ([entsoe_py_comparison](examples/entsoe_py_comparison/REPORT.md)).
 
-Not covered yet: activated balancing energy volumes. Out of scope: generic day-ahead
-price clients and mFRR bid submission — other
-projects already cover those.
+All observed source behaviour, with dates, is in [docs/SOURCE_NOTES.md](docs/SOURCE_NOTES.md).
+
+## Status
+
+Beta, on [PyPI](https://pypi.org/project/nordic-balancing/). The public API is pinned by a
+snapshot test against [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and every source is checked
+against its live API daily. 1.0 is next. Performance, including a comparison with entsoe-py and
+esett-py on identical recorded responses, is in [benchmarks/](benchmarks/README.md).
+
+Not covered yet: activated balancing energy volumes. Out of scope: day-ahead price clients and
+mFRR bid submission, which other projects already cover.
 
 ## Development
 
 ```bash
 uv sync
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-uv run pytest -m live      # calls the real APIs; not run by default
+uv run pytest              # offline suite
+uv run ruff check . && uv run ruff format --check . && uv run mypy
+uv run pytest -m live      # calls the real APIs; needs the keys above
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE). Data retrieved through this library remains subject to each
-source's own terms of use.
+MIT, see [LICENSE](LICENSE). Data retrieved through this library remains subject to each
+source's terms. Energinet, Svenska kraftnät and Fingrid publish under CC BY 4.0; when
+republishing, follow the source's attribution terms (Energinet suggests "Source: Energinet
+(www.energidataservice.dk)") without implying endorsement.
 
-Energinet, Svenska kraftnät and Fingrid publish data under CC BY 4.0. Users who
-republish data must follow the source's attribution terms. Energinet suggests:
-"Source: Energinet (www.energidataservice.dk)". Attribution must not imply endorsement.
-
-This is an independent project. It is not affiliated with, endorsed by or supported by
-Energinet, Fingrid, Svenska kraftnät, eSett, ENTSO-E or any other data provider.
+This is an independent project, not affiliated with or endorsed by Energinet, Fingrid,
+Svenska kraftnät, eSett, ENTSO-E or any other data provider.

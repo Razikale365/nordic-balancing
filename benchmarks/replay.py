@@ -30,7 +30,7 @@ def request_key(method: str, url: str) -> str:
         for k, v in parse_qsl(parts.query, keep_blank_values=True)
         if k.lower() not in _SECRET_NAMES
     ]
-    # Stable sort by name, retaining repeated-parameter order, as FIXTURES.md specifies.
+    # Stable sort by name, retaining repeated-parameter order, as the recorder does.
     query.sort(key=lambda item: item[0])
     clean_url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
     return f"{method.upper()} {clean_url}"

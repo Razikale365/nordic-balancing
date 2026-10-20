@@ -1,4 +1,4 @@
-"""Record and replay ``httpx`` transports for the frozen fixtures in FIXTURES.md.
+"""Record and replay ``httpx`` transports for the recorded fixture sets.
 
 Record: pass ``httpx.Client(transport=RecordTransport(set_dir))`` as a client's
 ``http=`` argument. Every response body is stored verbatim in ``NNNNNN.bin``
@@ -9,15 +9,21 @@ request headers or bodies are recorded at all.
 Replay: ``ReplayTransport(set_dir)`` answers each request with the recorded
 response for its canonical key; an unrecorded key raises ``ReplayMissError``
 rather than returning a synthetic response.
+
+Recorded sets live under ``FIXTURES_ROOT``: ``$NB_FIXTURES`` when set, else the
+git-ignored ``benchmarks/.fixtures/``. They are API payloads and are never committed.
 """
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
+
+FIXTURES_ROOT = Path(os.environ.get("NB_FIXTURES", Path(__file__).resolve().parent / ".fixtures"))
 
 # Lower-cased query parameter names that can carry credentials. Request headers
 # (Fingrid's x-api-key, Authorization) are never persisted, so they need no list.
@@ -33,7 +39,7 @@ class ReplayMissError(FixtureError):
 
 
 def request_key(request: httpx.Request) -> str:
-    """Canonical key per FIXTURES.md: METHOD scheme://host/path?sorted query, no secrets."""
+    """Canonical key: METHOD scheme://host/path?sorted query, no secrets."""
     url = request.url
     items = sorted(
         (
@@ -47,7 +53,7 @@ def request_key(request: httpx.Request) -> str:
 
 
 class RecordTransport(httpx.BaseTransport):
-    """Wrap a live transport and persist every response in FIXTURES.md format.
+    """Wrap a live transport and persist every response in the manifest format above.
 
     Requests are serialised behind one lock (even a thread-pooled client cannot
     produce concurrent live calls) and paced at least ``min_interval_s`` apart.

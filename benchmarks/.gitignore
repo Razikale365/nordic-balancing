@@ -1,1 +1,5 @@
 .tmp/
+.fixtures/
+# Raw result JSON stays local; summaries go in README.md
+results/*
+!results/.gitkeep

@@ -8,7 +8,7 @@ from benchmarks.tests.test_compare import END, START, document, make_set, period
 
 
 def main():
-    scratch = ROOT / ".jpcp/perf/smoke-runs"
+    scratch = ROOT / "benchmarks/.tmp/smoke-runs"
     scratch.mkdir(parents=True, exist_ok=True)
     directory = ROOT / "benchmarks/.tmp/handmade-day"
     make_set(directory, document(period(START, END, 100)))

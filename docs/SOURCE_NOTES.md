@@ -1,45 +1,20 @@
-# Release evidence
+# Source notes
 
-Originally compiled 2026-10-09, before the first PyPI release; updated 2026-10-12
-for the 0.1.0 ENTSO-E live verification and again after it for the committed
-ENTSO-E validation script; updated 2026-10-15 for 0.2.0 (not published), 2026-10-17
-for 0.3.0 and 2026-10-18 for 0.3.1. Each live result carries the
-date it was observed. Every claim cites a file, a test, a command or a URL.
+What each source's API actually does, as observed against the live services. These are the
+quirks the clients handle and the reason for most of the validation in the code. Each item
+carries the date it was observed and points to the file, test or script that shows it.
+The public contract is in [API_CONTRACT.md](API_CONTRACT.md); per-source fields are in
+[FIELD_MATRIX.md](FIELD_MATRIX.md).
 
-## Status
+## History starts
 
-- Version `0.3.1` (`pyproject.toml`); **beta** (classifier `Development Status :: 4 -
-  Beta`). The public surface is defined and tested (`docs/API_CONTRACT.md`,
-  `tests/test_public_api.py`); before 1.0 it can still change between minor versions,
-  and any such change is listed in the CHANGELOG. 0.1.0 was the first non-pre-release;
-  0.1.0a1–a3 were PyPI pre-releases.
-- Python `>=3.12` (`requires-python`); classifiers list 3.12, 3.13 and 3.14, and CI
-  runs all three plus a job at the lowest declared dependency versions.
-- Scheduled live runs: `.github/workflows/live.yml` runs `pytest -m live` daily at
-  09:17 UTC with repository secrets. The first scheduled run, 2026-10-15
-  ([38749451136](https://github.com/Razikale365/nordic-balancing/actions/runs/38749451136)),
-  passed 17 of 17 with none skipped. Scheduled runs on 2026-10-16
-  ([38912353249](https://github.com/Razikale365/nordic-balancing/actions/runs/38912353249)) and
-  2026-10-17 ([39034830595](https://github.com/Razikale365/nordic-balancing/actions/runs/39034830595))
-  also passed with none skipped. The live suite for 0.3.1 has 34 tests (one added for the
-  October fall-back hours); the scheduled run of 2026-10-18 on the release commit's code
-  ([39131176760](https://github.com/Razikale365/nordic-balancing/actions/runs/39131176760))
-  passed 34 of 34.
-- Licence: MIT (`LICENSE`). Retrieved data remains under each source's own terms.
-- Runtime dependency: `httpx>=0.27,<1` only. Optional extra `pandas` (`pandas>=2.1`), used
-  only by `to_frame`; CI runs the suite at the lowest allowed version (pandas 2.1, the
-  `lowest-direct` job in `.github/workflows/ci.yml`) and at the locked version (pandas
-  3.0.6, `uv.lock`).
-
-## Provider matrix
-
-| Source | Data | Access | Verification | History start |
-|---|---|---|---|---|
-| Energi Data Service (Energinet) | DK1/DK2 imbalance prices and components; reserve capacity: aFRR (12 zones), mFRR (DK1, DK2), FCR (DK1), FCR-N and FCR-D (DK2, SE1–SE4) | free, no key | live-verified: `test_live_one_hour_of_dk_imbalance_prices`, `test_live_sixty_days_span_more_than_one_page`, `test_live_recent_energidataservice_afrr_capacity`, `test_live_recent_energidataservice_mfrr_capacity`, `test_live_recent_eds_fcr_capacity` | imbalance 2025-03-04; aFRR 2022-12-07T23:00Z; mFRR 2023-06-20T22:00Z; FcrDK1 2021-01-18T23:00Z; FcrNdDK2 2021-11-09T23:00Z |
-| Fingrid | FI imbalance prices, mFRR up/down components, dominating direction (datasets 319, 244, 106, 369); generic `series(dataset_id)`; reserve capacity FCR-N, FCR-D up/down, mFRR up/down (datasets 315–318, 281, 283, 327–330) | free key (`FINGRID_API_KEY`) | live-verified: `test_live_one_hour_of_fi_imbalance_prices`, `test_live_hourly_imbalance_prices_expand_to_quarters`, `test_live_overlap_hour_uses_the_hourly_value_settled_by_esett`, `test_live_recent_fingrid_capacity`, `test_live_recent_fi_mfrr_entsoe_equals_fingrid` | hourly publication until 2025-03-18; 15-minute records from 2025-03-14T23:15Z |
-| Svenska kraftnät | SE1–SE4 mFRR/aFRR capacity market prices and volumes | free (CC-BY-4.0), no key | live-verified: `test_live_mfrr_one_hour_all_zones`, `test_live_afrr_one_hour` | hourly records; earliest hour UNVERIFIED |
-| eSett | Imbalance prices, all 12 zones | free, no key | live-verified: `test_live_one_hour_of_se3_and_fi`, `test_live_hourly_to_quarter_hour_transition` | 2021-10-31T23:00Z |
-| ENTSO-E Transparency Platform | Imbalance prices (document type A85), all 12 zones; reserve capacity (A81): FCR-N NO1–NO5, mFRR NO1–NO5 and FI | free token (`ENTSOE_API_KEY`) | Imbalance checks verified 2026-10-12: `test_live_one_hour_of_se3_and_fi`, `test_live_one_day_of_dk1`, `test_live_matches_esett_prices_but_not_its_resolution_label`; capacity checks passed in scheduled run [39034830595](https://github.com/Razikale365/nordic-balancing/actions/runs/39034830595) on 2026-10-17 at 7e6d6dd: `test_live_recent_entsoe_no1_fcr_n_capacity`, `test_live_recent_entsoe_mfrr_capacity`, `test_live_entsoe_no1_capacity_sixty_days`. Capacity history (FCR-N NO, mFRR NO/FI, 2024–2026) parsed without error in a maintainer-run scan on 2026-10-17 | imbalance 2021-10-31T23:00Z (FI 2021-10-31T22:00Z); NO FCR-N 2014-09-30T22:00Z; NO mFRR 2024-02-11T23:00Z; FI mFRR 2024-11-12T23:00Z |
+| Source | Earliest data |
+|---|---|
+| Energi Data Service | imbalance 2025-03-04; aFRR 2022-12-07T23:00Z; mFRR 2023-06-20T22:00Z; FcrDK1 2021-01-18T23:00Z; FcrNdDK2 2021-11-09T23:00Z |
+| Fingrid | hourly publication until 2025-03-18; 15-minute records from 2025-03-14T23:15Z |
+| Svenska kraftnät | hourly records; earliest hour not verified |
+| eSett | 2021-10-31T23:00Z |
+| ENTSO-E | imbalance 2021-10-31T23:00Z (FI 22:00Z); NO FCR-N 2014-09-30T22:00Z; NO mFRR 2024-02-11T23:00Z; FI mFRR 2024-11-12T23:00Z |
 
 ## Observed API behaviour
 
@@ -173,7 +148,7 @@ Observed 2026-10-09 unless noted; file references are under
   `raw` but not interpreted. Equal dual-category prices collapse to one value; different
   ones raise. Acknowledgement documents, ZIP and plain XML bodies are handled, with a
   64 MiB cap.
-- Checks added in the second audit, also taken from the XSDs:
+- Further checks taken from the XSDs:
   - The document-level area is `controlArea_Domain.mRID` in v3.0–v4.0 and
     `area_Domain.mRID` from v4.1. It is optional in all versions, and when present it
     must equal the requested EIC.
@@ -184,38 +159,6 @@ Observed 2026-10-09 unless noted; file references are under
   - An interval published at two resolutions raises, even with equal prices.
 - ENTSO-E live tests, including capacity checks and the Fingrid cross-check, skip without
   `ENTSOE_API_KEY`; the cross-check also requires `FINGRID_API_KEY`.
-
-## Memory and timing
-
-One year, all 12 zones, 420,480 records, measured offline with synthetic responses
-(`examples/benchmarks/memory.py`; method, machine and full table in
-`examples/benchmarks/README.md`; medians of three runs, 2026-10-15):
-
-| Scenario | Wall s | Peak RSS MiB | Traced peak MiB | Retained MiB |
-|---|---:|---:|---:|---:|
-| eSett 2025 | 78.0 | 1,344 | 401 | 330 |
-| eSett 2022 | 44.4 | 816 | 274 | 237 |
-| ENTSO-E 2025 | 266.5 | 2,301 | 906 | 492 |
-| ENTSO-E 2022 | 159.2 | 1,515 | 567 | 449 |
-
-The benchmark flags a scenario when peak resident memory exceeds 1.5 GiB or 3 KiB per
-record (`memory.py`). By that rule ENTSO-E 2025 crosses both (2,301 MiB, 5,739 B per
-record), and eSett 2025 and ENTSO-E 2022 cross the per-record figure.
-
-Decision (maintainer, 2026-10-14; unchanged by the 2026-10-15 rerun): keep the
-synchronous, list-returning API for 0.2.0. The memory the library itself holds,
-measured as the traced peak, is under both limits in every scenario (worst: ENTSO-E
-2025, 906 MiB, about 2.3 KB per record). Most of the resident excess is the C-level
-XML parser working on up to 12 parallel requests, which ends when the call returns.
-A caller that needs less memory can fetch fewer zones or a shorter window per call,
-or pass a lower `max_workers` to `EntsoeClient`. An option to drop `raw`, or a lower
-default `max_workers`, will be considered if a user reports memory as a problem.
-Wall times exclude network latency, which dominates live ENTSO-E calls.
-
-## Data contracts
-
-See [README.md — Data contracts](../README.md#data-contracts) (C1–C8).
-Not duplicated here.
 
 ## Dated market changes
 
@@ -233,43 +176,11 @@ Not duplicated here.
 5. 2026-03-03T23:00Z, DK — dominating direction determined by satisfied
    demand; before this by balancing demand.
 
-## Known limitations
 
-See [API_CONTRACT.md — Known limitations](API_CONTRACT.md#known-limitations).
+## Memory
 
-## Test coverage
-
-- Offline suite (default; `addopts` deselects `live`): 1421 tests, all passing on
-  2026-10-18. `tests/test_properties.py` holds Hypothesis property tests: for every
-  client, splitting the window gives the same records, and every start is on the
-  15-minute grid in `[start, end)` with none missing; it also checks reconciliation
-  symmetry. `tests/test_public_api.py` fails on any change to the public surface, and
-  `tests/test_field_matrix.py` enforces `docs/FIELD_MATRIX.md`.
-- Live suite (`uv run pytest -m live`): 34 tests. The Fingrid tests skip without
-  `FINGRID_API_KEY`, the ENTSO-E tests without `ENTSOE_API_KEY`;
-  `tests/test_live_recent.py` checks a recent window for each source daily.
-- Test counts show what runs, not that it is correct. Count them with:
-
-```
-uv run pytest --co -q | tail -1
-1421/1455 tests collected (34 deselected)
-```
-
-Run offline: `uv run pytest -q`. Run live: `uv run pytest -m live` — keys go in
-the environment or a repo `.env` (see `.env.example`; `tests/conftest.py`
-loads it). Branch coverage is measured on demand, not enforced:
-`uv run --with pytest-cov pytest -q --cov=nordic_balancing --cov-branch`.
-
-## Reproducible evidence
-
-| Script | Command | Shows |
-|---|---|---|
-| `examples/reconciliation/reconcile_dk_fi.py` | `uv run python examples/reconciliation/reconcile_dk_fi.py` | EDS and Fingrid vs eSett over six sampled days; writes `results.json`. FI pair needs `FINGRID_API_KEY` |
-| `examples/mfrr_transition/analysis.py` | `uv run --with matplotlib python examples/mfrr_transition/analysis.py` | When quarter-hourly prices became real (2025-03-18T23:00Z); caches eSett data in `cache.json` |
-| `examples/entsoe_py_comparison/nordic_quirks.py` | `uv run python examples/entsoe_py_comparison/nordic_quirks.py` | Live eSett: the 2023-05 resolution switch, repeated hourly prices, unpublished intervals |
-| `examples/entsoe_py_comparison/repro_issue_529.py` | `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/repro_issue_529.py` | Offline repro of entsoe-py bug #529 (35,519 vs 35,520 rows); upstream fix PR #539 open |
-| `examples/entsoe_validation/validate.py` | `uv run python examples/entsoe_validation/validate.py samples --live` (or `year-2025 --live`, `multi-chunk --live`) | ENTSO-E vs eSett (all 12 zones; DK1 and SE3 across a chunk boundary for `multi-chunk`), every interval in one category; writes `results_<mode>.json`. Needs `ENTSOE_API_KEY`; does nothing without `--live` |
-| `examples/entsoe_py_comparison/live_side_by_side.py` | `uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/live_side_by_side.py` | Three-way diff nordic-balancing vs entsoe-py vs eSett (SE3, FI, 2026-01-15): 96/96 rows, 0 differences on 2026-10-12; exits early without `ENTSOE_API_KEY` |
-| `examples/benchmarks/memory.py` | `uv run --with psutil python examples/benchmarks/memory.py` | Peak memory and wall time for one year, 12 zones, eSett and ENTSO-E; offline, synthetic responses, no keys |
-
-Each script's documented output is in the README/REPORT next to it.
+One year of all 12 zones (420,480 records) peaks at about 1.3 GiB resident for eSett and
+2.3 GiB for ENTSO-E, measured offline (`examples/benchmarks/`). Most of the ENTSO-E excess
+is the XML parser working on up to 12 parallel requests and is released when the call
+returns; the records themselves stay under 3 KiB each. To use less, fetch fewer zones or a
+shorter window per call, or lower `max_workers` on `EntsoeClient`.

@@ -20,5 +20,5 @@ Coverage mode searches each NO zone and FI by UTC day from an empty lower bound
 (default 2010-01-01) to a recent published day, then checks both sides of the
 boundary. It assumes one coverage boundary; isolated historical gaps can defeat
 binary search. The output is the first UTC day with data, not necessarily the
-first local delivery day or exact first hourly timestamp. No historical start
-has been established by this offline implementation worker.
+first local delivery day or exact first hourly timestamp. The coverage starts
+quoted in `docs/API_CONTRACT.md` were found by a live search.

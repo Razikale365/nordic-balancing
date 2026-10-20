@@ -7,6 +7,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from fakes import (
+    http_client,
+)
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -333,7 +336,7 @@ def test_entsoe_chunking_at_the_last_supported_year_does_not_overflow() -> None:
 
     # ENTSO-E chunks by up to 366 days; the year bound must leave room for that, so
     # the request is built and the (mocked) server's answer decides the outcome.
-    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(400)))
+    http = http_client(lambda _: httpx.Response(400))
     client = EntsoeClient(api_key="test", http=http, max_retries=0)
     with client, pytest.raises(NordicBalancingError):
         client.imbalance_prices(

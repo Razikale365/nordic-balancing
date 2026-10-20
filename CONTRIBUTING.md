@@ -25,7 +25,8 @@ Never commit `.env`.
 
 ## Changes
 
-- Describe a behaviour change in the README "Data contracts" first, then change the code.
+- Describe a behaviour change in [docs/API_CONTRACT.md](docs/API_CONTRACT.md) first, then
+  change the code.
 - Every bug fix adds a regression test that fails on the previous release and passes with the
   fix.
 - Offline tests use `httpx.MockTransport` and are not presented as live verification.

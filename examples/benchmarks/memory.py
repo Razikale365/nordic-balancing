@@ -6,7 +6,7 @@ arrays of records shaped like the ones in ``tests/test_esett.py``. ENTSO-E
 responses are ZIP bodies holding one schema-4.4 ``Balancing_MarketDocument``
 per zone and chunk, ``curveType`` A03 with two ``TimeSeries`` per ``Period``
 (categories A04 and A05 at equal prices), matching the observed documents in
-``docs/RELEASE_EVIDENCE.md`` and built like ``tests/test_entsoe.py``.
+``docs/SOURCE_NOTES.md`` and built like ``tests/test_entsoe.py``.
 
 Four scenarios, all 12 zones:
 

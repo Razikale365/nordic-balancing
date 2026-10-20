@@ -6,7 +6,7 @@
 # Run with fixed resources and the fixtures mounted read-only (fixtures are
 # never committed or redistributed; see benchmarks/README.md):
 #   docker run --rm --cpus=2 --memory=4g ^
-#     -v C:\Docker\nb-perf-fixtures:/fixtures:ro ^
+#     -v <fixtures dir>:/fixtures:ro ^
 #     -v %cd%\benchmarks\results:/work/benchmarks/results ^
 #     -e NB_FIXTURES=/fixtures -e NB_DOCKER_IMAGE=nb-perf ^
 #     nb-perf --sets entsoe-imb-SE3-year-2025 --tag docker-baseline

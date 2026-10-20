@@ -13,7 +13,7 @@ Cell values in the tables below:
 - `—` — the source does not provide this field; it is `None` on every record
   from that source.
 - `from <date>` — the source provides this field only from a live-verified
-  date onwards (see [RELEASE_EVIDENCE.md](RELEASE_EVIDENCE.md) for dataset
+  date onwards (see [SOURCE_NOTES.md](SOURCE_NOTES.md) for dataset
   history start dates and resolution transitions).
 
 ## `ImbalancePrice`
@@ -96,4 +96,4 @@ as FCR-N; flow A01 is UP and A02 is DOWN. For both products, identical quantity/
 repeats across documents, ZIP members or TimeSeries collapse by
 `(zone, start, direction)` after A03 filling; conflicting repeats and repeated
 positions within a Period raise. On 2026-10-08, all 48 FI hour-directions matched Fingrid and all 48
-SE3 hour-directions matched SvK (work-order live evidence).
+SE3 hour-directions matched SvK (live).

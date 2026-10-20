@@ -29,7 +29,7 @@ from benchmarks.areas import ENTSOE_AREAS, ESETT_AREAS
 from benchmarks.replay import FrozenSet
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_FIXTURES = Path("C:/Docker/nb-perf-fixtures")
+DEFAULT_FIXTURES = Path(os.environ.get("NB_FIXTURES", ROOT / "benchmarks/.fixtures"))
 REQUIRED = (
     "entsoe-imb-SE3-day-2025-10-26",
     "entsoe-imb-SE3-localday-2025-10-26",
@@ -477,7 +477,7 @@ def main():
         payload = worker(args.worker, args.mode)
     else:
         ready = (args.fixtures / "READY").is_file()
-        scratch = ROOT / ".jpcp/perf/runs"
+        scratch = ROOT / "benchmarks/.tmp/runs"
         scratch.mkdir(parents=True, exist_ok=True)
         payload = {
             "status": "MEASURED" if ready else "BLOCKED_FIXTURES_NOT_READY",

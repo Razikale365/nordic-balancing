@@ -6,6 +6,10 @@ from typing import Any
 
 import httpx
 import pytest
+from fakes import (
+    http_client,
+    svk_package_show,
+)
 
 from nordic_balancing import (
     INTERVAL,
@@ -149,10 +153,10 @@ def _fetch_energidataservice_populated() -> list[ImbalancePrice]:
         "mFRRMarginalPriceUpEUR": 88.4,
         "mFRRMarginalPriceDownEUR": 40.14,
     }
-    transport = httpx.MockTransport(
-        lambda _: httpx.Response(200, json={"total": 1, "records": [published]})
-    )
-    with EnergiDataServiceClient(httpx.Client(transport=transport), sleep=lambda _: None) as client:
+    with EnergiDataServiceClient(
+        http_client(lambda _: httpx.Response(200, json={"total": 1, "records": [published]})),
+        sleep=lambda _: None,
+    ) as client:
         return client.imbalance_prices(start, start + INTERVAL, [BiddingZone.DK2])
 
 
@@ -170,8 +174,9 @@ def _fetch_esett_populated() -> list[ImbalancePrice]:
         "imblSpotDifferencePrice": -55.32,
         "upRegPriceFrrA": 80.0,
     }
-    transport = httpx.MockTransport(lambda _: httpx.Response(200, json=[published]))
-    with ESettClient(httpx.Client(transport=transport), sleep=lambda _: None) as client:
+    with ESettClient(
+        http_client(lambda _: httpx.Response(200, json=[published])), sleep=lambda _: None
+    ) as client:
         return client.imbalance_prices(start, start + INTERVAL, [BiddingZone.SE3])
 
 
@@ -195,10 +200,9 @@ def _fetch_fingrid_populated() -> list[ImbalancePrice]:
             },
         )
 
-    transport = httpx.MockTransport(handler)
     with FingridClient(
         "test-fingrid-secret",
-        httpx.Client(transport=transport),
+        http_client(handler),
         sleep=lambda _: None,
         clock=lambda: 0.0,
     ) as client:
@@ -208,10 +212,9 @@ def _fetch_fingrid_populated() -> list[ImbalancePrice]:
 def _fetch_entsoe_populated() -> list[ImbalancePrice]:
     start = datetime(2026, 1, 15, tzinfo=UTC)
     xml_bytes = (ENTSOE_FIXTURES / "balancing-v4_5-a01-single-price.xml").read_bytes()
-    transport = httpx.MockTransport(lambda _: httpx.Response(200, content=xml_bytes))
     with EntsoeClient(
         "test-entsoe-token",
-        httpx.Client(transport=transport),
+        http_client(lambda _: httpx.Response(200, content=xml_bytes)),
         sleep=lambda _: None,
     ) as client:
         return client.imbalance_prices(start, start + timedelta(hours=1), [BiddingZone.SE3])
@@ -237,20 +240,13 @@ def _fetch_svk_populated() -> list[ReserveCapacity]:
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/package_show"):
-            return httpx.Response(
-                200,
-                json={
-                    "success": True,
-                    "result": {"resources": [{"id": resource_id, "datastore_active": True}]},
-                },
-            )
+            return httpx.Response(200, json=svk_package_show(resource_id))
         return httpx.Response(
             200,
             json={"success": True, "result": {"total": 1, "records": [record]}},
         )
 
-    transport = httpx.MockTransport(handler)
-    with SvKClient(httpx.Client(transport=transport), sleep=lambda _: None) as client:
+    with SvKClient(http_client(handler), sleep=lambda _: None) as client:
         return client.capacity_market(
             ReserveProduct.MFRR, start, start + timedelta(hours=1), [BiddingZone.SE3]
         )
@@ -411,10 +407,10 @@ def test_eds_capacity_field_matrix_and_direction_mapping(product: ReserveProduct
         "DownPriceEUR": 9.0,
         "DownPriceDKK": 67.0,
     }
-    transport = httpx.MockTransport(
-        lambda _: httpx.Response(200, json={"total": 1, "records": [row]})
-    )
-    with httpx.Client(transport=transport) as http, EnergiDataServiceClient(http) as eds:
+    with (
+        http_client(lambda _: httpx.Response(200, json={"total": 1, "records": [row]})) as http,
+        EnergiDataServiceClient(http) as eds,
+    ):
         records = eds.capacity_market(product, start, start + timedelta(hours=1))
     availability = RESERVE_CAPACITY_AVAILABILITY["energidataservice"]
     assert tuple(availability) == RESERVE_CAPACITY_FIELDS
@@ -463,7 +459,7 @@ def test_fingrid_capacity_field_matrix_and_values() -> None:
 
     start = datetime(2026, 10, 7, 22, tzinfo=UTC)
     with (
-        httpx.Client(transport=httpx.MockTransport(handler)) as http,
+        http_client(handler) as http,
         FingridClient("test-key", http, min_interval=0) as client,
     ):
         records = client.capacity_market(ReserveProduct.FCR_N, start, start + timedelta(days=1))

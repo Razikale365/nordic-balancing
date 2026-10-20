@@ -172,7 +172,7 @@ def main():
         evidence["quarter_intervals"] = len(quarters)
         evidence["clients"] = {}
         for mode in ("nb-records", "nb-frame", "entsoe-py"):
-            path = ROOT / ".jpcp/perf/runs" / name / f"{mode}.json"
+            path = ROOT / "benchmarks/.tmp/runs" / name / f"{mode}.json"
             result = json.loads(path.read_text())
             if result["status"] == "PASS":
                 expected = native if mode == "entsoe-py" else quarters

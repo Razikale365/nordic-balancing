@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fixtures
 import workloads
 
-FIXTURES_ROOT = Path(os.environ.get("NB_FIXTURES", r"C:\Docker\nb-perf-fixtures"))
+FIXTURES_ROOT = fixtures.FIXTURES_ROOT
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
 

@@ -1,6 +1,6 @@
 """Replay a frozen imbalance-price dataset through ArcticGrid's battery model, offline.
 
-Step 2 of the reference integration (see ``benchmarks/ARCTICGRID_REFERENCE.md``). It imports
+Step 2 of the reference integration (see ``benchmarks/arcticgrid_reference/README.md``). It imports
 only ArcticGrid and the standard library: no nordic-balancing, no network. It answers a data
 question, not a financial one: does a downstream consumer stay correct when market inputs
 contain unpublished intervals, DST days and resolution changes, and what does it cost to get

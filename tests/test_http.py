@@ -3,6 +3,9 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from fakes import (
+    http_client,
+)
 
 from nordic_balancing import BiddingZone, _http
 from nordic_balancing._http import _request, check_base_url, get_json
@@ -62,7 +65,7 @@ def test_missing_retry_after_is_none() -> None:
 
 def fetch(responses: list[httpx.Response], sleeps: list[float]) -> bytes:
     replies = iter(responses)
-    http = httpx.Client(transport=httpx.MockTransport(lambda _: next(replies)))
+    http = http_client(lambda _: next(replies))
     response: httpx.Response = _request(
         http, "https://example.test", "/", {}, source="test", max_retries=3, sleep=sleeps.append
     )
@@ -135,9 +138,7 @@ def test_retry_after_rejects_non_ascii_delay_seconds(raw: bytes) -> None:
 
 
 def test_exhausted_retries_report_the_fractional_retry_after() -> None:
-    http = httpx.Client(
-        transport=httpx.MockTransport(lambda _: httpx.Response(429, headers={"Retry-After": "2.5"}))
-    )
+    http = http_client(lambda _: httpx.Response(429, headers={"Retry-After": "2.5"}))
     with pytest.raises(RateLimitError) as exc_info:
         _request(
             http,
@@ -162,7 +163,7 @@ def test_transient_transport_error_is_retried() -> None:
             raise httpx.RemoteProtocolError("Server disconnected", request=request)
         return httpx.Response(200, content=b"ok")
 
-    http = httpx.Client(transport=httpx.MockTransport(handler))
+    http = http_client(handler)
     sleeps: list[float] = []
     body = _request(
         http, "https://example.test", "/", {}, source="test", max_retries=3, sleep=sleeps.append
@@ -187,7 +188,7 @@ def test_undecodable_body_is_retried_then_propagates() -> None:
         calls.append(request)
         return corrupt_gzip(200)
 
-    http = httpx.Client(transport=httpx.MockTransport(handler))
+    http = http_client(handler)
     sleeps: list[float] = []
     with pytest.raises(httpx.DecodingError):
         _request(
@@ -210,7 +211,7 @@ def test_undecodable_rate_limit_body_is_still_retried() -> None:
         calls.append(request)
         return corrupt_gzip(429)
 
-    http = httpx.Client(transport=httpx.MockTransport(handler))
+    http = http_client(handler)
     sleeps: list[float] = []
     with pytest.raises(httpx.DecodingError):
         _request(
@@ -228,7 +229,7 @@ def test_undecodable_rate_limit_body_is_still_retried() -> None:
 
 def test_error_detail_includes_the_response_body() -> None:
     body = "upstream failure detail: request a1b2c3 rejected"
-    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(400, text=body)))
+    http = http_client(lambda _: httpx.Response(400, text=body))
     with pytest.raises(SourceError) as exc_info:
         _request(
             http,
@@ -243,7 +244,7 @@ def test_error_detail_includes_the_response_body() -> None:
 
 
 def test_error_detail_is_omitted_for_an_empty_body() -> None:
-    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(400)))
+    http = http_client(lambda _: httpx.Response(400))
     with pytest.raises(SourceError) as exc_info:
         _request(
             http,
@@ -266,13 +267,11 @@ def test_finite_number_coerces_ints_to_float() -> None:
 @pytest.mark.parametrize("status", [100, 201, 202, 203, 204, 206, 301, 302, 307, 308])
 def test_request_rejects_every_status_but_200(status: int) -> None:
     record_body = b'{"value":1,"private_record_marker":"SYNTHETIC_RECORD"}'
-    http = httpx.Client(
-        transport=httpx.MockTransport(
-            lambda _: httpx.Response(
-                status,
-                headers={"Location": "https://elsewhere.example/login"},
-                content=record_body,
-            )
+    http = http_client(
+        lambda _: httpx.Response(
+            status,
+            headers={"Location": "https://elsewhere.example/login"},
+            content=record_body,
         )
     )
     with pytest.raises(SourceError, match=rf"^test: HTTP {status} for /api$") as exc_info:
@@ -301,13 +300,11 @@ def test_request_rejects_every_status_but_200(status: int) -> None:
     ],
 )
 def test_get_json_rejects_non_2xx_and_204_statuses(status: int, body: bytes) -> None:
-    http = httpx.Client(
-        transport=httpx.MockTransport(
-            lambda _: httpx.Response(
-                status,
-                headers={"Location": "https://elsewhere.example/login"},
-                content=body,
-            )
+    http = http_client(
+        lambda _: httpx.Response(
+            status,
+            headers={"Location": "https://elsewhere.example/login"},
+            content=body,
         )
     )
     with pytest.raises(SourceError, match=rf"^test: HTTP {status} for /api$") as exc_info:
@@ -325,14 +322,14 @@ def test_get_json_rejects_non_2xx_and_204_statuses(status: int, body: bytes) -> 
 
 def test_get_json_retries_an_undecodable_body_then_raises() -> None:
     # A 200 body that is not JSON is an undecodable body: it is retried within
-    # the max_retries budget like a Content-Encoding failure (B11, OPUS-6/DS4-2).
+    # the max_retries budget like a Content-Encoding failure.
     calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         return httpx.Response(200, text="not json")
 
-    http = httpx.Client(transport=httpx.MockTransport(handler))
+    http = http_client(handler)
     sleeps: list[float] = []
     with pytest.raises(SourceError, match=r"^test: response for /api is not JSON$"):
         get_json(
@@ -350,7 +347,7 @@ def test_get_json_retries_an_undecodable_body_then_raises() -> None:
 
 def test_get_json_succeeds_when_a_retry_decodes() -> None:
     replies = iter([httpx.Response(200, text="not json"), httpx.Response(200, json={"ok": True})])
-    http = httpx.Client(transport=httpx.MockTransport(lambda _: next(replies)))
+    http = http_client(lambda _: next(replies))
     assert get_json(
         http,
         "https://example.test",
@@ -365,12 +362,10 @@ def test_get_json_succeeds_when_a_retry_decodes() -> None:
 def test_get_json_rejects_a_body_over_the_size_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # JSON bodies share the 64 MiB bound the ENTSO-E path applies (B11, DS5-2);
+    # JSON bodies share the 64 MiB bound the ENTSO-E path applies;
     # the cap is shrunk here so the test needs no large body.
     monkeypatch.setattr(_http, "_LIMIT", 8)
-    http = httpx.Client(
-        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"v": "0123456789"}))
-    )
+    http = http_client(lambda _: httpx.Response(200, json={"v": "0123456789"}))
     with pytest.raises(SourceError, match=r"^test: response for /api exceeds 8 bytes$"):
         get_json(
             http,
@@ -394,9 +389,7 @@ def test_get_json_reports_a_deeply_nested_body_as_not_json(
         raise RecursionError("maximum recursion depth exceeded while decoding a JSON array")
 
     monkeypatch.setattr(httpx.Response, "json", exhausted)
-    http = httpx.Client(
-        transport=httpx.MockTransport(lambda _: httpx.Response(200, content=b"[1]"))
-    )
+    http = http_client(lambda _: httpx.Response(200, content=b"[1]"))
     with pytest.raises(SourceError) as exc_info:
         get_json(
             http,
@@ -414,7 +407,7 @@ def test_get_json_reports_a_deeply_nested_body_as_not_json(
 def test_entsoe_status_outside_passthrough_has_no_path_slot(status: int) -> None:
     # ENTSO-E calls _request with an empty path because the URL holds the token,
     # so statuses raised by the shared layer (redirects, 2xx != 200) name no path.
-    http = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(status)))
+    http = http_client(lambda _: httpx.Response(status))
     client = EntsoeClient("test-entsoe-token", http, max_retries=0, sleep=lambda _: None)
     start = datetime(2026, 1, 15, tzinfo=UTC)
     with pytest.raises(SourceError) as exc_info:
@@ -443,7 +436,7 @@ def test_fingrid_client_reports_redirect_status(body: bytes) -> None:
 
     client = FingridClient(
         "test-fingrid-key",
-        httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client(handler),
         min_interval=0,
         sleep=lambda _: None,
         clock=lambda: 0.0,
@@ -514,9 +507,7 @@ def test_http_status_errors_exclude_response_records(status: int, fetch_json: bo
     )
     fetch_response = get_json if fetch_json else _request
     with (
-        httpx.Client(
-            transport=httpx.MockTransport(lambda _: httpx.Response(status, content=record_body))
-        ) as http,
+        http_client(lambda _: httpx.Response(status, content=record_body)) as http,
         pytest.raises(SourceError) as exc_info,
     ):
         fetch_response(

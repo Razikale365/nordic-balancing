@@ -9,14 +9,40 @@ generate ENTSO-E Periods (including invalid Periods that must raise
 network.
 """
 
-import json
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 import pytest
+from fakes import (
+    ESETT_SWITCH,
+    HOUR,
+    NS_45,
+    area_head,
+    ceil_hour,
+    ceil_quarter,
+    eds_server,
+    entsoe_document,
+    entsoe_period,
+    entsoe_point,
+    entsoe_series,
+    entsoe_server,
+    esett_row,
+    esett_server,
+    fingrid_expected_value,
+    fingrid_row,
+    fingrid_server,
+    floor_hour,
+    http_client,
+    quarter_grid,
+    quarter_value,
+    svk_package_show,
+    svk_price,
+    svk_row,
+    svk_search,
+    svk_server,
+)
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
@@ -36,54 +62,12 @@ from nordic_balancing import (
     reconcile_imbalance_prices,
 )
 from nordic_balancing.sources import energidataservice, entsoe, fingrid
-from nordic_balancing.sources.entsoe import _EIC_CODES as _ENTSOE_EIC
-from nordic_balancing.sources.esett import _EIC_CODES as _ESETT_EIC
 
-Handler = Callable[[httpx.Request], httpx.Response]
-HOUR = timedelta(hours=1)
-ESETT_SWITCH = datetime(2023, 5, 21, 22, tzinfo=UTC)
-FINGRID_SWITCH = datetime(2025, 3, 18, 23, tzinfo=UTC)
-FINGRID_QUARTER_ERA = datetime(2025, 3, 14, 23, 15, tzinfo=UTC)
-NS_45 = "urn:iec62325.351:tc57wg16:451-6:balancingdocument:4:5"
-
-_ESETT_ZONE = {code: zone for zone, code in _ESETT_EIC.items()}
-_ENTSOE_ZONE = {code: zone for zone, code in _ENTSOE_EIC.items()}
 _ZONES = tuple(BiddingZone)
 
 
 def _us(delta: timedelta) -> int:
     return delta // timedelta(microseconds=1)
-
-
-def _ceil_quarter(stamp: datetime) -> datetime:
-    floor = stamp.replace(minute=stamp.minute // 15 * 15, second=0, microsecond=0)
-    return floor if floor == stamp else floor + INTERVAL
-
-
-def _floor_hour(stamp: datetime) -> datetime:
-    return stamp.replace(minute=0, second=0, microsecond=0)
-
-
-def _ceil_hour(stamp: datetime) -> datetime:
-    floor = _floor_hour(stamp)
-    return floor if floor == stamp else floor + HOUR
-
-
-def _grid(start: datetime, end: datetime) -> list[datetime]:
-    stamp = _ceil_quarter(start)
-    stamps: list[datetime] = []
-    while stamp < end:
-        stamps.append(stamp)
-        stamp += INTERVAL
-    return stamps
-
-
-def _iso_z(stamp: datetime) -> str:
-    return stamp.isoformat().replace("+00:00", "Z")
-
-
-def _zone_index(zone: BiddingZone) -> int:
-    return _ZONES.index(zone)
 
 
 # --- strategies ---------------------------------------------------------------
@@ -127,7 +111,7 @@ def _window(
     if crossing is not None:
         min_length = max(min_length, _us(crossing - start) + 1)
     if min_step is not None:
-        first = _ceil_quarter(start) if min_step == INTERVAL else _ceil_hour(start)
+        first = ceil_quarter(start) if min_step == INTERVAL else ceil_hour(start)
         if first > start:
             min_length = max(min_length, _us(first - start) + 1)
     max_length = _us(timedelta(days=20))
@@ -177,7 +161,7 @@ def _assert_price_invariants(
     keys = [(price.start, price.zone) for price in prices]
     assert keys == sorted(keys)
     assert len(keys) == len(set(keys))
-    expected = _grid(start, end)
+    expected = quarter_grid(start, end)
     for zone in set(zones):
         assert sorted(p.start for p in prices if p.zone == zone) == expected
 
@@ -189,41 +173,6 @@ def _price_tuples(
 
 
 # --- eSett --------------------------------------------------------------------
-
-
-def _esett_value(zone: BiddingZone, stamp: datetime) -> float:
-    return float(int(stamp.timestamp()) // 900 % 997) + _zone_index(zone) / 100
-
-
-def _esett_record(zone: BiddingZone, stamp: datetime) -> dict[str, Any]:
-    value = _esett_value(zone, stamp)
-    return {
-        "timestampUTC": _iso_z(stamp),
-        "mba": zone.value,
-        "imblSalesPrice": value,
-        "imblPurchasePrice": value,
-        "upRegPrice": None,
-        "downRegPrice": None,
-        "mainDirRegPowerPerMBA": None,
-    }
-
-
-def _esett_handler(request: httpx.Request) -> httpx.Response:
-    params = request.url.params
-    start = datetime.fromisoformat(params["start"])
-    end = datetime.fromisoformat(params["end"])
-    records = []
-    for code in params.get_list("mba"):
-        zone = _ESETT_ZONE[code]
-        stamp = _ceil_quarter(start)
-        while stamp < end:
-            if stamp < ESETT_SWITCH:
-                if stamp.minute == 0:
-                    records.append(_esett_record(zone, stamp))
-            else:
-                records.append(_esett_record(zone, stamp))
-            stamp += INTERVAL
-    return httpx.Response(200, json=records)
 
 
 @given(
@@ -239,55 +188,19 @@ def test_esett_same_records_however_the_window_is_split(
     case: tuple[datetime, datetime, datetime, list[BiddingZone]],
 ) -> None:
     start, middle, end, zones = case
-    client = ESettClient(
-        httpx.Client(transport=httpx.MockTransport(_esett_handler)), sleep=lambda _: None
-    )
+    client = ESettClient(http_client(esett_server), sleep=lambda _: None)
     whole = client.imbalance_prices(start, end, zones)
     _assert_price_invariants(whole, zones, start, end)
     left = client.imbalance_prices(start, middle, zones)
     right = client.imbalance_prices(middle, end, zones)
     assert _price_tuples(left + right) == _price_tuples(whole)
     for price in whole:
-        stamp = price.start if price.resolution == INTERVAL else _floor_hour(price.start)
-        assert price.imbalance_price_eur == _esett_value(price.zone, stamp)
+        stamp = price.start if price.resolution == INTERVAL else floor_hour(price.start)
+        assert price.imbalance_price_eur == quarter_value(price.zone, stamp)
         assert (price.resolution == HOUR) == (price.start < ESETT_SWITCH)
 
 
 # --- Energi Data Service -------------------------------------------------------
-
-
-def _eds_value(zone: BiddingZone, stamp: datetime) -> float:
-    return float(int(stamp.timestamp()) // 900 % 997) + _zone_index(zone) / 100
-
-
-def _eds_handler(request: httpx.Request) -> httpx.Response:
-    params = request.url.params
-    start = datetime.strptime(params["start"], "%Y-%m-%dT%H:%M").replace(tzinfo=UTC)
-    end = datetime.strptime(params["end"], "%Y-%m-%dT%H:%M").replace(tzinfo=UTC)
-    zones = sorted(BiddingZone[name] for name in json.loads(params["filter"])["PriceArea"])
-    records = []
-    for stamp in _grid(start, end):
-        for zone in zones:
-            value = _eds_value(zone, stamp)
-            records.append(
-                {
-                    "TimeUTC": stamp.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "PriceArea": zone.value,
-                    "ImbalancePriceEUR": value,
-                    "ImbalancePriceDKK": value * 7.45,
-                    "SpotPriceEUR": value,
-                    "DominatingDirection": int(stamp.timestamp()) // 900 % 3 - 1,
-                    "SatisfiedDemand": 0.0,
-                    "aFRRVWAUpEUR": 0.0,
-                    "aFRRVWADownEUR": 0.0,
-                    "mFRRMarginalPriceUpEUR": value,
-                    "mFRRMarginalPriceDownEUR": value,
-                }
-            )
-    offset = int(params["offset"])
-    limit = int(params["limit"])
-    records = records[offset : offset + limit]
-    return httpx.Response(200, json={"total": len(records), "records": records})
 
 
 @given(
@@ -304,9 +217,7 @@ def test_energidataservice_same_records_however_the_window_is_split(
     case: tuple[datetime, datetime, datetime, list[BiddingZone]],
 ) -> None:
     start, middle, end, zones = case
-    client = EnergiDataServiceClient(
-        httpx.Client(transport=httpx.MockTransport(_eds_handler)), sleep=lambda _: None
-    )
+    client = EnergiDataServiceClient(http_client(eds_server), sleep=lambda _: None)
     with pytest.MonkeyPatch().context() as patch:
         patch.setattr(energidataservice, "PAGE_SIZE", 97)
         whole = client.imbalance_prices(start, end, zones)
@@ -316,64 +227,10 @@ def test_energidataservice_same_records_however_the_window_is_split(
         assert _price_tuples(left + right) == _price_tuples(whole)
         for price in whole:
             assert price.resolution == INTERVAL
-            assert price.imbalance_price_eur == _eds_value(price.zone, price.start)
+            assert price.imbalance_price_eur == quarter_value(price.zone, price.start)
 
 
 # --- Fingrid -------------------------------------------------------------------
-
-
-def _fingrid_value(dataset: int, stamp: datetime, hourly: bool) -> float:
-    seed = int(stamp.timestamp()) // (3600 if hourly else 900) + dataset
-    return float(seed % 997) + (1000.0 if hourly else 0.0)
-
-
-def _fingrid_row(dataset: int, stamp: datetime, duration: timedelta) -> dict[str, Any]:
-    return {
-        "datasetId": dataset,
-        "startTime": _iso_z(stamp),
-        "endTime": _iso_z(stamp + duration),
-        "value": _fingrid_value(dataset, stamp, duration == HOUR),
-    }
-
-
-def _fingrid_rows(dataset: int, start: datetime, end: datetime) -> list[dict[str, Any]]:
-    rows = [
-        _fingrid_row(dataset, stamp, INTERVAL)
-        for stamp in _grid(start, end)
-        if stamp >= FINGRID_QUARTER_ERA
-    ]
-    hour = _floor_hour(start)
-    while hour < end:
-        if start <= hour < FINGRID_SWITCH:
-            rows.append(_fingrid_row(dataset, hour, HOUR))
-        hour += HOUR
-    rows.sort(key=lambda row: (row["startTime"], row["endTime"]))
-    return rows
-
-
-def _fingrid_handler(request: httpx.Request) -> httpx.Response:
-    dataset = int(request.url.path.split("/")[-2])
-    params = request.url.params
-    start = datetime.fromisoformat(params["startTime"])
-    end = datetime.fromisoformat(params["endTime"])
-    rows = _fingrid_rows(dataset, start, end)
-    page_size = int(params["pageSize"])
-    page = int(params["page"])
-    total = len(rows)
-    last_page = max(1, -(-total // page_size))
-    return httpx.Response(
-        200,
-        json={
-            "data": rows[(page - 1) * page_size : page * page_size],
-            "pagination": {"total": total, "lastPage": last_page},
-        },
-    )
-
-
-def _fingrid_expected(stamp: datetime) -> float:
-    if stamp < FINGRID_SWITCH:
-        return _fingrid_value(319, _floor_hour(stamp), hourly=True)
-    return _fingrid_value(319, stamp, hourly=False)
 
 
 @given(
@@ -392,7 +249,7 @@ def test_fingrid_same_series_however_the_window_is_split(
     start, middle, end, _zones_drawn = case
     client = FingridClient(
         "test-fingrid-secret",
-        httpx.Client(transport=httpx.MockTransport(_fingrid_handler)),
+        http_client(fingrid_server),
         sleep=lambda _: None,
         clock=lambda: 0.0,
         min_interval=0,
@@ -400,75 +257,18 @@ def test_fingrid_same_series_however_the_window_is_split(
     with pytest.MonkeyPatch().context() as patch:
         patch.setattr(fingrid, "PAGE_SIZE", 50)
         whole = client.series(319, start, end)
-        assert [stamp for stamp, _ in whole] == _grid(start, end)
+        assert [stamp for stamp, _ in whole] == quarter_grid(start, end)
         for stamp, value in whole:
             assert stamp.utcoffset() == timedelta(0)
             assert stamp.minute % 15 == 0 and stamp.second == 0 and stamp.microsecond == 0
             assert start <= stamp < end
-            assert value == _fingrid_expected(stamp)
+            assert value == fingrid_expected_value(stamp)
         left = client.series(319, start, middle)
         right = client.series(319, middle, end)
         assert left + right == whole
 
 
 # --- SvK -----------------------------------------------------------------------
-
-
-def _svk_price(zone: BiddingZone, hour: datetime, direction: str) -> float:
-    seed = int(hour.timestamp()) // 3600 % 991
-    return float(seed) + _zone_index(zone) / 10 + (0.5 if direction == "up" else 0.0)
-
-
-def _svk_record(hour: str, zone: str, direction: str, product: str, row_id: int) -> dict[str, Any]:
-    start = datetime.strptime(hour, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=UTC)
-    return {
-        "_id": row_id,
-        "start_time_sweden": (start + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S"),
-        "start_time_utc": hour,
-        "bidding_zone": zone,
-        "reserve_product": product,
-        "reserve_direction": direction,
-        "price": _svk_price(BiddingZone[zone], start, direction),
-        "price_unit": "EUR-MW",
-        "volume": float(int(start.timestamp()) // 3600 % 500),
-        "volume_unit": "MW",
-        "soda_hashbyte": f"{row_id:032x}",
-        "soda_identity": row_id,
-    }
-
-
-def _svk_handler(request: httpx.Request) -> httpx.Response:
-    params = request.url.params
-    if request.url.path.endswith("/package_show"):
-        return httpx.Response(
-            200,
-            json={
-                "success": True,
-                "result": {"resources": [{"id": f"rid-{params['id']}", "datastore_active": True}]},
-            },
-        )
-    filters = json.loads(params["filters"])
-    product = "mFRRCapacityMarket" if "mfrr" in params["resource_id"] else "aFRRCapacityMarket"
-    records = [
-        _svk_record(hour, zone, direction, product, index)
-        for index, (hour, zone, direction) in enumerate(
-            (hour, zone, direction)
-            # The dataset still holds hourly rows only, so the quarter-hour
-            # values in the filter match nothing.
-            for hour in sorted(h for h in filters["start_time_utc"] if h[14:16] == "00")
-            for zone in sorted(filters["bidding_zone"])
-            for direction in ("down", "up")
-        )
-    ]
-    offset = int(params["offset"])
-    limit = int(params["limit"])
-    return httpx.Response(
-        200,
-        json={
-            "success": True,
-            "result": {"total": len(records), "records": records[offset : offset + limit]},
-        },
-    )
 
 
 @given(
@@ -487,9 +287,7 @@ def test_svk_same_records_however_the_window_is_split(
     product: ReserveProduct,
 ) -> None:
     start, middle, end, zones = case
-    client = SvKClient(
-        httpx.Client(transport=httpx.MockTransport(_svk_handler)), sleep=lambda _: None
-    )
+    client = SvKClient(http_client(svk_server), sleep=lambda _: None)
     whole = client.capacity_market(product, start, end, zones)
     keys = [(r.start, r.zone, r.direction) for r in whole]
     assert keys == sorted(keys)
@@ -501,10 +299,10 @@ def test_svk_same_records_however_the_window_is_split(
         assert start <= record.start < end
         assert record.resolution == HOUR
         direction = "up" if record.direction is Direction.UP else "down"
-        assert record.price_eur_per_mw == _svk_price(
-            record.zone, _floor_hour(record.start), direction
+        assert record.price_eur_per_mw == svk_price(
+            record.zone, floor_hour(record.start), direction
         )
-    expected = _grid(start, end)
+    expected = quarter_grid(start, end)
     for zone in set(zones):
         for side in (Direction.UP, Direction.DOWN):
             assert (
@@ -519,35 +317,6 @@ def test_svk_same_records_however_the_window_is_split(
 
 
 # --- ENTSO-E -------------------------------------------------------------------
-
-
-def _entsoe_value(zone: BiddingZone, stamp: datetime) -> float:
-    return float(int(stamp.timestamp()) // 900 % 997) + _zone_index(zone) / 100
-
-
-def _entsoe_handler(request: httpx.Request) -> httpx.Response:
-    params = request.url.params
-    start = datetime.strptime(params["periodStart"], "%Y%m%d%H%M").replace(tzinfo=UTC)
-    end = datetime.strptime(params["periodEnd"], "%Y%m%d%H%M").replace(tzinfo=UTC)
-    eic = params["controlArea_Domain"]
-    zone = _ENTSOE_ZONE[eic]
-    points = "".join(
-        f"<Point><position>{index}</position>"
-        f"<imbalance_Price.amount>{_entsoe_value(zone, stamp)}</imbalance_Price.amount>"
-        "</Point>"
-        for index, stamp in enumerate(_grid(start, end), start=1)
-    )
-    body = (
-        f'<Balancing_MarketDocument xmlns="{NS_45}"><type>A85</type>'
-        f'<area_Domain.mRID codingScheme="A01">{eic}</area_Domain.mRID>'
-        "<TimeSeries><currency_Unit.name>EUR</currency_Unit.name>"
-        "<curveType>A01</curveType><Period>"
-        f"<timeInterval><start>{start.strftime('%Y-%m-%dT%H:%MZ')}</start>"
-        f"<end>{end.strftime('%Y-%m-%dT%H:%MZ')}</end></timeInterval>"
-        f"<resolution>PT15M</resolution>{points}</Period></TimeSeries>"
-        "</Balancing_MarketDocument>"
-    )
-    return httpx.Response(200, text=body)
 
 
 @given(
@@ -566,7 +335,7 @@ def test_entsoe_same_records_however_the_window_is_split(
     start, middle, end, zones = case
     client = EntsoeClient(
         "test-entsoe-token",
-        httpx.Client(transport=httpx.MockTransport(_entsoe_handler)),
+        http_client(entsoe_server),
         sleep=lambda _: None,
     )
     with pytest.MonkeyPatch().context() as patch:
@@ -578,7 +347,7 @@ def test_entsoe_same_records_however_the_window_is_split(
     assert _price_tuples(left + right) == _price_tuples(whole)
     for price in whole:
         assert price.resolution == INTERVAL
-        assert price.imbalance_price_eur == _entsoe_value(price.zone, price.start)
+        assert price.imbalance_price_eur == quarter_value(price.zone, price.start)
 
 
 # --- Reconciliation ------------------------------------------------------------
@@ -728,26 +497,21 @@ class _EntsoePeriodSpec:
         return 1 in self.positions
 
     def series_xml(self) -> str:
-        points = "".join(
-            f"<Point><position>{pos}</position>"
-            f"<imbalance_Price.amount>{self.amounts[pos]}</imbalance_Price.amount></Point>"
-            for pos in sorted(self.positions)
-        )
-        return (
-            "<TimeSeries><currency_Unit.name>EUR</currency_Unit.name>"
-            f"<curveType>{self.curve_type}</curveType><Period>"
-            f"<timeInterval><start>{self.start.strftime('%Y-%m-%dT%H:%MZ')}</start>"
-            f"<end>{self.end.strftime('%Y-%m-%dT%H:%MZ')}</end></timeInterval>"
-            f"<resolution>{self.resolution}</resolution>{points}</Period></TimeSeries>"
+        points = (entsoe_point(pos, self.amounts[pos]) for pos in sorted(self.positions))
+        return entsoe_series(
+            entsoe_period(
+                self.start.strftime("%Y-%m-%dT%H:%MZ"),
+                self.end.strftime("%Y-%m-%dT%H:%MZ"),
+                *points,
+                resolution=self.resolution,
+            ),
+            curve=self.curve_type,
         )
 
 
 def _entsoe_document_xml(eic: str, periods: tuple[_EntsoePeriodSpec, ...]) -> str:
-    body = "".join(period.series_xml() for period in periods)
-    return (
-        f'<Balancing_MarketDocument xmlns="{NS_45}"><type>A85</type>'
-        f'<area_Domain.mRID codingScheme="A01">{eic}</area_Domain.mRID>'
-        f"{body}</Balancing_MarketDocument>"
+    return entsoe_document(
+        *(period.series_xml() for period in periods), namespace=NS_45, head=area_head(eic)
     )
 
 
@@ -888,7 +652,7 @@ def test_entsoe_periods_return_only_published_in_window_records(
 
     client = EntsoeClient(
         "test-entsoe-token",
-        httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client(handler),
         max_workers=1,
         sleep=lambda _: None,
     )
@@ -937,13 +701,13 @@ def _esett_hourly_response_case(
 ) -> tuple[datetime, datetime, list[BiddingZone], list[dict[str, Any]]]:
     base = datetime(2023, 5, 10, tzinfo=UTC)
     start = base + timedelta(microseconds=draw(st.integers(0, _us(timedelta(hours=4)))))
-    first_hour = _ceil_hour(start)
+    first_hour = ceil_hour(start)
     min_length = max(_us(timedelta(minutes=1)), _us(first_hour - start) + 1)
     length = draw(st.integers(min_length, _us(timedelta(hours=6))))
     end = start + timedelta(microseconds=length)
     zones = draw(_zones(_ZONES, 3))
     hours: list[datetime] = []
-    hour = _floor_hour(start)
+    hour = floor_hour(start)
     while hour < end:
         hours.append(hour)
         hour += HOUR
@@ -967,15 +731,15 @@ def _esett_hourly_response_case(
         sales = single if mode in ("both", "sales") else None
         purchase = single if mode in ("both", "purchase") else None
         rows.append(
-            {
-                "timestampUTC": _iso_z(h),
-                "mba": zone.value,
-                "imblSalesPrice": sales,
-                "imblPurchasePrice": purchase,
-                "upRegPrice": draw(st.one_of(st.none(), finite)),
-                "downRegPrice": draw(st.one_of(st.none(), finite)),
-                "mainDirRegPowerPerMBA": draw(st.sampled_from((None, -1.0, 0.0, 1.0))),
-            }
+            esett_row(
+                h,
+                zone,
+                sales=sales,
+                purchase=purchase,
+                up=draw(st.one_of(st.none(), finite)),
+                down=draw(st.one_of(st.none(), finite)),
+                main_direction=draw(st.sampled_from((None, -1.0, 0.0, 1.0))),
+            )
         )
     return start, end, zones, rows
 
@@ -987,7 +751,7 @@ def test_esett_hourly_quarters_map_to_published_row(
 ) -> None:
     start, end, zones, rows = case
     client = ESettClient(
-        httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=rows))),
+        http_client(lambda _: httpx.Response(200, json=rows)),
         sleep=lambda _: None,
     )
     prices = client.imbalance_prices(start, end, zones)
@@ -1035,7 +799,7 @@ def _svk_response_case(
 ) -> tuple[datetime, datetime, list[BiddingZone], ReserveProduct, list[dict[str, Any]]]:
     base = datetime(2026, 1, 10, tzinfo=UTC)
     start = base + timedelta(microseconds=draw(st.integers(0, _us(timedelta(hours=4)))))
-    first_hour = _ceil_hour(start)
+    first_hour = ceil_hour(start)
     min_length = max(_us(timedelta(minutes=1)), _us(first_hour - start) + 1)
     length = draw(st.integers(min_length, _us(timedelta(hours=6))))
     end = start + timedelta(microseconds=length)
@@ -1043,7 +807,7 @@ def _svk_response_case(
     product = draw(st.sampled_from((ReserveProduct.MFRR, ReserveProduct.AFRR)))
     product_name = "mFRRCapacityMarket" if product is ReserveProduct.MFRR else "aFRRCapacityMarket"
     hours: list[datetime] = []
-    hour = _floor_hour(start)
+    hour = floor_hour(start)
     while hour < end:
         hours.append(hour)
         hour += HOUR
@@ -1066,20 +830,16 @@ def _svk_response_case(
     rows: list[dict[str, Any]] = []
     for row_id, (h, zone, direction) in enumerate(chosen, start=1):
         rows.append(
-            {
-                "_id": row_id,
-                "start_time_sweden": (h + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S"),
-                "start_time_utc": h.strftime("%Y-%m-%dT%H:00:00"),
-                "bidding_zone": zone.value,
-                "reserve_product": product_name,
-                "reserve_direction": direction,
-                "price": draw(st.one_of(st.none(), finite_price)),
-                "price_unit": "EUR-MW",
-                "volume": draw(st.one_of(st.none(), finite_vol)),
-                "volume_unit": "MW",
-                "soda_hashbyte": f"{row_id:032x}",
-                "soda_identity": row_id,
-            }
+            svk_row(
+                row_id,
+                h,
+                zone.value,
+                direction,
+                product_name,
+                price=draw(st.one_of(st.none(), finite_price)),
+                volume=draw(st.one_of(st.none(), finite_vol)),
+                swedish_offset=timedelta(hours=1),
+            )
         )
     return start, end, zones, product, rows
 
@@ -1093,23 +853,10 @@ def test_svk_quarters_map_to_published_row(
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/package_show"):
-            return httpx.Response(
-                200,
-                json={
-                    "success": True,
-                    "result": {
-                        "resources": [
-                            {"id": f"rid-{request.url.params['id']}", "datastore_active": True}
-                        ]
-                    },
-                },
-            )
-        return httpx.Response(
-            200,
-            json={"success": True, "result": {"total": len(rows), "records": rows}},
-        )
+            return httpx.Response(200, json=svk_package_show(f"rid-{request.url.params['id']}"))
+        return httpx.Response(200, json=svk_search(rows))
 
-    client = SvKClient(httpx.Client(transport=httpx.MockTransport(handler)), sleep=lambda _: None)
+    client = SvKClient(http_client(handler), sleep=lambda _: None)
     records = client.capacity_market(product, start, end, zones)
     keys = [(r.start, r.zone, r.direction) for r in records]
     assert keys == sorted(keys)
@@ -1157,12 +904,12 @@ def _fingrid_hourly_response_case(
 ) -> tuple[datetime, datetime, dict[int, list[dict[str, Any]]]]:
     base = datetime(2025, 3, 10, tzinfo=UTC)
     start = base + timedelta(microseconds=draw(st.integers(0, _us(timedelta(hours=4)))))
-    first_hour = _ceil_hour(start)
+    first_hour = ceil_hour(start)
     min_length = max(_us(timedelta(minutes=1)), _us(first_hour - start) + 1)
     length = draw(st.integers(min_length, _us(timedelta(hours=6))))
     end = start + timedelta(microseconds=length)
     hours: list[datetime] = []
-    hour = _floor_hour(start)
+    hour = floor_hour(start)
     while hour < end:
         hours.append(hour)
         hour += HOUR
@@ -1180,13 +927,7 @@ def _fingrid_hourly_response_case(
             else st.one_of(st.none(), finite)
         )
         by_dataset[dataset] = [
-            {
-                "datasetId": dataset,
-                "startTime": _iso_z(h),
-                "endTime": _iso_z(h + HOUR),
-                "value": draw(value_strategy),
-            }
-            for h in chosen_hours
+            fingrid_row(dataset, h, h + HOUR, draw(value_strategy)) for h in chosen_hours
         ]
     return start, end, by_dataset
 
@@ -1208,7 +949,7 @@ def test_fingrid_hourly_quarters_map_to_published_row(
 
     client = FingridClient(
         "test-fingrid-secret",
-        httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client(handler),
         sleep=lambda _: None,
         clock=lambda: 0.0,
         min_interval=0,

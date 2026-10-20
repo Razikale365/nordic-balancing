@@ -67,9 +67,9 @@ intervals, all in the 2023-05-21 window.
 
 The DK1 2025-06-29T17:45Z value (ENTSO-E 2141.93, eSett 59.70) is also what Energi
 Data Service publishes as the imbalance price; it equals that quarter's aFRR up price,
-while eSett's equals its mFRR up price (`docs/RELEASE_EVIDENCE.md`).
+while eSett's equals its mFRR up price (`docs/SOURCE_NOTES.md`).
 
-These match the counts from the first probe that `docs/RELEASE_EVIDENCE.md` was
+These match the counts from the first probe that `docs/SOURCE_NOTES.md` was
 written from. The 0.1.0 text named only the three material differences outside DK.
 ENTSO-E's published data can still be revised, so a later run may differ.
 

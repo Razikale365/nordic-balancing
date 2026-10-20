@@ -159,17 +159,16 @@ raises `TypeError`. Read fields by attribute access.
   series and malformed series are not exempted. All source metadata and points
   are validated before filtering, independent of document/member order.
   Observed on delivery day **2025-06-05** (Period starts **2025-06-04T22:00Z**)
-  for NO1-NO5 and FI: Opus's live FI cross-check found the real series matched
+  for NO1-NO5 and FI: a live FI cross-check found the real series matched
   Fingrid **24/24 hours**, while the placeholder series matched **0/24**.
   After filtering, identical repeats collapse and differing values raise as above.
   This placeholder rule remains mFRR-only; it does not apply to FCR-N. FCR-N with FI raises
   `ValueError`: ENTSO-E has no Finnish FCR. The mFRR product was verified live
   against Fingrid (FI) and SvK
-  (SE3), matching all 48 hour-directions per source on 2026-10-08, per the supplied
-  work-order evidence. Reproduce with `examples/fi_no_capacity/cross_check.py`.
+  (SE3), matching all 48 hour-directions per source on 2026-10-08. Reproduce with `examples/fi_no_capacity/cross_check.py`.
   ENTSO-E mFRR coverage starts at delivery day **2024-02-12** for NO1-NO5
   (first interval **2024-02-11T23:00Z**) and delivery day **2024-11-13** for FI
-  (first interval **2024-11-12T23:00Z**), from Opus's historical search.
+  (first interval **2024-11-12T23:00Z**), from a live historical search.
   Early documents repeat identical TimeSeries; the same mFRR collapse rule applies.
 - `SvKClient.capacity_market(product, start, end, zones=(SE1, SE2, SE3, SE4))`
   returns `list[ReserveCapacity]` for Swedish aFRR and mFRR capacity markets.

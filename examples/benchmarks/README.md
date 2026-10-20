@@ -9,7 +9,7 @@ eSett responses are JSON arrays of records shaped like the ones in
 `tests/test_esett.py`. ENTSO-E responses are ZIP bodies holding one
 schema-4.4 `Balancing_MarketDocument` per zone and chunk — `curveType` A03 with
 two `TimeSeries` per `Period` (categories A04 and A05 at equal prices), the
-shape described under "Observed documents" in `docs/RELEASE_EVIDENCE.md`. One
+shape described under "Observed documents" in `docs/SOURCE_NOTES.md`. One
 request per zone per chunk runs in parallel (`max_workers=12`, the default), so
 ENTSO-E is the heavier case: XML trees, a category merge per interval and a
 larger `raw` per record.
@@ -53,7 +53,7 @@ and `pandas` for `to_frame()` (installed by `uv sync` from the dev group).
 ## Results (run 2026-10-15)
 
 Machine: Windows 11 (10.0.22621), 6 CPUs, 31.9 GiB RAM, Python 3.12.13.
-No other agents or test runs were active; a browser was open in the background
+No test runs were active; a browser was open in the background
 (system CPU 6-29 %). Medians of three fresh subprocesses per scenario. Memory
 figures are within 3 % of an earlier run under load on 2026-10-14; the eSett
 wall times were lower here, the ENTSO-E ones were not (ENTSO-E is CPU-bound
@@ -69,8 +69,8 @@ XML parsing).
 ## Threshold check
 
 The flags below are the benchmark's own rule. The decision taken on these numbers
-(keep the synchronous list API for 0.2.0) and its reasoning are in
-`docs/RELEASE_EVIDENCE.md`, "Memory and timing".
+(keep the synchronous list API) and its reasoning are in
+`docs/SOURCE_NOTES.md`, "Memory".
 
 Threshold: 1.5 GiB peak RSS or 3 KiB per record. Per scenario:
 

@@ -1,15 +1,12 @@
-"""Record the FIXTURES.md fixture sets, one named set per invocation.
+"""Record the fixture sets, one named set per invocation.
 
-Run on the v0.3.0 code in ``C:\\Docker\\nb-wt\\perf-base`` so the frozen
+Run against a checkout of tag ``v0.3.0`` so the recorded
 fixtures capture the baseline's view of each API (the FCR-N year set records
 the live traffic even though v0.3.0's parser rejects the October fall-back
 rows; that is noted in ``set.json``, not hidden):
 
-  uv run --project C:/Docker/nb-wt/perf-base ^
-      --env-file C:/Docker/nordic-balancing/.env ^
-      python C:/Docker/nb-wt/perf/benchmarks/record.py <set> [<set> ...]
-  uv run --project C:/Docker/nb-wt/perf-base ^
-      python C:/Docker/nb-wt/perf/benchmarks/record.py --finalize
+  uv run --project <v0.3.0 checkout> --env-file .env python benchmarks/record.py <set> ...
+  uv run --project <v0.3.0 checkout> python benchmarks/record.py --finalize
 
 API keys are read from the environment and never printed. After each set the
 recorded files are scanned for the key values and the run fails if any match.
@@ -33,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fixtures
 import workloads
 
-FIXTURES_ROOT = Path(r"C:\Docker\nb-perf-fixtures")
+FIXTURES_ROOT = fixtures.FIXTURES_ROOT
 SECRET_ENV_VARS = ("ENTSOE_API_KEY", "FINGRID_API_KEY")
 
 

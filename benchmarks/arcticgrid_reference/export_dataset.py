@@ -1,9 +1,9 @@
 """Export frozen imbalance prices as an immutable, versioned dataset for ArcticGrid.
 
-Step 1 of the reference integration (see ``benchmarks/ARCTICGRID_REFERENCE.md``). It replays a
-recorded fixture set through nordic-balancing's public client API (no network), and writes one
-JSON document with the normalised quarter-hour prices, the library version, the source call and
-a SHA-256 over the canonical points. Unpublished prices stay ``null``.
+Step 1 of the reference integration (see ``benchmarks/arcticgrid_reference/README.md``).
+It replays a recorded fixture set through nordic-balancing's public client API (no network),
+and writes one JSON document with the normalised quarter-hour prices, the library version,
+the source call and a SHA-256 over the canonical points. Unpublished prices stay ``null``.
 
 Run from the repository root:
     uv run --group benchmarks python benchmarks/arcticgrid_reference/export_dataset.py \
@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import nordic_balancing
-from benchmarks.fixtures import load_set, replay_client
+from benchmarks.fixtures import FIXTURES_ROOT, load_set, replay_client
 from benchmarks.workloads import WORKLOADS
 
 
@@ -34,7 +34,7 @@ def main() -> None:
     parser.add_argument(
         "--set", required=True, help="fixture set name, e.g. entsoe-imb-SE3-year-2025"
     )
-    parser.add_argument("--fixtures-root", default=r"C:\Docker\nb-perf-fixtures")
+    parser.add_argument("--fixtures-root", default=str(FIXTURES_ROOT))
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
