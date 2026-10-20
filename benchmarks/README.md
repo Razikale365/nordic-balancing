@@ -9,24 +9,28 @@ parses identical input. Each measurement runs in a fresh subprocess after one wa
 3 runs (year windows) or 7 (shorter), on a Windows 11 workstation (i5-9400F, 6 cores, 32 GiB,
 Python 3.12) that was not isolated, so expect run-to-run variation of tens of percent.
 
-## Compared with other clients (2026-10-17, v0.3.0)
+## Compared with other clients
 
-Same recorded bytes for both sides; wall time in seconds, peak resident memory in MiB.
+Same recorded bytes for both sides; wall time in seconds, peak resident memory in MiB. ENTSO-E
+rows were measured on v0.3.0 (2026-10-17); eSett rows after the parsing work below (2026-10-20).
 
 | Workload | nordic-balancing | Other client | Prices identical |
 |---|---:|---:|---|
 | ENTSO-E imbalance, SE3, October 2025 | 0.73 s / 43 MiB | entsoe-py 0.8.1: 2.79 s / 113 MiB | yes, 2,976 of 2,976 |
 | ENTSO-E imbalance, SE3, 2025 | 8.2 s / 140 MiB | entsoe-py: 25.9 s / 384 MiB | yes, on every common interval |
 | ENTSO-E imbalance, 12 zones, 2025 | 87 s / 641 MiB | entsoe-py: 238 s / 472 MiB | yes, on every common interval |
-| eSett imbalance, SE3, 2025 | 1.04 s / 89 MiB | esett-py 0.1.0: 0.12 s / 71 MiB | yes, 35,040 of 35,040 |
-| eSett imbalance, 12 zones, 2025 | 17.2 s / 700 MiB | esett-py: 1.7 s / 526 MiB | yes, 420,480 of 420,480 |
+| eSett imbalance, SE3, 2025 | 0.48 s / 92 MiB | esett-py 0.1.0: 0.12 s / 74 MiB | yes, 35,040 of 35,040 |
+| eSett imbalance, 12 zones, 2025 | 5.4 s / 674 MiB | esett-py: 1.5 s / 528 MiB | yes, 420,474 of 420,474 (see below) |
 
 - **ENTSO-E:** faster than entsoe-py on all six recorded sets (1.4 to 3.8 times); uses more
   memory on the all-zone year.
-- **eSett:** esett-py is about 10 times faster. It returns the raw JSON dictionaries; this
-  library parses timestamps, validates every record against the [data contracts](../README.md#data-contracts)
-  and builds typed records. After the optimisation below the gap is roughly 6 to 7 times (separate
-  runs, so approximate), and what is left is that work, not copying overhead.
+- **eSett:** esett-py is 3.6 to 3.9 times faster (about 10 times on v0.3.0). It returns the raw
+  JSON dictionaries; this library parses timestamps, validates every record against the
+  [data contracts](../README.md#data-contracts) and builds a typed record with its own read-only
+  `raw` per interval. JSON decoding, most of what esett-py does, is about a seventh of the
+  remaining time in a profile of the SE3 year; the rest is that per-record validation and
+  construction. The 6 values that differ on the all-zone year are unsettled Danish intervals
+  published as all-zero placeholders, which this library reports as `None` and esett-py as `0.0`.
 - **Row counts differ on yearly ENTSO-E windows** because this library expands hourly-published
   values to four quarters (SE3 2025: 35,020 rows against 29,563). An independent XML decoder
   (`source_audit.py`) confirmed that neither client dropped or changed a published value.
@@ -50,6 +54,30 @@ directly cut end-to-end time on year workloads with output byte-identical on all
 
 Not done yet: the duplicate-merge chain in the ENTSO-E parser builds some records three times;
 it is the next-largest cost.
+
+## eSett parsing (2026-10-20)
+
+A second pass on the eSett path removed per-record work the contracts do not need:
+
+- each timestamp string is parsed once per call (all zones share it);
+- a settled row's five numbers are checked together when they are all plain finite floats, with
+  the column-by-column checks (and their errors, in the same order) as the fallback;
+- the duplicate check formats its message only when it fails;
+- quarter-hour records skip the hourly expansion loop;
+- the parser builds records through an internal constructor that skips the checks it has already
+  done and takes over the freshly decoded row as the record's `raw` instead of copying it again.
+  Nothing else references that row; the quarters of an hourly row and every record built through
+  the public constructor or `dataclasses.replace` still get their own deep copy.
+
+Output is byte-identical on all 12 recorded sets. Before and after alternated, 7 fresh processes
+each, on an idle machine:
+
+| Workload (2025) | before | after | change |
+|---|---:|---:|---:|
+| eSett SE3 | 0.85 s | 0.45 s | -47 % |
+| eSett, 12 zones | 11.8 s | 5.3 s | -55 % |
+
+Peak memory is unchanged on SE3 (127 MiB) and 3 % lower on 12 zones (689 to 669 MiB).
 
 ## Harness
 

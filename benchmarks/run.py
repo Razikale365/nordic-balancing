@@ -194,7 +194,7 @@ def _stage_setup(name: str, http: httpx.Client, timers: dict[str, Timer]) -> lis
                 "_fcr_capacity",
                 timers["parse_validate"].timed(module.EnergiDataServiceClient._fcr_capacity),
             )
-        for record_class in ("ImbalancePrice", "ReserveCapacity"):
+        for record_class in ("ImbalancePrice", "ReserveCapacity", "_owned_imbalance_price"):
             if hasattr(module, record_class):
                 patch(
                     module,

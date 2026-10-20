@@ -1,18 +1,27 @@
 """Keyless eSett single imbalance prices, preserving publication resolution."""
 
+import math
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from operator import attrgetter
 from types import TracebackType
 from typing import Any, Self
 
 import httpx
 
 from nordic_balancing._http import check_base_url, get_json
-from nordic_balancing._validate import finite_number, reject_duplicate
+from nordic_balancing._validate import finite_number
 from nordic_balancing.errors import SourceError
-from nordic_balancing.models import INTERVAL, BiddingZone, Direction, ImbalancePrice, to_utc
+from nordic_balancing.models import (
+    INTERVAL,
+    BiddingZone,
+    Direction,
+    ImbalancePrice,
+    _owned_imbalance_price,
+    to_utc,
+)
 
 SOURCE = "esett"
 BASE_URL = "https://api.opendata.esett.com"
@@ -28,6 +37,9 @@ _VALUE_KEYS = (
     "downRegPrice",
     "mainDirRegPowerPerMBA",
 )
+_VALUE_KEY_SET = frozenset(_VALUE_KEYS)
+_ZONES = dict(BiddingZone.__members__)
+_DIRECTIONS = {float(d): d for d in Direction}
 # DK1/DK2 mark an interval that is not settled yet with 0.0 in every price
 # column instead of null; SE, NO and FI use null, so the signature is DK-only.
 _DK_ZONES = frozenset({BiddingZone.DK1, BiddingZone.DK2})
@@ -109,6 +121,7 @@ class ESettClient:
         zone_list = sorted(set(requested))
         if not zone_list:
             raise ValueError("zones must not be empty")
+        zone_set = set(zone_list)
         query_start = start_utc.replace(microsecond=start_utc.microsecond // 1000 * 1000)
         if query_start < _HOURLY_END:
             # Include the hourly record whose expanded quarters cover start.
@@ -119,6 +132,8 @@ class ESettClient:
             query_end += timedelta(microseconds=1000 - remainder)
         prices: list[ImbalancePrice] = []
         seen: set[tuple[BiddingZone, datetime]] = set()
+        # All zones share each timestamp string, so parse it once per call.
+        times: dict[str, datetime] = {}
         while query_start < query_end:
             chunk_end = min(query_start + _CHUNK, query_end)
             params = [
@@ -143,24 +158,29 @@ class ESettClient:
             hourly_hours: dict[BiddingZone, set[datetime]] = {}
             quarter_zones: set[BiddingZone] = set()
             for record in body:
-                price = _parse_imbalance(record)
-                if price.zone not in zone_list:
-                    raise SourceError(f"{SOURCE}: unrequested mba {price.zone.value!r}")
-                if not query_start <= price.start < chunk_end:
+                price = _parse_imbalance(record, times)
+                zone = price.zone
+                start = price.start
+                if zone not in zone_set:
+                    raise SourceError(f"{SOURCE}: unrequested mba {zone.value!r}")
+                if not query_start <= start < chunk_end:
                     raise SourceError(f"{SOURCE}: timestampUTC outside requested chunk")
-                reject_duplicate(
-                    seen,
-                    (price.zone, price.start),
-                    source=SOURCE,
-                    detail=f"record for {price.zone.value} at {price.start.isoformat()}",
-                )
-                if price.start >= _HOURLY_END:
-                    if price.start.minute:
-                        quarter_zones.add(price.zone)
+                key = (zone, start)
+                if key in seen:
+                    raise SourceError(
+                        f"{SOURCE}: duplicate record for {zone.value} at {start.isoformat()}"
+                    )
+                seen.add(key)
+                if start >= _HOURLY_END:
+                    # Quarter-hour resolution: the record is its own single interval.
+                    if start.minute:
+                        quarter_zones.add(zone)
                     else:
-                        hourly_hours.setdefault(price.zone, set()).add(price.start)
-                quarters = 4 if price.resolution == _HOUR else 1
-                for quarter in range(quarters):
+                        hourly_hours.setdefault(zone, set()).add(start)
+                    if start_utc <= start < end_utc:
+                        prices.append(price)
+                    continue
+                for quarter in range(4):
                     interval_start = price.start + quarter * INTERVAL
                     if start_utc <= interval_start < end_utc:
                         prices.append(replace(price, start=interval_start) if quarter else price)
@@ -174,7 +194,7 @@ class ESettClient:
                         "fall on the hour only"
                     )
             query_start = chunk_end
-        prices.sort(key=lambda p: (p.start, p.zone))
+        prices.sort(key=attrgetter("start", "zone"))
         return prices
 
 
@@ -182,7 +202,9 @@ def _format(value: datetime) -> str:
     return value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def _parse_time(value: object) -> datetime:
+def _parse_time(value: object, cache: dict[str, datetime]) -> datetime:
+    if type(value) is str and (cached := cache.get(value)) is not None:
+        return cached
     if not isinstance(value, str):
         raise SourceError(f"{SOURCE}: timestampUTC is missing or not a string: {value!r}")
     if "T" not in value and "t" not in value and " " not in value:
@@ -202,60 +224,82 @@ def _parse_time(value: object) -> datetime:
         raise SourceError(f"{SOURCE}: timestampUTC {value!r} is not on a 15-minute boundary")
     if parsed < _HOURLY_END and parsed.minute:
         raise SourceError(f"{SOURCE}: hourly timestampUTC {value!r} is not on the hour")
+    cache[value] = parsed
     return parsed
 
 
 def _number(record: dict[str, Any], column: str) -> float | None:
-    return finite_number(record.get(column), source=SOURCE, column=column)
+    value = record.get(column)
+    # Fast path for what JSON decoding produces; finite_number handles the rest.
+    if value is None:
+        return None
+    if type(value) is float and math.isfinite(value):
+        return value
+    return finite_number(value, source=SOURCE, column=column)
 
 
 def _direction(record: dict[str, Any]) -> Direction | None:
     value = _number(record, "mainDirRegPowerPerMBA")
     if value is None:
         return None
-    if value not in (-1, 0, 1):
+    direction = _DIRECTIONS.get(value)
+    if direction is None:
         raise SourceError(f"{SOURCE}: unknown mainDirRegPowerPerMBA {value!r}")
-    return Direction(int(value))
+    return direction
 
 
-def _parse_imbalance(record: object) -> ImbalancePrice:
+def _parse_imbalance(record: object, times: dict[str, datetime]) -> ImbalancePrice:
     if not isinstance(record, dict):
         raise SourceError(f"{SOURCE}: record is not a JSON object: {record!r}")
     area = record.get("mba")
-    if not isinstance(area, str) or area not in BiddingZone.__members__:
+    zone = _ZONES.get(area) if isinstance(area, str) else None
+    if zone is None:
         raise SourceError(f"{SOURCE}: unknown mba {area!r}")
-    start = _parse_time(record.get("timestampUTC"))
-    missing = [key for key in _VALUE_KEYS if key not in record]
-    if missing:
+    start = _parse_time(record.get("timestampUTC"), times)
+    if not record.keys() >= _VALUE_KEY_SET:
+        missing = [key for key in _VALUE_KEYS if key not in record]
         raise SourceError(f"{SOURCE}: record is missing {', '.join(missing)}")
-    sales = _number(record, "imblSalesPrice")
-    purchase = _number(record, "imblPurchasePrice")
-    if sales is not None and purchase is not None and sales != purchase:
-        raise SourceError(f"{SOURCE}: single-price model violated: sales != purchase")
+    sales = record["imblSalesPrice"]
+    purchase = record["imblPurchasePrice"]
+    up = record["upRegPrice"]
+    down = record["downRegPrice"]
+    flow = record["mainDirRegPowerPerMBA"]
+    # A settled row is five plain floats; if their sum is finite, so is each of them
+    # (an overflowing sum falls through), so every column check below would pass.
+    if type(sales) is type(purchase) is type(up) is type(down) is type(flow) is float and (
+        math.isfinite(sales + purchase + up + down + flow)
+    ):
+        if sales != purchase:
+            raise SourceError(f"{SOURCE}: single-price model violated: sales != purchase")
+        direction = _DIRECTIONS.get(flow)
+        if direction is None:
+            raise SourceError(f"{SOURCE}: unknown mainDirRegPowerPerMBA {flow!r}")
+    else:
+        # Same checks one column at a time, in the order that decides which error wins.
+        sales = _number(record, "imblSalesPrice")
+        purchase = _number(record, "imblPurchasePrice")
+        if sales is not None and purchase is not None and sales != purchase:
+            raise SourceError(f"{SOURCE}: single-price model violated: sales != purchase")
+        up = _number(record, "upRegPrice")
+        down = _number(record, "downRegPrice")
+        direction = _direction(record)
     # Single-price model: sales and purchase are the same price by definition, so a
     # price published in only one column is that price (never observed in ~107k
     # records, 2021-11 to 2026-10, but it must not be dropped as None).
     single = sales if sales is not None else purchase
-    up = _number(record, "upRegPrice")
-    down = _number(record, "downRegPrice")
-    direction = _direction(record)
-    zone = BiddingZone[area]
     if zone in _DK_ZONES and sales == purchase == up == down == 0.0 and direction is Direction.NONE:
         # The pre-settlement DK placeholder is not a price; report it as
         # unpublished, like the null rows the other zones send for it.
         single = up = down = direction = None
-    return ImbalancePrice(
+    # start comes from _parse_time (a plain UTC datetime) and record was decoded for
+    # this call alone; hourly quarters are copied from it through dataclasses.replace.
+    return _owned_imbalance_price(
         start=start,
         zone=zone,
         imbalance_price_eur=single,
-        imbalance_price_dkk=None,
-        spot_price_eur=None,
-        dominating_direction=direction,
-        satisfied_demand_mw=None,
-        afrr_up_vwa_eur=None,
-        afrr_down_vwa_eur=None,
         mfrr_up_price_eur=up,
         mfrr_down_price_eur=down,
+        dominating_direction=direction,
         source=SOURCE,
         resolution=_HOUR if start < _HOURLY_END else INTERVAL,
         raw=record,

@@ -569,6 +569,29 @@ def test_preserves_read_only_raw_without_affecting_equality_or_repr() -> None:
     assert "raw=" not in repr(price)
 
 
+def test_raw_is_private_to_each_record_and_expanded_quarter() -> None:
+    hourly = [{**PUBLISHED, "timestampUTC": "2023-05-21T20:00:00Z", "extra": {"nested": [1]}}]
+    quarters = [
+        {**PUBLISHED, "timestampUTC": stamp, "extra": {"nested": [1]}}
+        for stamp in ("2026-01-15T00:00:00Z", "2026-01-15T00:15:00Z")
+    ]
+    hour = datetime(2023, 5, 21, 20, tzinfo=UTC)
+    expanded = esett_client(lambda _: httpx.Response(200, json=hourly)).imbalance_prices(
+        hour, hour + timedelta(hours=1), [BiddingZone.SE3]
+    )
+    latest = esett_client(lambda _: httpx.Response(200, json=quarters)).imbalance_prices(
+        START, START + 2 * INTERVAL, [BiddingZone.SE3]
+    )
+    raws = [record.raw for record in (*expanded, *latest)]
+    assert len(raws) == 6
+    assert len({id(raw) for raw in raws}) == len(raws)
+    assert len({id(raw["extra"]) for raw in raws}) == len(raws)
+    assert len({id(raw["extra"]["nested"]) for raw in raws}) == len(raws)
+    raws[0]["extra"]["nested"].append(2)
+    assert all(raw["extra"]["nested"] == [1] for raw in raws[1:])
+    assert hourly[0]["extra"]["nested"] == [1]
+
+
 def test_sends_utc_window_repeated_codes_and_custom_base_url() -> None:
     seen: list[httpx.Request] = []
 

@@ -15,6 +15,8 @@ def finite_number(value: object, *, source: str, column: str) -> float | None:
     """
     if value is None:
         return None
+    if type(value) is float and math.isfinite(value):
+        return value  # the common case; float() of an exact float is the same value
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise SourceError(f"{source}: {column} is not a number")
     try:

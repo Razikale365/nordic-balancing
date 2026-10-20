@@ -21,7 +21,7 @@ from nordic_balancing import (
     ReserveCapacity,
     ReserveProduct,
 )
-from nordic_balancing.models import _MAX_YEAR, _copy_raw, to_utc
+from nordic_balancing.models import _MAX_YEAR, _copy_raw, _owned_imbalance_price, to_utc
 
 START = datetime(2026, 1, 15, tzinfo=UTC)
 
@@ -61,6 +61,35 @@ def test_expanded_records_do_not_share_nested_raw() -> None:
     second = replace(first, start=START + INTERVAL)
     second.raw["319"]["value"] = 99
     assert first.raw["319"] == {"value": 1}
+
+
+def test_owned_constructor_sets_every_field_like_the_public_one() -> None:
+    raw = {"319": {"value": 1}}
+    public = replace(
+        price(raw),
+        zone=BiddingZone.SE3,
+        imbalance_price_eur=1.5,
+        mfrr_up_price_eur=2.5,
+        mfrr_down_price_eur=-3.5,
+        dominating_direction=Direction.UP,
+        resolution=timedelta(hours=1),
+    )
+    owned = _owned_imbalance_price(
+        start=START,
+        zone=BiddingZone.SE3,
+        imbalance_price_eur=1.5,
+        mfrr_up_price_eur=2.5,
+        mfrr_down_price_eur=-3.5,
+        dominating_direction=Direction.UP,
+        source="test",
+        resolution=timedelta(hours=1),
+        raw=raw,
+    )
+    assert asdict(owned) == asdict(public)
+    assert type(owned.raw) is type(public.raw)
+    assert owned.raw._data is raw  # type: ignore[attr-defined]  # handed over, not copied
+    copied = replace(owned, start=START + INTERVAL)
+    assert copied.raw["319"] is not raw["319"]
 
 
 def test_raw_top_level_is_read_only() -> None:

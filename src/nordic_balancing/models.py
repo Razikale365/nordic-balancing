@@ -75,6 +75,8 @@ def _copy_raw(value: Any) -> Any:
         return {
             key: item if type(item) in _ATOMIC else _copy_raw(item) for key, item in value.items()
         }
+    if kind is _ReadOnlyMapping:
+        return _copy_raw(value._data)  # dataclasses.replace hands over the previous raw
     if isinstance(value, Mapping):
         return {key: _copy_raw(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -132,6 +134,20 @@ def to_utc(value: datetime, name: str) -> datetime:
     return utc
 
 
+def _check_start(record: Any) -> None:
+    """Reject a non-UTC ``start`` and normalise an equivalent UTC tzinfo to ``UTC``."""
+    start = record.start
+    if type(start) is datetime and start.tzinfo is UTC:
+        return  # what every client builds; the checks below would all pass
+    if not isinstance(start, datetime):
+        raise TypeError(f"start must be a datetime, got {type(start).__name__}")
+    if start.tzinfo is None or start.utcoffset() != timedelta(0):
+        raise ValueError(f"start must be a UTC datetime, got {start.isoformat()}")
+    if start.tzinfo is not UTC:
+        # Same instant, but interval arithmetic must not run in a local wall clock.
+        object.__setattr__(record, "start", start.astimezone(UTC))
+
+
 @dataclass(frozen=True, slots=True)
 class ImbalancePrice:
     """The imbalance price and its components for one zone and one interval.
@@ -162,19 +178,54 @@ class ImbalancePrice:
     raw: Mapping[str, Any] = field(compare=False, repr=False)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.start, datetime):
-            raise TypeError(f"start must be a datetime, got {type(self.start).__name__}")
-        if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
-            raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
-        if self.start.tzinfo is not UTC:
-            # Same instant, but interval arithmetic must not run in a local wall clock.
-            object.__setattr__(self, "start", self.start.astimezone(UTC))
+        # _owned_imbalance_price skips this method; keep it in step with any check added here.
+        _check_start(self)
         object.__setattr__(self, "raw", _ReadOnlyMapping(_copy_raw(self.raw)))
 
     @property
     def end(self) -> datetime:
         """The exclusive end of the interval."""
         return self.start + INTERVAL
+
+
+_new = object.__new__
+_set = object.__setattr__
+
+
+def _owned_imbalance_price(
+    start: datetime,
+    zone: BiddingZone,
+    imbalance_price_eur: float | None,
+    mfrr_up_price_eur: float | None,
+    mfrr_down_price_eur: float | None,
+    dominating_direction: Direction | None,
+    source: str,
+    resolution: timedelta,
+    raw: dict[str, Any],
+) -> ImbalancePrice:
+    """Build an :class:`ImbalancePrice` for a parser, skipping the ``__post_init__`` work.
+
+    Only for fields the caller has already validated: ``start`` must be a plain
+    ``datetime`` whose tzinfo is ``UTC``, and ``raw`` must be a freshly decoded dict
+    that nothing else references, so it becomes the record's own copy without
+    being copied again. The fields this source never fills are ``None``.
+    """
+    record = _new(ImbalancePrice)
+    _set(record, "start", start)
+    _set(record, "zone", zone)
+    _set(record, "imbalance_price_eur", imbalance_price_eur)
+    _set(record, "imbalance_price_dkk", None)
+    _set(record, "spot_price_eur", None)
+    _set(record, "dominating_direction", dominating_direction)
+    _set(record, "satisfied_demand_mw", None)
+    _set(record, "afrr_up_vwa_eur", None)
+    _set(record, "afrr_down_vwa_eur", None)
+    _set(record, "mfrr_up_price_eur", mfrr_up_price_eur)
+    _set(record, "mfrr_down_price_eur", mfrr_down_price_eur)
+    _set(record, "source", source)
+    _set(record, "resolution", resolution)
+    _set(record, "raw", _ReadOnlyMapping(raw))
+    return record
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,13 +253,7 @@ class ReserveCapacity:
     raw: Mapping[str, Any] = field(compare=False, repr=False)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.start, datetime):
-            raise TypeError(f"start must be a datetime, got {type(self.start).__name__}")
-        if self.start.tzinfo is None or self.start.utcoffset() != timedelta(0):
-            raise ValueError(f"start must be a UTC datetime, got {self.start.isoformat()}")
-        if self.start.tzinfo is not UTC:
-            # Same instant, but interval arithmetic must not run in a local wall clock.
-            object.__setattr__(self, "start", self.start.astimezone(UTC))
+        _check_start(self)
         object.__setattr__(self, "raw", _ReadOnlyMapping(_copy_raw(self.raw)))
 
     @property
