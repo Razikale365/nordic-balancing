@@ -100,8 +100,8 @@ Observed 2026-10-09 unless noted; file references are under
   requests.
 - Full year 2025 vs eSett (420,480 intervals, each in
   exactly one category; `examples/entsoe_validation/validate.py year-2025 --live`,
-  rerun 2026-10-12 with the same counts as the first, uncommitted probe; per-zone
-  counts and every differing interval in `results_year-2025.json`):
+  rerun 2026-10-12 with the same counts as the first, uncommitted probe; the run writes
+  per-zone counts and every differing interval to `results_year-2025.json`):
   - 7,361 missing in ENTSO-E. DK1/DK2 lack 2025-01-05T23:00Z–2025-01-30T08:45Z and
     about 1,200 scattered quarters (most in April–May); NO1–NO5 and SE1–SE4 lack
     12–20 quarters each, mainly 2025-01-06T16:00–17:45Z and the hour from

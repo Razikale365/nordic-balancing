@@ -1,0 +1,3 @@
+# Script output is written locally; summaries live in each README
+results*.json
+nordic_quirks_results.json

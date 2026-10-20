@@ -11,7 +11,7 @@ Reconciliation classifies differences; it never merges the series or decides
 which source is right.
 
 Run: `uv run python examples/reconciliation/reconcile_dk_fi.py`
-Writes `results.json` (every divergence with both sides' values) next to this
+Writes `results.json` (every divergence with both sides' values, not committed) next to this
 file.
 
 ## Counts per day and pair

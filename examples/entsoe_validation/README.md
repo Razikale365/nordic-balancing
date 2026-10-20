@@ -22,7 +22,8 @@ uv run python examples/entsoe_validation/validate.py year-2025 --live
 uv run python examples/entsoe_validation/validate.py multi-chunk --live
 ```
 
-Each run writes `results_<mode>.json` next to the script (or to `--out`).
+Each run writes `results_<mode>.json` next to the script (or to `--out`); these files are
+not committed, and the numbers below summarise them.
 
 ## Method
 
