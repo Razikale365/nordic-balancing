@@ -157,7 +157,7 @@ class ImbalancePrice:
     interval at which the source published the value; an hourly value can be
     repeated across four normalised intervals. ``raw`` preserves the source
     record for inspecting fields that are not normalised.
-    ``raw`` is a read-only mapping over a deep copy made for this record alone:
+    ``raw`` is a read-only mapping over data private to this record:
     nested containers are never shared with the source or with other records.
     Only the top level rejects writes; treat nested values as read-only too.
     """
@@ -237,7 +237,7 @@ class ReserveCapacity:
     ``resolution`` is the interval at which the source published the value; an
     hourly value can be repeated across four normalised intervals. ``raw``
     preserves the source record for inspecting fields that are not normalised.
-    ``raw`` is a read-only mapping over a deep copy made for this record alone:
+    ``raw`` is a read-only mapping over data private to this record:
     nested containers are never shared with the source or with other records.
     Only the top level rejects writes; treat nested values as read-only too.
     """
