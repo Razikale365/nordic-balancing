@@ -132,10 +132,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE). Data retrieved through this library remains subject to each
-source's terms. Energinet, Svenska kraftnät and Fingrid publish under CC BY 4.0; when
-republishing, follow the source's attribution terms (Energinet suggests "Source: Energinet
-(www.energidataservice.dk)") without implying endorsement.
+The code is MIT-licensed, see [LICENSE](LICENSE).
+
+The data is not covered by that licence; it stays under each provider's own terms. Energinet,
+Svenska kraftnät and Fingrid publish under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+so if you republish their data you must credit the provider.
 
 This is an independent project, not affiliated with or endorsed by Energinet, Fingrid,
 Svenska kraftnät, eSett, ENTSO-E or any other data provider.
