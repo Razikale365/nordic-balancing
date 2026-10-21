@@ -24,8 +24,9 @@ import zipfile
 import zlib
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from operator import attrgetter
 from types import TracebackType
 from typing import Any, Self
 from urllib.parse import quote, quote_plus
@@ -42,6 +43,8 @@ from nordic_balancing.models import (
     ImbalancePrice,
     ReserveCapacity,
     ReserveProduct,
+    _owned_imbalance_price,
+    _owned_reserve_capacity,
     to_utc,
 )
 
@@ -213,7 +216,7 @@ class EntsoeClient:
                 collected[key] = price
         return sorted(
             (p for p in collected.values() if start_utc <= p.start < end_utc),
-            key=lambda p: (p.start, p.zone),
+            key=attrgetter("start", "zone"),
         )
 
     def capacity_market(
@@ -296,7 +299,7 @@ class EntsoeClient:
                     collected.setdefault(key, record)
             return sorted(
                 (r for r in collected.values() if start_utc <= r.start < end_utc),
-                key=lambda r: (r.start, r.zone, r.direction),
+                key=attrgetter("start", "zone", "direction"),
             )
         except SourceError as exc:
             raise SourceError(_redact(str(exc), self._api_key)) from None
@@ -366,9 +369,11 @@ class EntsoeClient:
                 if product is ReserveProduct.MFRR
                 else Direction.NONE
             )
+            point_start = point.start.isoformat()
             for quarter in range(4):
+                # point.start is a plain UTC datetime (_time) and each raw is new and flat.
                 records.append(
-                    ReserveCapacity(
+                    _owned_reserve_capacity(
                         start=point.start + quarter * INTERVAL,
                         zone=zone,
                         product=product,
@@ -379,7 +384,7 @@ class EntsoeClient:
                         resolution=_HOUR,
                         raw={
                             "zone": zone.value,
-                            "start": point.start.isoformat(),
+                            "start": point_start,
                             "resolution": point.resolution,
                             "curveType": point.curve_type,
                             "namespace": point.namespace,
@@ -454,40 +459,24 @@ class EntsoeClient:
         self, zone: BiddingZone, chunk_start: datetime, chunk_end: datetime
     ) -> dict[tuple[BiddingZone, datetime], ImbalancePrice]:
         collected: dict[tuple[BiddingZone, datetime], ImbalancePrice] = {}
-        self._collect(collected, zone, chunk_start, chunk_end)
-        return collected
-
-    def _collect(
-        self,
-        collected: dict[tuple[BiddingZone, datetime], ImbalancePrice],
-        zone: BiddingZone,
-        chunk_start: datetime,
-        chunk_end: datetime,
-    ) -> None:
+        # Each collected record's raw dict, built here and owned by that record alone,
+        # so a repeat for the same interval merges into it before anything returns it.
+        raws: dict[tuple[BiddingZone, datetime], dict[str, Any]] = {}
         for member in self._request_members(zone, chunk_start, chunk_end):
             for point in _points(
                 member, _EIC_CODES[zone], chunk_start, chunk_end, api_key=self._api_key
             ):
                 quarters = 4 if point.resolution == "PT60M" else 1
+                resolution = _RESOLUTIONS[point.resolution]
+                point_start = point.start.isoformat().replace("+00:00", "Z")
                 for quarter in range(quarters):
                     interval_start = point.start + quarter * INTERVAL
-                    price = ImbalancePrice(
-                        start=interval_start,
-                        zone=zone,
-                        imbalance_price_eur=point.amount,
-                        imbalance_price_dkk=None,
-                        spot_price_eur=None,
-                        dominating_direction=None,
-                        satisfied_demand_mw=None,
-                        afrr_up_vwa_eur=None,
-                        afrr_down_vwa_eur=None,
-                        mfrr_up_price_eur=None,
-                        mfrr_down_price_eur=None,
-                        source=SOURCE,
-                        resolution=_RESOLUTIONS[point.resolution],
-                        raw={
+                    key = (zone, interval_start)
+                    existing = collected.get(key)
+                    if existing is None:
+                        raw: dict[str, Any] = {
                             "zone": zone.value,
-                            "start": point.start.isoformat().replace("+00:00", "Z"),
+                            "start": point_start,
                             "resolution": point.resolution,
                             "curveType": point.curve_type,
                             "namespace": point.namespace,
@@ -501,40 +490,43 @@ class EntsoeClient:
                             "financial_prices": [
                                 dict(component) for component in point.financial_prices
                             ],
-                        },
-                    )
-                    key = (zone, interval_start)
-                    existing = collected.get(key)
-                    if existing is None:
-                        collected[key] = price
+                        }
+                        # point.start is a plain UTC datetime (_time) and raw is new.
+                        collected[key] = _owned_imbalance_price(
+                            start=interval_start,
+                            zone=zone,
+                            imbalance_price_eur=point.amount,
+                            mfrr_up_price_eur=None,
+                            mfrr_down_price_eur=None,
+                            dominating_direction=None,
+                            source=SOURCE,
+                            resolution=resolution,
+                            raw=raw,
+                        )
+                        raws[key] = raw
                         continue
-                    if existing.resolution != price.resolution:
+                    if existing.resolution != resolution:
                         # Equal values at different resolutions are still two
                         # publications; which one is authoritative is not known.
                         raise SourceError(
                             f"{SOURCE}: conflicting resolutions for {zone.value} at "
                             f"{interval_start.isoformat()}"
                         )
-                    if existing.imbalance_price_eur != price.imbalance_price_eur:
-                        found = _category_names(existing.raw["categories"], price.raw["categories"])
+                    merged = raws[key]
+                    if existing.imbalance_price_eur != point.amount:
+                        found = _category_names(merged["categories"], point.categories)
                         raise SourceError(
                             f"{SOURCE}: dual imbalance prices are not supported "
                             f"(categories: {found})"
                         )
-                    _reject_repeated_categories(existing.raw["categories"], price.raw["categories"])
-                    merged: dict[str, Any] = dict(existing.raw)
-                    merged["categories"] = [
-                        *existing.raw["categories"],
-                        *price.raw["categories"],
-                    ]
-                    merged["flow_direction"] = _flow_direction(
-                        existing.raw["flow_direction"], price.raw["flow_direction"]
+                    _reject_repeated_categories(merged["categories"], point.categories)
+                    flow_direction = _flow_direction(merged["flow_direction"], point.flow_direction)
+                    merged["categories"].extend(dict(entry) for entry in point.categories)
+                    merged["flow_direction"] = flow_direction
+                    merged["financial_prices"].extend(
+                        dict(component) for component in point.financial_prices
                     )
-                    merged["financial_prices"] = [
-                        *existing.raw["financial_prices"],
-                        *price.raw["financial_prices"],
-                    ]
-                    collected[key] = replace(existing, raw=merged)
+        return collected
 
 
 def _jobs(
@@ -576,19 +568,42 @@ def _local(tag: str) -> str:
     return tag.rpartition("}")[2]
 
 
-def _children(element: ElementTree.Element, name: str) -> list[ElementTree.Element]:
+_Groups = dict[str, list[ElementTree.Element]]
+
+
+def _group(element: ElementTree.Element) -> _Groups:
+    """Index an element's children by local name, in document order, in one pass."""
+    groups: _Groups = {}
+    for child in element:
+        name = _local(child.tag)
+        found = groups.get(name)
+        if found is None:
+            groups[name] = [child]
+        else:
+            found.append(child)
+    return groups
+
+
+def _children(
+    element: ElementTree.Element, name: str, groups: _Groups | None = None
+) -> list[ElementTree.Element]:
+    # groups, when given, is _group(element): the same children without another scan.
+    if groups is not None:
+        return groups.get(name, [])
     return [child for child in element if _local(child.tag) == name]
 
 
-def _only_child(element: ElementTree.Element, name: str) -> ElementTree.Element | None:
-    children = _children(element, name)
+def _only_child(
+    element: ElementTree.Element, name: str, groups: _Groups | None = None
+) -> ElementTree.Element | None:
+    children = _children(element, name, groups)
     if len(children) > 1:
         raise SourceError(f"{SOURCE}: more than one {name} in {_local(element.tag)}")
     return children[0] if children else None
 
 
-def _text(parent: ElementTree.Element, name: str) -> str:
-    element = _only_child(parent, name)
+def _text(parent: ElementTree.Element, name: str, groups: _Groups | None = None) -> str:
+    element = _only_child(parent, name, groups)
     if element is None or element.text is None or not element.text.strip():
         raise SourceError(f"{SOURCE}: missing {name}")
     return element.text.strip()
@@ -643,20 +658,21 @@ def _points(
     namespace = root.tag[1:].partition("}")[0] if root.tag.startswith("{") else ""
     if _BALANCING_NS.fullmatch(namespace) is None:
         raise SourceError(f"{SOURCE}: unsupported namespace {namespace!r}")
-    document_type = _text(root, "type")
+    groups = _group(root)
+    document_type = _text(root, "type", groups)
     if document_type != ("A81" if capacity else "A85"):
         # Other balancing documents (A86 imbalance volumes, ...) carry no prices;
         # parsing one would yield only unpublished intervals.
         raise SourceError(f"{SOURCE}: unexpected document type {document_type!r}")
-    if capacity and _text(root, "process.processType") != capacity_process:
+    if capacity and _text(root, "process.processType", groups) != capacity_process:
         raise SourceError(f"{SOURCE}: capacity process.processType must be {capacity_process}")
     for element in _AREA_ELEMENTS:
-        area = _code(root, element)
+        area = _code(root, element, groups)
         if area is not None and area != eic:
             raise SourceError(f"{SOURCE}: {element} {area!r} does not match requested {eic!r}")
     return [
         point
-        for series in _children(root, "TimeSeries")
+        for series in _children(root, "TimeSeries", groups)
         for point in _series_points(
             series,
             namespace,
@@ -703,6 +719,7 @@ def _series_points(
     capacity: bool = False,
     capacity_process: str = "A52",
 ) -> list[_Point]:
+    groups = _group(series)
     series_flow: str | None = None
     if capacity:
         required = [
@@ -714,30 +731,30 @@ def _series_points(
             # Preserve FCR-N's validation order and exact errors from main.
             required.insert(1, ("flowDirection.direction", "A03"))
         for name, expected in required:
-            if _text(series, name) != expected:
+            if _text(series, name, groups) != expected:
                 raise SourceError(f"{SOURCE}: capacity {name} must be {expected}")
-        series_flow = _text(series, "flowDirection.direction")
+        series_flow = _text(series, "flowDirection.direction", groups)
         if capacity_process == "A47" and series_flow not in ("A01", "A02"):
             raise SourceError(f"{SOURCE}: mFRR capacity flowDirection.direction must be A01 or A02")
-    currency = _only_child(series, "currency_Unit.name")
+    currency = _only_child(series, "currency_Unit.name", groups)
     if currency is not None and (currency.text or "").strip() != "EUR":
         raise SourceError(
             f"{SOURCE}: unsupported currency_Unit.name {(currency.text or '').strip()!r}"
         )
     for element in _PRICE_UNIT_ELEMENTS:
-        unit = _only_child(series, element)
+        unit = _only_child(series, element, groups)
         expected_unit = "MAW" if capacity else "MWH"
         if unit is not None and (unit.text or "").strip() != expected_unit:
             raise SourceError(f"{SOURCE}: unsupported {element} {(unit.text or '').strip()!r}")
-    curve_type = _text(series, "curveType")
+    curve_type = _text(series, "curveType", groups)
     # A02, A04 and A05 have different semantics (instants or variable-size
     # blocks, not a fixed-resolution series) and must not be guessed.
     if curve_type not in ("A01", "A03"):
         raise SourceError(f"{SOURCE}: curveType {curve_type} is not supported")
     series_id = object() if capacity else None
     return [
-        replace(point, capacity_series=series_id) if capacity else point
-        for period in _children(series, "Period")
+        point
+        for period in _children(series, "Period", groups)
         for point in _period_points(
             period,
             curve_type,
@@ -746,6 +763,7 @@ def _series_points(
             window_end,
             capacity=capacity,
             capacity_flow=series_flow,
+            capacity_series=series_id,
         )
     ]
 
@@ -759,13 +777,15 @@ def _period_points(
     *,
     capacity: bool = False,
     capacity_flow: str | None = None,
+    capacity_series: object | None = None,
 ) -> list[_Point]:
-    interval = _only_child(period, "timeInterval")
+    groups = _group(period)
+    interval = _only_child(period, "timeInterval", groups)
     if interval is None:
         raise SourceError(f"{SOURCE}: Period has no timeInterval")
     period_start = _time(_text(interval, "start"))
     period_end = _time(_text(interval, "end"))
-    resolution = _text(period, "resolution")
+    resolution = _text(period, "resolution", groups)
     if capacity and resolution != "PT60M":
         raise SourceError(f"{SOURCE}: capacity resolution must be PT60M")
     if resolution not in _RESOLUTIONS:
@@ -778,8 +798,9 @@ def _period_points(
         raise SourceError(f"{SOURCE}: Period is not a whole number of {resolution}")
     count = (period_end - period_start) // step
     explicit: dict[int, _Point] = {}
-    for element in _children(period, "Point"):
-        position = _position(_text(element, "position"))
+    for element in _children(period, "Point", groups):
+        fields = _group(element)
+        position = _position(_text(element, "position", fields))
         if position > count:
             raise SourceError(f"{SOURCE}: position {position} beyond Period end")
         start = period_start + (position - 1) * step
@@ -792,16 +813,16 @@ def _period_points(
         amount_name = "procurement_Price.amount" if capacity else "imbalance_Price.amount"
         amount: float | None
         if capacity:
-            amount = _amount(_text(element, amount_name), amount_name)
+            amount = _amount(_text(element, amount_name, fields), amount_name)
         else:
-            amount_element = _only_child(element, amount_name)
+            amount_element = _only_child(element, amount_name, fields)
             amount = (
                 _amount((amount_element.text or "").strip(), amount_name)
                 if amount_element is not None
                 else None
             )
         if capacity:
-            point_flow = _code(element, "flowDirection.direction")
+            point_flow = _code(element, "flowDirection.direction", fields)
             if point_flow is not None and point_flow != capacity_flow:
                 if capacity_flow == "A03":
                     raise SourceError(f"{SOURCE}: capacity flowDirection.direction must be A03")
@@ -812,16 +833,19 @@ def _period_points(
             start=start,
             amount=amount,
             categories=(
-                {"category": _code(element, "imbalance_Price.category"), "amount": amount},
+                {"category": _code(element, "imbalance_Price.category", fields), "amount": amount},
             ),
-            flow_direction=capacity_flow if capacity else _code(element, "flowDirection.direction"),
+            flow_direction=capacity_flow
+            if capacity
+            else _code(element, "flowDirection.direction", fields),
             financial_prices=tuple(
-                _financial_price(component) for component in _children(element, "Financial_Price")
+                _financial_price(component)
+                for component in _children(element, "Financial_Price", fields)
             ),
             resolution=resolution,
             curve_type=curve_type,
             namespace=namespace,
-            quantity=_amount(_text(element, "quantity"), "quantity") if capacity else None,
+            quantity=_amount(_text(element, "quantity", fields), "quantity") if capacity else None,
         )
         existing = explicit.get(position)
         if existing is None:
@@ -849,6 +873,7 @@ def _period_points(
     )
     points: list[_Point] = []
     previous: _Point | None = None
+    capacity_period = (period_start, period_end) if capacity else None
     for index in range(1, count + 1):
         start = period_start + (index - 1) * step
         # A81 returns whole delivery days: validate and fill the whole Period
@@ -865,22 +890,31 @@ def _period_points(
         else:
             previous = current
         if not capacity or window_start <= start < window_end:
+            # Positional, in field order: cheaper than dataclasses.replace in profiles.
             points.append(
-                replace(
-                    current,
-                    start=start,
-                    capacity_period=(period_start, period_end) if capacity else None,
-                    capacity_placeholder=placeholder,
+                _Point(
+                    start,
+                    current.amount,
+                    current.categories,
+                    current.flow_direction,
+                    current.financial_prices,
+                    current.resolution,
+                    current.curve_type,
+                    current.namespace,
+                    current.quantity,
+                    capacity_period,
+                    capacity_series,
+                    placeholder,
                 )
             )
     return points
 
 
-def _code(parent: ElementTree.Element, name: str) -> str | None:
-    element = _only_child(parent, name)
+def _code(parent: ElementTree.Element, name: str, groups: _Groups | None = None) -> str | None:
+    element = _only_child(parent, name, groups)
     if element is None:
         return None
-    return _text(parent, name)
+    return _text(parent, name, groups)
 
 
 def _financial_price(element: ElementTree.Element) -> dict[str, float | str | None]:

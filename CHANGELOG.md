@@ -9,6 +9,7 @@ the project is in beta: the public API is defined in
 ### Changed
 - Sources fail loudly on more provider changes: SvK fetches quarter-hour start times, so a switch to 15-minute data raises instead of repeating the hourly value (about four times as many requests for hourly data); eSett and Energi Data Service raise on hour-only imbalance rows where 15-minute data is expected; Energi Data Service FCR paging stops on a repeated page.
 - JSON responses are capped at 64 MiB, like ENTSO-E XML.
+- ENTSO-E and Energi Data Service build records 23-57 % faster with identical output (see `benchmarks/`).
 
 ### Fixed
 - **eSett:** unsettled DK1/DK2 intervals (all prices `0.0`) are returned as unpublished (`None`); re-fetch DK data fetched with 0.3.1 or earlier.

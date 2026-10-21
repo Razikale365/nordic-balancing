@@ -11,9 +11,11 @@ Free, no API key. Two behaviours of the API shape this client:
 """
 
 import json
+import math
 import time
 from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, datetime, timedelta
+from operator import attrgetter
 from types import TracebackType
 from typing import Any, Self
 
@@ -29,6 +31,9 @@ from nordic_balancing.models import (
     ImbalancePrice,
     ReserveCapacity,
     ReserveProduct,
+    _copy_raw,
+    _owned_imbalance_price,
+    _owned_reserve_capacity,
     to_utc,
 )
 
@@ -205,7 +210,7 @@ class EnergiDataServiceClient:
                 raise SourceError(
                     f"{SOURCE}: ImbalancePrice rows for {zone.value} are only on the hour"
                 )
-        prices.sort(key=lambda p: (p.start, p.zone))
+        prices.sort(key=attrgetter("start", "zone"))
         return prices
 
     def capacity_market(
@@ -292,12 +297,15 @@ class EnergiDataServiceClient:
                 detail=f"record for {hour.isoformat()} {zone}",
             )
             numbers = {column: _number(record, column) for column in _CAPACITY_COLUMNS[3:]}
+            # record was decoded for this call alone: the first record emitted from it
+            # adopts it as raw, the others get their own copy.
+            adopted = False
             for direction, prefix in ((Direction.UP, "Up"), (Direction.DOWN, "Down")):
                 for quarter in range(4):
                     quarter_start = hour + quarter * INTERVAL
                     if start_utc <= quarter_start < end_utc:
                         capacities.append(
-                            ReserveCapacity(
+                            _owned_reserve_capacity(
                                 start=quarter_start,
                                 zone=zone,
                                 product=product,
@@ -306,10 +314,11 @@ class EnergiDataServiceClient:
                                 volume_mw=numbers[f"{prefix}ProcuredMW"],
                                 source=SOURCE,
                                 resolution=_HOUR,
-                                raw=record,
+                                raw=_copy_raw(record) if adopted else record,
                             )
                         )
-        capacities.sort(key=lambda c: (c.start, c.zone, c.direction))
+                        adopted = True
+        capacities.sort(key=attrgetter("start", "zone", "direction"))
         return capacities
 
     def _fcr_capacity(
@@ -359,6 +368,18 @@ class EnergiDataServiceClient:
         # duplicate check runs while paging: a server ignoring `offset` then
         # raises on page two instead of requesting and buffering forever.
         seen_rows: set[tuple[datetime, BiddingZone, str, str]] = set()
+        # Rows repeat the same HourUTC and AuctionType strings many times over.
+        times: dict[str, datetime] = {}
+        auction_keys: dict[str, str] = {}
+
+        def auction_key(value: object) -> str:
+            if type(value) is not str:
+                return json.dumps(value, sort_keys=True)
+            key = auction_keys.get(value)
+            if key is None:
+                key = auction_keys[value] = json.dumps(value, sort_keys=True)
+            return key
+
         for row in self._records(dataset, params):
             if not isinstance(row, dict):
                 raise SourceError(f"{SOURCE}: record is not a JSON object")
@@ -367,7 +388,13 @@ class EnergiDataServiceClient:
                 raise SourceError(f"{SOURCE}: missing capacity columns {sorted(missing)}")
             hour = None if domestic else _repeated_hour(row)
             if hour is None:
-                hour = _parse_time(row["HourUTC"], column="HourUTC")
+                value = row["HourUTC"]
+                cached = times.get(value) if type(value) is str else None
+                if cached is None:
+                    cached = _parse_time(value, column="HourUTC")
+                    if type(value) is str:
+                        times[value] = cached
+                hour = cached
                 if hour.minute:
                     raise SourceError(f"{SOURCE}: HourUTC is not on the hour")
             if not query_start <= hour < query_end:
@@ -383,7 +410,7 @@ class EnergiDataServiceClient:
                 raise SourceError(f"{SOURCE}: unrequested ProductName {name!r}")
             reject_duplicate(
                 seen_rows,
-                (hour, zone, name, json.dumps(row.get("AuctionType"), sort_keys=True)),
+                (hour, zone, name, auction_key(row.get("AuctionType"))),
                 source=SOURCE,
                 detail=f"record for {hour.isoformat()} {zone} {name}",
             )
@@ -426,18 +453,21 @@ class EnergiDataServiceClient:
                         continue
                     reject_duplicate(
                         auctions,
-                        json.dumps(r["AuctionType"], sort_keys=True),
+                        auction_key(r["AuctionType"]),
                         source=SOURCE,
                         detail=f"{r['AuctionType']} for {hour} {zone} {name}",
                     )
                     raw["auctions"].append(r)
             volume = _number(row, "FCRdomestic_MW" if domestic else "PurchasedVolumeLocal")
             price = _number(row, "FCRdk_EUR" if domestic else "PriceTotalEUR")
+            # raw was built above from rows nothing outside this call keeps: the first quarter
+            # emitted adopts it, the others get their own copy.
+            adopted = False
             for quarter in range(4):
                 quarter_start = hour + quarter * INTERVAL
                 if start <= quarter_start < end:
                     capacities.append(
-                        ReserveCapacity(
+                        _owned_reserve_capacity(
                             start=quarter_start,
                             zone=zone,
                             product=product,
@@ -446,10 +476,11 @@ class EnergiDataServiceClient:
                             volume_mw=volume,
                             source=SOURCE,
                             resolution=_HOUR,
-                            raw=raw,
+                            raw=_copy_raw(raw) if adopted else raw,
                         )
                     )
-        return sorted(capacities, key=lambda c: (c.start, c.zone, c.direction))
+                    adopted = True
+        return sorted(capacities, key=attrgetter("start", "zone", "direction"))
 
     def _records(self, dataset: str, params: dict[str, str]) -> Iterator[dict[str, Any]]:
         # Offset paging is safe only because every query above sorts by a key unique
@@ -538,6 +569,8 @@ def _repeated_hour(row: dict[str, Any]) -> datetime | None:
     value, local = row["HourUTC"], row["HourDK"]
     if not isinstance(value, str) or not isinstance(local, str):
         return None
+    if not value.endswith("T01:01:00"):
+        return None  # the final equality below needs this suffix
     try:
         day = _fall_back_day(int(value[:4]))
     except ValueError:
@@ -548,7 +581,13 @@ def _repeated_hour(row: dict[str, Any]) -> datetime | None:
 
 
 def _number(record: dict[str, Any], column: str) -> float | None:
-    return finite_number(record.get(column), source=SOURCE, column=column)
+    value = record.get(column)
+    # Fast path for what JSON decoding produces; finite_number handles the rest.
+    if value is None:
+        return None
+    if type(value) is float and math.isfinite(value):
+        return value
+    return finite_number(value, source=SOURCE, column=column)
 
 
 def _direction(record: dict[str, Any]) -> Direction | None:
@@ -571,7 +610,9 @@ def _parse_imbalance(record: object) -> ImbalancePrice:
     if not isinstance(area, str) or area not in _DK:
         raise SourceError(f"{SOURCE}: unknown PriceArea {area!r}")
     zone = BiddingZone[area]
-    return ImbalancePrice(
+    # start comes from _parse_time (a plain UTC datetime) and record was decoded for
+    # this call alone, so it becomes the price's own raw without a copy.
+    return _owned_imbalance_price(
         start=_parse_time(record.get("TimeUTC")),
         zone=zone,
         imbalance_price_eur=_number(record, "ImbalancePriceEUR"),

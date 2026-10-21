@@ -202,24 +202,29 @@ def _owned_imbalance_price(
     source: str,
     resolution: timedelta,
     raw: dict[str, Any],
+    imbalance_price_dkk: float | None = None,
+    spot_price_eur: float | None = None,
+    satisfied_demand_mw: float | None = None,
+    afrr_up_vwa_eur: float | None = None,
+    afrr_down_vwa_eur: float | None = None,
 ) -> ImbalancePrice:
     """Build an :class:`ImbalancePrice` for a parser, skipping the ``__post_init__`` work.
 
     Only for fields the caller has already validated: ``start`` must be a plain
-    ``datetime`` whose tzinfo is ``UTC``, and ``raw`` must be a freshly decoded dict
-    that nothing else references, so it becomes the record's own copy without
-    being copied again. The fields this source never fills are ``None``.
+    ``datetime`` whose tzinfo is ``UTC``, and ``raw`` must be a freshly built dict,
+    nested containers included, that nothing else references, so it becomes the
+    record's own copy without being copied again. Fields not passed are ``None``.
     """
     record = _new(ImbalancePrice)
     _set(record, "start", start)
     _set(record, "zone", zone)
     _set(record, "imbalance_price_eur", imbalance_price_eur)
-    _set(record, "imbalance_price_dkk", None)
-    _set(record, "spot_price_eur", None)
+    _set(record, "imbalance_price_dkk", imbalance_price_dkk)
+    _set(record, "spot_price_eur", spot_price_eur)
     _set(record, "dominating_direction", dominating_direction)
-    _set(record, "satisfied_demand_mw", None)
-    _set(record, "afrr_up_vwa_eur", None)
-    _set(record, "afrr_down_vwa_eur", None)
+    _set(record, "satisfied_demand_mw", satisfied_demand_mw)
+    _set(record, "afrr_up_vwa_eur", afrr_up_vwa_eur)
+    _set(record, "afrr_down_vwa_eur", afrr_down_vwa_eur)
     _set(record, "mfrr_up_price_eur", mfrr_up_price_eur)
     _set(record, "mfrr_down_price_eur", mfrr_down_price_eur)
     _set(record, "source", source)
@@ -253,6 +258,7 @@ class ReserveCapacity:
     raw: Mapping[str, Any] = field(compare=False, repr=False)
 
     def __post_init__(self) -> None:
+        # _owned_reserve_capacity skips this method; keep it in step with any check added here.
         _check_start(self)
         object.__setattr__(self, "raw", _ReadOnlyMapping(_copy_raw(self.raw)))
 
@@ -260,3 +266,32 @@ class ReserveCapacity:
     def end(self) -> datetime:
         """The exclusive end of the interval."""
         return self.start + INTERVAL
+
+
+def _owned_reserve_capacity(
+    start: datetime,
+    zone: BiddingZone,
+    product: ReserveProduct,
+    direction: Direction,
+    price_eur_per_mw: float | None,
+    volume_mw: float | None,
+    source: str,
+    resolution: timedelta,
+    raw: dict[str, Any],
+) -> ReserveCapacity:
+    """Build a :class:`ReserveCapacity` for a parser, skipping the ``__post_init__`` work.
+
+    The same preconditions as :func:`_owned_imbalance_price`: ``start`` is a plain
+    UTC ``datetime`` and ``raw`` is a freshly built dict that nothing else references.
+    """
+    record = _new(ReserveCapacity)
+    _set(record, "start", start)
+    _set(record, "zone", zone)
+    _set(record, "product", product)
+    _set(record, "direction", direction)
+    _set(record, "price_eur_per_mw", price_eur_per_mw)
+    _set(record, "volume_mw", volume_mw)
+    _set(record, "source", source)
+    _set(record, "resolution", resolution)
+    _set(record, "raw", _ReadOnlyMapping(raw))
+    return record
