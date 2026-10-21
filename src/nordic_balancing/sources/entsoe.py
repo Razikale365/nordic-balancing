@@ -29,7 +29,6 @@ from datetime import UTC, datetime, timedelta
 from operator import attrgetter
 from types import TracebackType
 from typing import Any, Self
-from urllib.parse import quote, quote_plus
 from xml.etree import ElementTree
 
 import httpx
@@ -556,12 +555,21 @@ def _format(value: datetime) -> str:
 
 def _redact(text: str, api_key: str) -> str:
     # An error body echoing the request URL or query carries the token as httpx
-    # sent it — percent-encoded — so the raw form alone does not cover it.
+    # sent it — percent-encoded — so the raw form alone does not cover it. Each
+    # character may appear raw or as its escape in either hex case, so any mix
+    # of encoders (slash left unescaped, lowercase hex) is matched too.
     if not api_key:
         return text
-    for form in {api_key, quote(api_key, safe=""), quote_plus(api_key)}:
-        text = text.replace(form, "[REDACTED_SECRET]")
-    return text
+    return re.sub(_token_pattern(api_key), "[REDACTED_SECRET]", text)
+
+
+def _token_pattern(api_key: str) -> str:
+    # The constructor allows only printable ASCII, so each character is one byte.
+    parts = []
+    for char in api_key:
+        escaped = "%" + "".join(f"[{d.upper()}{d.lower()}]" for d in f"{ord(char):02x}")
+        parts.append(f"(?:{escaped}|{re.escape(char)})")
+    return "".join(parts)
 
 
 def _local(tag: str) -> str:

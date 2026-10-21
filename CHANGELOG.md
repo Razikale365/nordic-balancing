@@ -4,6 +4,11 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the project is in beta: the public API is defined in
 [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it before 1.0 is listed here.
 
+## Unreleased
+
+### Fixed
+- **ENTSO-E:** the API token is redacted from error messages in any percent-encoding (lowercase hex, or `/` left unescaped), not only the two most common ones. Keys in ENTSO-E's usual UUID format need no encoding and were not affected.
+
 ## 0.4.0 — 2026-10-20
 
 Correctness fixes and faster parsing. Re-fetch Danish eSett data fetched with 0.3.1 or earlier.

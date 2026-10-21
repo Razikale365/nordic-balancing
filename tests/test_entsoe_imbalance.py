@@ -7,6 +7,7 @@ import struct
 import sys
 import traceback
 import zipfile
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
@@ -362,6 +363,30 @@ def test_redacts_a_percent_encoded_token_in_an_acknowledgement() -> None:
         EntsoeClient(key, http, max_retries=0).imbalance_prices(START, END, [BiddingZone.SE3])
     assert encoded not in str(caught.value)
     assert key not in str(caught.value)
+
+
+@pytest.mark.parametrize("status", [200, 400])
+@pytest.mark.parametrize(
+    "encode",
+    [
+        lambda key: quote(key),  # slash left unescaped
+        lambda key: quote(key, safe="").lower(),  # lowercase hex escapes
+        lambda key: quote(key, safe="").replace("%2B", "%2b"),  # mixed hex case
+    ],
+)
+def test_redacts_a_token_echoed_in_any_percent_encoding(
+    status: int, encode: Callable[[str], str]
+) -> None:
+    key = "audit/+%?=secret-token"
+    echoed = encode(key)
+    assert echoed != key
+    body = entsoe_acknowledgement(f"rejected {echoed}")
+    http = http_client(lambda _: httpx.Response(status, text=body))
+    with pytest.raises(SourceError) as caught:
+        EntsoeClient(key, http, max_retries=0).imbalance_prices(START, END, [BiddingZone.SE3])
+    message = "".join(traceback.format_exception(caught.value))
+    assert echoed not in message and "secret-token" not in message
+    assert "[REDACTED_SECRET]" in message
 
 
 @pytest.mark.parametrize("status", [200, 400])
