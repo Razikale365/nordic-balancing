@@ -4,12 +4,14 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the project is in beta: the public API is defined in
 [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it before 1.0 is listed here.
 
-## Unreleased
+## 0.4.0 — 2026-10-20
+
+Correctness fixes and faster parsing. Re-fetch Danish eSett data fetched with 0.3.1 or earlier.
 
 ### Changed
 - Sources fail loudly on more provider changes: SvK fetches quarter-hour start times, so a switch to 15-minute data raises instead of repeating the hourly value (about four times as many requests for hourly data); eSett and Energi Data Service raise on hour-only imbalance rows where 15-minute data is expected; Energi Data Service FCR paging stops on a repeated page.
 - JSON responses are capped at 64 MiB, like ENTSO-E XML.
-- ENTSO-E and Energi Data Service build records 23-57 % faster with identical output (see `benchmarks/`).
+- Parsing is faster with identical output: eSett about twice as fast, ENTSO-E and Energi Data Service 23-57 % (see `benchmarks/`).
 
 ### Fixed
 - **eSett:** unsettled DK1/DK2 intervals (all prices `0.0`) are returned as unpublished (`None`); re-fetch DK data fetched with 0.3.1 or earlier.
