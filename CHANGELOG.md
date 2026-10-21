@@ -1,10 +1,19 @@
 # Changelog
 
 All notable changes to this project. Versions follow [PEP 440](https://peps.python.org/pep-0440/);
-the project is in beta: the public API is defined in
-[docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it before 1.0 is listed here.
+the public API is defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it
+is listed here.
 
-## Unreleased
+## 1.0.0rc1 — 2026-10-21
+
+Release candidate for 1.0: 0.4.0 plus one fix. Install it with `pip install --pre nordic-balancing`
+or `pip install nordic-balancing==1.0.0rc1`.
+
+### Compatibility promise
+From 1.0.0 the public API defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md) follows Semantic
+Versioning: no breaking change before 2.0, deprecations warn for at least one minor release first,
+and a provider change that breaks parsing of valid data is fixed in a bug-fix release. The contract's
+"Compatibility and deprecation policy" section has the full rules.
 
 ### Fixed
 - **ENTSO-E:** the API token is redacted from error messages in any percent-encoding (lowercase hex, or `/` left unescaped), not only the two most common ones. Keys in ENTSO-E's usual UUID format need no encoding and were not affected.

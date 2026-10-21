@@ -111,9 +111,10 @@ All observed source behaviour, with dates, is in [docs/SOURCE_NOTES.md](docs/SOU
 
 ## Status
 
-Beta, on [PyPI](https://pypi.org/project/nordic-balancing/). The public API is pinned by a
-snapshot test against [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and every source is checked
-against its live API daily. 1.0 is next. Performance, including a comparison with entsoe-py and
+Release candidate for 1.0 (`1.0.0rc1`) on [PyPI](https://pypi.org/project/nordic-balancing/);
+install it with `pip install --pre nordic-balancing`, since pip skips pre-releases by default. The
+public API is pinned by a snapshot test against [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and
+from 1.0 it follows Semantic Versioning. Every source is checked against its live API daily. Performance, including a comparison with entsoe-py and
 esett-py on identical recorded responses, is in [benchmarks/](benchmarks/README.md).
 
 Not covered yet: activated balancing energy volumes. Out of scope: day-ahead price clients and
