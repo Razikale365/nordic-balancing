@@ -33,7 +33,7 @@ pip install nordic-balancing            # httpx is the only dependency
 pip install "nordic-balancing[pandas]"  # adds to_frame()
 ```
 
-Python 3.12 or newer.
+Python 3.11 or newer.
 
 ## Quick start
 

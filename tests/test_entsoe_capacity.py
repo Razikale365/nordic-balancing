@@ -1410,7 +1410,8 @@ def test_entsoe_capacity_query_defaults_all_no_zones_and_order() -> None:
         assert params["documentType"] == "A81"
         assert params["businessType"] == "B95" and params["processType"] == "A52"
         assert params["Type_MarketAgreement.Type"] == "A01"
-        assert params["securityToken"] == "test-token"
+        assert request.headers["SECURITY_TOKEN"] == "test-token"
+        assert "test-token" not in str(request.url)
         assert params["periodStart"] == "202610052200"
         assert params["periodEnd"] == "202610060100"
         xml = (
@@ -1518,8 +1519,9 @@ def test_entsoe_exact_fixture_fields_and_query(zone: BiddingZone) -> None:
             assert record.end == record.start + INTERVAL
     assert len(seen) == 1
     params = seen[0].url.params
+    assert seen[0].headers["SECURITY_TOKEN"] == "test-token"
+    assert "test-token" not in str(seen[0].url)
     assert dict(params) == {
-        "securityToken": "test-token",
         "documentType": "A81",
         "businessType": "B95",
         "processType": "A47",

@@ -2,6 +2,7 @@
 
 import math
 from collections.abc import Hashable
+from typing import TypeVar
 
 from nordic_balancing.errors import SourceError
 
@@ -28,7 +29,10 @@ def finite_number(value: object, *, source: str, column: str) -> float | None:
     return number
 
 
-def reject_duplicate[K: Hashable](seen: set[K], key: K, *, source: str, detail: str) -> None:
+K = TypeVar("K", bound=Hashable)
+
+
+def reject_duplicate(seen: set[K], key: K, *, source: str, detail: str) -> None:
     """Reject a second record for the same series key (C3)."""
     if key in seen:
         raise SourceError(f"{source}: duplicate {detail}")

@@ -11,6 +11,7 @@ import argparse
 import json
 import sys
 from datetime import UTC, datetime, timedelta
+from typing import TypeAlias
 
 from nordic_balancing import (
     INTERVAL,
@@ -25,8 +26,8 @@ from nordic_balancing import (
 )
 from nordic_balancing.sources.entsoe import _CAPACITY_CHUNK, _jobs
 
-type Key = tuple[datetime, Direction]
-type Value = tuple[float | None, float | None]
+Key: TypeAlias = tuple[datetime, Direction]
+Value: TypeAlias = tuple[float | None, float | None]
 HOUR = timedelta(hours=1)
 
 

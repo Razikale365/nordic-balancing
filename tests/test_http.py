@@ -457,6 +457,27 @@ def test_fingrid_client_reports_redirect_status(body: bytes) -> None:
     assert len(requested_urls) == 1
 
 
+def test_a_proxy_error_is_raised_without_a_retry() -> None:
+    # A misconfigured or refusing proxy is a setup problem, not a transient one.
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.ProxyError("proxy refused the tunnel", request=request)
+
+    with http_client(handler) as http, pytest.raises(httpx.ProxyError, match="proxy refused"):
+        _request(
+            http,
+            "https://example.test",
+            "/",
+            {},
+            source="test",
+            max_retries=3,
+            sleep=lambda _: None,
+        )
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [

@@ -3,9 +3,12 @@
 import gzip
 import json
 import os
+import time
 import traceback
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta, timezone
+from itertools import pairwise
 from typing import Any
 
 import httpcore
@@ -1087,3 +1090,24 @@ def test_wrapper_client_inherits_the_wrapped_clients_timeout() -> None:
     http = httpx.Client(transport=httpx.MockTransport(lambda _: fingrid_page([])), timeout=123.0)
     fingrid = FingridClient(FINGRID_KEY, http)
     assert fingrid._authenticated_http.timeout == http.timeout
+
+
+def test_shared_client_spaces_requests_across_threads() -> None:
+    interval = 0.2
+    stamps: list[float] = []
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        stamps.append(time.monotonic())
+        return fingrid_page([])
+
+    with (
+        http_client(handler) as http,
+        FingridClient(FINGRID_KEY, http, min_interval=interval) as fingrid,
+        ThreadPoolExecutor(max_workers=6) as pool,
+    ):
+        list(pool.map(lambda _: fingrid.series(319, START, END), range(6)))
+    stamps.sort()
+    assert len(stamps) == 6
+    gaps = [later - earlier for earlier, later in pairwise(stamps)]
+    # Allow for coarse OS timer resolution; unpaced threads show gaps near zero.
+    assert min(gaps) >= 0.6 * interval

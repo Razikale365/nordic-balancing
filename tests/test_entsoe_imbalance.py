@@ -433,7 +433,8 @@ def test_env_key_fallback_and_explicit_key_precedence(
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request.url.params["securityToken"])
+        assert "securityToken" not in request.url.params
+        seen.append(request.headers["SECURITY_TOKEN"])
         return httpx.Response(200, text=entsoe_acknowledgement("No matching data found"))
 
     http = http_client(handler)
@@ -513,7 +514,8 @@ def test_strips_key_before_request_and_error_redaction(
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request.url.params["securityToken"])
+        assert "securityToken" not in request.url.params
+        seen.append(request.headers["SECURITY_TOKEN"])
         return httpx.Response(401, text=f"Unauthorized securityToken={ENTSOE_KEY}")
 
     padded = f" \t{ENTSOE_KEY}\r\n"
@@ -561,6 +563,24 @@ def test_transport_error_does_not_leak_token_or_url() -> None:
         entsoe_client(handler).imbalance_prices(START, END, [BiddingZone.SE3])
     assert str(caught.value) == "entsoe: request failed (ConnectError)"
     assert ENTSOE_KEY not in "".join(traceback.format_exception(caught.value))
+
+
+def test_token_is_not_sent_to_a_redirect_target_even_if_the_client_follows_redirects() -> None:
+    # httpx strips only Authorization on a cross-origin redirect, so a client that
+    # follows redirects would forward the SECURITY_TOKEN header.
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.host == "evil.test":
+            return httpx.Response(200, text="stolen")
+        return httpx.Response(302, headers={"Location": "https://evil.test/x"})
+
+    http = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    client = EntsoeClient(ENTSOE_KEY, http, sleep=lambda _: None)
+    with pytest.raises(SourceError, match="HTTP 302"):
+        client.imbalance_prices(START, END, [BiddingZone.SE3])
+    assert seen == ["web-api.tp.entsoe.eu"]
 
 
 def test_non_httpx_transport_error_does_not_leak_token_or_url() -> None:
@@ -615,27 +635,33 @@ def test_redacts_a_percent_encoded_token_echoed_by_the_server(status: int) -> No
     assert "[REDACTED_SECRET]" in message
 
 
-def test_token_reaches_logs_only_through_httpx_info_logging(
+def test_token_never_reaches_httpx_or_httpcore_logs(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    def fetch() -> None:
-        entsoe_client(lambda _: httpx.Response(200, text=ONE_HOUR)).imbalance_prices(
-            START, END, [BiddingZone.SE3]
+    def fetch(status: int) -> None:
+        client = entsoe_client(
+            lambda _: httpx.Response(status, text=ONE_HOUR if status == 200 else "denied"),
+            max_retries=0,
         )
+        try:
+            client.imbalance_prices(START, END, [BiddingZone.SE3])
+        except SourceError:
+            assert status != 200
 
-    # The library configures no logging: httpx keeps its default level and handlers, and
-    # nothing the library itself logs carries the token.
+    # The library configures no logging: httpx keeps its default level and handlers.
     httpx_logger = logging.getLogger("httpx")
     level, handlers = httpx_logger.level, list(httpx_logger.handlers)
-    with caplog.at_level(logging.DEBUG, logger="nordic_balancing"):
-        fetch()
+    with (
+        caplog.at_level(logging.DEBUG, logger="httpx"),
+        caplog.at_level(logging.DEBUG, logger="httpcore"),
+        caplog.at_level(logging.DEBUG, logger="nordic_balancing"),
+    ):
+        fetch(200)
+        fetch(401)
     assert (httpx_logger.level, httpx_logger.handlers) == (level, handlers)
+    # The request URL is what httpx logs at INFO: it must not carry the token.
+    assert any("HTTP Request" in record.getMessage() for record in caplog.records)
     assert ENTSOE_KEY not in caplog.text
-    # The documented risk: httpx logs each request URL, token included, at INFO.
-    caplog.clear()
-    with caplog.at_level(logging.INFO, logger="httpx"):
-        fetch()
-    assert ENTSOE_KEY in caplog.text
 
 
 def test_dynamically_named_transport_exception_is_not_echoed() -> None:
@@ -1965,7 +1991,8 @@ def test_request_params_eic_codes_and_custom_base_url() -> None:
         "10YFI-1--------U",
     ]
     for request in seen:
-        assert request.url.params["securityToken"] == ENTSOE_KEY
+        assert request.headers["SECURITY_TOKEN"] == ENTSOE_KEY
+        assert ENTSOE_KEY not in str(request.url)
         assert request.url.params["documentType"] == "A85"
         assert request.url.params["periodStart"] == "202601150000"
         assert request.url.params["periodEnd"] == "202601150100"

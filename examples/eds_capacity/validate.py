@@ -12,6 +12,7 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TypeAlias
 
 from nordic_balancing import (
     INTERVAL,
@@ -24,9 +25,9 @@ from nordic_balancing import (
     SvKClient,
 )
 
-type Key = tuple[datetime, Direction]
-type Value = tuple[float | None, float | None]
-type Hourly = dict[Key, Value]
+Key: TypeAlias = tuple[datetime, Direction]
+Value: TypeAlias = tuple[float | None, float | None]
+Hourly: TypeAlias = dict[Key, Value]
 
 
 @dataclass(frozen=True, slots=True)

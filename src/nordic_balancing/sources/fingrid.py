@@ -2,6 +2,7 @@
 
 import math
 import os
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -135,6 +136,7 @@ class FingridClient:
         self._min_interval = min_interval
         self._clock = clock
         self._last_request: float | None = None
+        self._pace_lock = threading.Lock()
         # Keep authentication and pacing local, without changing the supplied client.
         # httpx does not enforce a client timeout around a custom transport, but
         # keep the wrapper's timeout equal to the wrapped client's so a future
@@ -291,12 +293,20 @@ class FingridClient:
         return records
 
     def _pace(self) -> None:
-        now = self._clock()
-        if self._last_request is not None:
-            remaining = self._min_interval - (now - self._last_request)
-            if remaining > 0:
-                self._sleep(remaining)
-        self._last_request = self._clock()
+        # Reserve this request's slot under the lock; sleep outside it so threads
+        # sharing a client are spaced by min_interval without serialising on the sleep.
+        with self._pace_lock:
+            now = self._clock()
+            slot = now
+            if self._last_request is not None:
+                slot = max(now, self._last_request + self._min_interval)
+            self._last_request = slot
+        if slot > now:
+            self._sleep(slot - now)
+            with self._pace_lock:
+                # Re-anchor to the real post-sleep time unless a later thread has reserved.
+                if self._last_request == slot:
+                    self._last_request = self._clock()
 
     def _get(self, path: str, params: dict[str, str]) -> Any:
         try:

@@ -18,15 +18,15 @@ def test_httpx_is_the_only_required_runtime_dependency() -> None:
     assert names == {"httpx"}
 
 
-def test_python_floor_is_3_12_and_ci_tests_every_classified_version() -> None:
+def test_python_floor_is_3_11_and_ci_tests_every_classified_version() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert project["requires-python"] == ">=3.12"
+    assert project["requires-python"] == ">=3.11"
     classified = sorted(
         c.rsplit(" :: ", 1)[1]
         for c in project["classifiers"]
         if re.fullmatch(r"Programming Language :: Python :: 3\.\d+", c)
     )
-    assert classified[0] == "3.12"
+    assert classified[0] == "3.11"
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     check_job = re.search(r"^  check:.*?(?=^  \S)", ci, re.DOTALL | re.MULTILINE)
     assert check_job is not None
@@ -42,10 +42,9 @@ def test_python_floor_is_3_12_and_ci_tests_every_classified_version() -> None:
 def test_lowest_direct_installs_the_declared_pandas_floor() -> None:
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     floor = ci.split("  lowest-direct:", 1)[1]
-    assert '"pandas==2.1.1"' in floor
+    assert '"pandas==2.1.0"' in floor
     assert '"pandas==2.1.*"' not in floor
-    assert "first 2.1.x release with Python 3.12 wheels" in floor
-    assert "2.1.0 needs a source build" in floor
+    assert "uv venv /tmp/floor --python 3.11" in floor
 
 
 def test_live_workflow_scopes_the_api_keys_to_the_two_steps_that_read_them() -> None:

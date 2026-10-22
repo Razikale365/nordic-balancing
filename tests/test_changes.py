@@ -16,13 +16,13 @@ def test_changes_are_ordered_utc_and_sourced() -> None:
 
 
 def test_window_spanning_a_change_reports_it() -> None:
-    found = changes_between(datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC))
+    found = changes_between(datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 5, 1, tzinfo=UTC))
 
     assert [c.effective for c in found] == [MARCH_2026]
 
 
 def test_window_starting_at_a_change_does_not_report_it() -> None:
-    assert changes_between(MARCH_2026, datetime(2026, 6, 1, tzinfo=UTC)) == []
+    assert changes_between(MARCH_2026, datetime(2026, 5, 1, tzinfo=UTC)) == []
 
 
 def test_window_ending_at_a_change_reports_it() -> None:
@@ -106,7 +106,7 @@ def test_rejects_non_datetime_bounds() -> None:
 
 def test_nordic_changes_are_observed_and_apply_to_every_zone() -> None:
     observed = [c for c in CHANGES if c.source_url == "https://api.opendata.esett.com"]
-    assert len(CHANGES) == 5
+    assert len(CHANGES) == 6
     assert [c.effective for c in observed] == [
         datetime(2023, 5, 21, 22, tzinfo=UTC),
         datetime(2025, 3, 18, 23, tzinfo=UTC),
@@ -125,13 +125,22 @@ def test_nordic_changes_are_observed_and_apply_to_every_zone() -> None:
     )
 
 
-def test_unverified_fi_formula_change_has_no_entry() -> None:
-    # API_CONTRACT: a possible FI formula change around 2026-06-01 is unverified,
-    # so CHANGES must not record one until a primary source is found.
-    window = (datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 7, 1, tzinfo=UTC))
-    assert not [
-        c for c in CHANGES if BiddingZone.FI in c.zones and window[0] <= c.effective < window[1]
-    ]
+def test_fi_volume_weighted_price_change_from_june_2026() -> None:
+    # Fingrid announced it for delivery day 2026-06-01 (Finnish time); its
+    # published prices first break the old max/min rule at 2026-05-31T21:00Z.
+    found = changes_between(
+        datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 7, 1, tzinfo=UTC), [BiddingZone.FI]
+    )
+    assert [c.effective for c in found] == [datetime(2026, 5, 31, 21, tzinfo=UTC)]
+    assert found[0].zones == frozenset({BiddingZone.FI})
+    assert "volume-weighted" in found[0].summary
+    assert found[0].source_url.startswith("https://www.fingrid.fi/")
+    assert (
+        changes_between(
+            datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 7, 1, tzinfo=UTC), [BiddingZone.SE3]
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize("zones", [[[]], [{}], [BiddingZone.FI, []]])

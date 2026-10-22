@@ -321,8 +321,10 @@ bidding zone, product, direction, and 15-minute UTC interval:
 
 ## Supported Python and dependencies
 
-- **Python**: every CPython release `>= 3.12` that is still under upstream support
-  (Python 3.14 is added in `0.3.0`).
+- **Python**: every CPython release `>= 3.11` that is still under upstream support
+  (Python 3.14 is added in `0.3.0`, Python 3.11 in `1.0.0`). CI tests every
+  classified version
+  (`tests/test_package.py::test_python_floor_is_3_11_and_ci_tests_every_classified_version`).
 - **Runtime dependencies**: `httpx>=0.27,<1` is the only required runtime
   dependency, tested at the floor (`0.27.x`) and at the latest allowed release.
   When `httpx` 1.0 ships, it is evaluated in the next minor release.
@@ -349,12 +351,12 @@ bidding zone, product, direction, and 15-minute UTC interval:
 - **0.x series**: during `0.x`, breaking changes may occur between releases and are
   listed in [CHANGELOG.md](../CHANGELOG.md).
 
-## Known limitations
+## Design decisions
 
-Every item below is classified for `1.0.0` as `accepted (part of the contract)` or
-`to fix before 1.0`. No item is currently classified as `to fix before 1.0`.
+Deliberate choices that are part of the contract. Changing any of them is a
+breaking change under the compatibility policy above.
 
-- **Accepted (part of the contract).** `resolution` records publication cadence,
+- **Resolution is publication cadence.** `resolution` records publication cadence,
   not information content: quarters before `2025-03-18T23:00Z` are labelled
   15 minutes where the source published 15-minute intervals, even though the four
   quarters of an hour carried a single hourly value
@@ -365,7 +367,7 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `tests/test_entsoe_imbalance.py::test_live_matches_esett_prices_but_not_its_resolution_label`,
   and
   `tests/test_fingrid_imbalance.py::test_hourly_records_expand_in_imbalance_prices_with_hourly_resolution`.
-- **Accepted (part of the contract).** `None` meaning is defined per source, as
+- **`None` is defined per source.** `None` meaning is defined per source, as
   stated in [FIELD_MATRIX.md](FIELD_MATRIX.md): a field that a source never
   provides is `None` on every record from that source, and in a field that a
   source does provide, `None` means the source returned no value (unpublished or
@@ -375,7 +377,7 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `tests/test_field_matrix.py::test_reserve_capacity_never_provided_fields_are_none_and_column_mapping`,
   `tests/test_energidataservice_imbalance.py::test_parses_published_and_unpublished_intervals`,
   and `tests/test_esett.py::test_parses_published_and_null_prices_and_sorts`.
-- **Accepted (part of the contract).** `EntsoeClient`'s strict parser raises
+- **Strict ENTSO-E parsing.** `EntsoeClient`'s strict parser raises
   `SourceError` on differing dual-category prices and on curve types `A02`, `A04`,
   and `A05`, which `entsoe-py` may tolerate. None of these occurred in the 60 live
   zone-windows checked. Conflicting dual-category prices are covered by
@@ -383,21 +385,18 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `tests/test_entsoe_imbalance.py::test_fixture_v45_conflicting_dual_categories_raise`.
   Rejection of curve types `A02`, `A04` and `A05` is covered by
   `tests/test_entsoe_imbalance.py::test_rejects_malformed_documents`.
-- **Accepted (part of the contract).** A possible FI imbalance-price formula
-  change around `2026-06-01` is **UNVERIFIED**: no primary source was found, so it
-  has no entry in `CHANGES` (`tests/test_changes.py::test_unverified_fi_formula_change_has_no_entry`).
-  The library applies no formula of its own; it reports what Fingrid and eSett
-  publish (`tests/test_field_matrix.py::test_imbalance_price_fields_map_to_their_source_columns`).
-- **Accepted (part of the contract).** Synchronous only: there is no async client;
-  all clients are synchronous over `httpx.Client`. Public client signatures are
-  pinned by `tests/test_public_api.py::test_public_api_snapshot`.
-- **Accepted (part of the contract).** Python 3.12+ only (`requires-python = ">=3.12"`
-  in `pyproject.toml`). CI tests every classified version; covered by
-  `tests/test_package.py::test_python_floor_is_3_12_and_ci_tests_every_classified_version`.
-- **Accepted (part of the contract).** eSett history starts at
-  `2021-10-31T23:00Z`; nothing earlier exists in the eSett API. Covered live by
-  `tests/test_esett.py::test_live_history_starts_2021_10_31_23z`.
-- **Accepted (part of the contract).** Reconciliation classifies differences only;
+- **Synchronous by design.** Clients are synchronous over `httpx.Client`. A query
+  is a modest number of rate-limited requests followed by CPU-bound parsing, where an
+  async API would add little and double the surface to keep correct. Callers in async
+  code can use `asyncio.to_thread`. A client instance may be shared across threads:
+  it holds only its settings and the `httpx.Client`, which is thread-safe, and
+  `FingridClient` keeps its request spacing under concurrent use
+  (`tests/test_fingrid_imbalance.py::test_shared_client_spaces_requests_across_threads`).
+  `EntsoeClient` already runs up to `max_workers` requests in parallel, so threads of
+  its own multiply that. Public client signatures are pinned by
+  `tests/test_public_api.py::test_public_api_snapshot`. An async API, if added, will
+  be an addition in a minor release, not a breaking change.
+- **Reconciliation classifies, never merges.** Reconciliation classifies differences only;
   `reconcile_imbalance_prices` never merges series or picks a source. Covered by
   `tests/test_reconcile.py::test_identical_records_produce_no_divergences`,
   `tests/test_reconcile.py::test_one_interval_can_have_several_divergences`,
@@ -418,14 +417,7 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   equal" nor "within the tolerance": it is always a PRICE divergence, never
   identical or ROUNDING, covered by
   `tests/test_reconcile.py::test_non_finite_prices_are_price_divergences`.
-- **Accepted (part of the contract).** `raw` is a read-only mapping over a deep
-  copy private to each record. Only the top level rejects writes; nested
-  containers are mutable but unshared, so treat them as read-only. Covered by
-  `tests/test_models.py::test_raw_top_level_is_read_only`,
-  `tests/test_models.py::test_raw_is_detached_from_the_source_record`,
-  `tests/test_models.py::test_expanded_records_do_not_share_nested_raw`, and
-  `tests/test_models.py::test_reserve_capacity_raw_is_detached_too`.
-- **Accepted (part of the contract).** `FingridClient.series()` has a verified
+- **Fingrid hourly records only for verified datasets.** `FingridClient.series()` has a verified
   hourly policy only for datasets 319, 244, 106, and 369 (per-interval prices and
   direction). Hourly records from any other dataset raise `SourceError` rather
   than being repeated, since they may be additive totals. Covered by
@@ -433,24 +425,14 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `tests/test_fingrid_imbalance.py::test_other_datasets_reject_overlapping_granularities`,
   `tests/test_fingrid_imbalance.py::test_imbalance_datasets_keep_their_hourly_policy`, and
   `tests/test_fingrid_imbalance.py::test_live_hourly_imbalance_prices_expand_to_quarters`.
-- **Accepted (part of the contract).** eSett: a price published in only one of the
+- **eSett single price.** eSett: a price published in only one of the
   `imblSalesPrice` or `imblPurchasePrice` columns is taken as the single price
   (never observed in ~107k records sampled 2021-11 to 2026-10; differing non-null
   values raise `SourceError`). Covered by
   `tests/test_esett.py::test_allows_one_or_both_single_prices_to_be_missing`,
   `tests/test_esett.py::test_purchase_only_price_is_kept_not_dropped`, and
   `tests/test_esett.py::test_rejects_sales_purchase_disagreement`.
-- **Accepted (part of the contract).** Energi Data Service:
-  `DominatingDirection` must be `-1`, `0`, `1`, or `null` (observed values in
-  ~16.8k records: only those and `null`); any other value raises `SourceError`.
-  Acceptance of the numeric values and rejection of invalid numeric values are
-  covered by
-  `tests/test_energidataservice_imbalance.py::test_accepts_exact_dominating_directions`,
-  `tests/test_energidataservice_imbalance.py::test_rejects_fractional_dominating_direction`,
-  and `tests/test_energidataservice_imbalance.py::test_rejects_malformed_records`.
-  `DominatingDirection=null` becomes `None`
-  (`tests/test_energidataservice_imbalance.py::test_null_dominating_direction_is_none`).
-- **Accepted (part of the contract).** ENTSO-E checks that never triggered on live
+- **Checks stay strict where live data never tripped them.** ENTSO-E checks that never triggered on live
   data (60 zone-windows and all 12 zones for 2025, checked 2026-10-12) stay
   strict so they fail loudly if the API changes:
   - In an A85 imbalance-price document, a point outside the requested window
@@ -471,17 +453,46 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
     `controlArea_Domain` (it did in every observed document). Covered by
     `tests/test_entsoe_imbalance.py::test_rejects_a_document_for_another_area` and
     `tests/test_entsoe_imbalance.py::test_accepts_a_document_for_the_requested_area`.
-- **Accepted (part of the contract).** ENTSO-E: the token is passed as the
-  `securityToken` query parameter, as the API requires. If `INFO` logging is
-  enabled for the `httpx` logger, `httpx` logs request URLs and therefore the
-  token (documented risk, shown by
-  `tests/test_entsoe_imbalance.py::test_token_reaches_logs_only_through_httpx_info_logging`,
-  which also checks that the library leaves the `httpx` logger's level and
-  handlers unchanged; library exceptions
-  redact the token, covered by
-  `tests/test_entsoe_imbalance.py::test_request_params_eic_codes_and_custom_base_url`,
-  `tests/test_entsoe_imbalance.py::test_http_errors_include_status_and_redact_token`, and
-  `tests/test_entsoe_imbalance.py::test_transport_error_does_not_leak_token_or_url`).
+- **The ENTSO-E token never appears in a URL.** It is sent in the `SECURITY_TOKEN`
+  request header, so `httpx`'s request logging (the URL at `INFO`) and proxies or
+  servers that log URLs never see it. The header name is not in ENTSO-E's published
+  guide but is accepted by the API; the daily live run exercises it, so a change on
+  ENTSO-E's side fails loudly rather than silently. Redirects are never followed,
+  even on a supplied client that enables them, so the header cannot reach another
+  host (`tests/test_entsoe_imbalance.py::test_token_is_not_sent_to_a_redirect_target_even_if_the_client_follows_redirects`).
+  Covered by
+  `tests/test_entsoe_imbalance.py::test_token_never_reaches_httpx_or_httpcore_logs`,
+  `tests/test_entsoe_imbalance.py::test_request_params_eic_codes_and_custom_base_url`
+  and `tests/test_entsoe_imbalance.py::test_env_key_fallback_and_explicit_key_precedence`.
+  Library exceptions still redact the token from any echoed text, covered by
+  `tests/test_entsoe_imbalance.py::test_http_errors_include_status_and_redact_token` and
+  `tests/test_entsoe_imbalance.py::test_transport_error_does_not_leak_token_or_url`.
+
+## Known limitations
+
+Every item below is classified for `1.0.0` as `accepted (part of the contract)` or
+`to fix before 1.0`. No item is currently classified as `to fix before 1.0`.
+
+- **Accepted (part of the contract).** eSett history starts at
+  `2021-10-31T23:00Z`; nothing earlier exists in the eSett API. Covered live by
+  `tests/test_esett.py::test_live_history_starts_2021_10_31_23z`.
+- **Accepted (part of the contract).** `raw` is a read-only mapping over a deep
+  copy private to each record. Only the top level rejects writes; nested
+  containers are mutable but unshared, so treat them as read-only. Covered by
+  `tests/test_models.py::test_raw_top_level_is_read_only`,
+  `tests/test_models.py::test_raw_is_detached_from_the_source_record`,
+  `tests/test_models.py::test_expanded_records_do_not_share_nested_raw`, and
+  `tests/test_models.py::test_reserve_capacity_raw_is_detached_too`.
+- **Accepted (part of the contract).** Energi Data Service:
+  `DominatingDirection` must be `-1`, `0`, `1`, or `null` (observed values in
+  ~16.8k records: only those and `null`); any other value raises `SourceError`.
+  Acceptance of the numeric values and rejection of invalid numeric values are
+  covered by
+  `tests/test_energidataservice_imbalance.py::test_accepts_exact_dominating_directions`,
+  `tests/test_energidataservice_imbalance.py::test_rejects_fractional_dominating_direction`,
+  and `tests/test_energidataservice_imbalance.py::test_rejects_malformed_records`.
+  `DominatingDirection=null` becomes `None`
+  (`tests/test_energidataservice_imbalance.py::test_null_dominating_direction_is_none`).
 - **Accepted (part of the contract).** SvK: `SvKClient` filters on every
   quarter-hour `start_time_utc` of the requested hours, so a move to 15-minute
   rows is fetched rather than filtered out; any record whose `start_time_utc`
@@ -498,3 +509,9 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   directly for the 200 most recent `mfrr_capacity_market` rows
   (`sort="start_time_utc desc"`, `limit="200"`) without an hour filter and asserts
   that every `start_time_utc` has zero minute, second, and microsecond fields.
+- **Accepted (part of the contract).** Redirects are not followed and proxy errors
+  are not retried: a `3xx` raises `SourceError` naming the status
+  (`tests/test_http.py::test_fingrid_client_reports_redirect_status`), and an
+  `httpx.ProxyError` is raised on the first attempt, since a refusing or misconfigured
+  proxy is a setup problem rather than a transient one
+  (`tests/test_http.py::test_a_proxy_error_is_raised_without_a_retry`).

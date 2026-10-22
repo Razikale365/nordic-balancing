@@ -21,6 +21,10 @@ from nordic_balancing.models import BiddingZone, to_utc
 
 _EDS_IMBALANCE = "https://www.energidataservice.dk/tso-electricity/ImbalancePrice"
 _ESETT = "https://api.opendata.esett.com"
+_FINGRID_IMBALANCE_2026 = (
+    "https://www.fingrid.fi/en/news/news/2026/"
+    "change-in-determining-the-imbalance-price-for-balance-responsible-parties-in-june-2026/"
+)
 _FINGRID_319 = "https://data.fingrid.fi/en/datasets/319"
 _NORDIC = frozenset(BiddingZone)
 _DK = frozenset({BiddingZone.DK1, BiddingZone.DK2})
@@ -84,6 +88,19 @@ CHANGES: tuple[MarketChange, ...] = (
             "it was determined by balancing demand."
         ),
         source_url=_EDS_IMBALANCE,
+    ),
+    MarketChange(
+        # Delivery day 2026-06-01 in Finnish time; the first quarter breaking the
+        # old max/min rule in Fingrid's published prices is 2026-05-31T21:00Z.
+        effective=datetime(2026, 5, 31, 21, 0, tzinfo=UTC),
+        zones=frozenset({BiddingZone.FI}),
+        summary=(
+            "The imbalance price is volume-weighted between the mFRR marginal price "
+            "and the aFRR volume-weighted price when both are activated in the "
+            "dominating direction; before this it was the larger (up) or smaller "
+            "(down) of the two. The dominating direction is still set by mFRR."
+        ),
+        source_url=_FINGRID_IMBALANCE_2026,
     ),
 )
 

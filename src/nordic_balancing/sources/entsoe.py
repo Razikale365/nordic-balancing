@@ -410,7 +410,6 @@ class EntsoeClient:
         capacity_process: str = "A52",
     ) -> list[bytes]:
         params = [
-            ("securityToken", self._api_key),
             ("documentType", "A81" if capacity else "A85"),
             ("controlArea_Domain", _EIC_CODES[zone]),
             ("periodStart", _format(chunk_start)),
@@ -430,6 +429,7 @@ class EntsoeClient:
                 self._base_url,
                 "",
                 params,
+                headers={"SECURITY_TOKEN": self._api_key},
                 source=SOURCE,
                 max_retries=self._max_retries,
                 sleep=self._sleep,

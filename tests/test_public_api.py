@@ -76,7 +76,17 @@ def _public_class_attributes(cls: type[Any]) -> dict[str, str]:
 
 def _dataclass_params(cls: type[Any]) -> dict[str, Any]:
     params = cls.__dataclass_params__
-    return {name: getattr(params, name) for name in type(params).__slots__}
+    found = {name: getattr(params, name) for name in type(params).__slots__}
+    # Python 3.11 does not record these four in __dataclass_params__; read them off
+    # the class so the snapshot is the same on every supported version.
+    slots = cls.__dict__.get("__slots__")
+    derived = {
+        "kw_only": all(f.kw_only for f in dataclasses.fields(cls)),
+        "match_args": "__match_args__" in cls.__dict__,
+        "slots": slots is not None,
+        "weakref_slot": slots is not None and "__weakref__" in slots,
+    }
+    return {**derived, **found}
 
 
 def build_public_api_snapshot() -> dict[str, Any]:

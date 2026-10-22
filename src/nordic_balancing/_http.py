@@ -76,12 +76,15 @@ def _request(
     sleep: Callable[[float], None],
     passthrough_statuses: frozenset[int] = frozenset(),
     decode: Callable[[httpx.Response], Any] | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> Any:
     query_params = params if isinstance(params, Mapping) else tuple(params)
     for attempt in range(max_retries + 1):
         last = attempt == max_retries
         try:
-            response = _get(http, f"{base_url}{path}", query_params, source=source, path=path)
+            response = _get(
+                http, f"{base_url}{path}", query_params, source=source, path=path, headers=headers
+            )
         except _TRANSIENT_ERRORS:
             # Timeouts, dropped connections and undecodable bodies are retried;
             # callers wrap the last one.
@@ -113,7 +116,7 @@ def _request(
     # is a partial body.
     if response.status_code != 200 and response.status_code not in passthrough_statuses:
         detail = f": {response.text[:200]}" if response.is_error and response.text else ""
-        # An empty path is deliberate (the URL carries a secret): name no slot.
+        # An empty path is deliberate: the one endpoint has no slot to name.
         where = f" for {path}" if path else ""
         raise SourceError(f"{source}: HTTP {response.status_code}{where}{detail}")
     return response
@@ -126,10 +129,20 @@ def _get(
     *,
     source: str,
     path: str,
+    headers: Mapping[str, str] | None = None,
 ) -> httpx.Response:
     # Streamed so the size bound stops the read itself: a buffered get would hold
     # an oversized (or endless, or decompression-bomb) body before it is checked.
-    with http.stream("GET", url, params=params, headers=ACCEPT_ENCODING) as response:
+    # Redirects are never followed, even on a caller's client that enables them:
+    # httpx strips only Authorization across origins, so a secret in another header
+    # (ENTSO-E's token) would be sent to the redirect target.
+    with http.stream(
+        "GET",
+        url,
+        params=params,
+        headers={**ACCEPT_ENCODING, **(headers or {})},
+        follow_redirects=False,
+    ) as response:
         return httpx.Response(
             response.status_code,
             # Raw bytes: a header that is not ASCII (a malformed Retry-After, say)
@@ -155,7 +168,7 @@ def read_capped(response: httpx.Response, *, source: str, path: str) -> bytes:
                 raise _TooLarge
             chunks.append(chunk)
     except _TooLarge:
-        # An empty path is deliberate (the URL carries a secret): name no slot.
+        # An empty path is deliberate: the one endpoint has no slot to name.
         where = f" for {path}" if path else ""
         raise SourceError(f"{source}: response{where} exceeds {_LIMIT} bytes") from None
     except _Unrequested as exc:

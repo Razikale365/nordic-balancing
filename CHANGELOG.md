@@ -15,7 +15,15 @@ Versioning: no breaking change before 2.0, deprecations warn for at least one mi
 and a provider change that breaks parsing of valid data is fixed in a bug-fix release. The contract's
 "Compatibility and deprecation policy" section has the full rules.
 
+### Security
+- **ENTSO-E:** the API token is sent in a request header instead of the URL. Until now `httpx` logged it with every request URL at `INFO`, so an application with `logging.basicConfig(level=logging.INFO)` wrote the token to its logs. Rotate your ENTSO-E token if such logs may have been kept or shared.
+
+### Added
+- Python 3.11 is supported.
+- `CHANGES` records Finland's switch to a volume-weighted imbalance price on 2026-06-01 (Finnish time), from Fingrid's announcement and confirmed in its published prices.
+
 ### Fixed
+- **Fingrid:** a `FingridClient` shared across threads keeps its minimum spacing between requests; before, waiting threads sent their requests at the same moment.
 - **ENTSO-E:** the API token is redacted from error messages in any percent-encoding (lowercase hex, or `/` left unescaped), not only the two most common ones. Keys in ENTSO-E's usual UUID format need no encoding and were not affected.
 - The 64 MiB response limit is enforced while the body is read, so an oversized, endless or highly compressed response stops early instead of being held in memory first.
 - Compressed responses: every member of a multi-member gzip body is read (not only the first), bytes after the end of a compressed stream no longer stall the read, a gzip body cut short is retried like other undecodable bodies, and a body in an encoding that was not requested (such as `br`) raises `SourceError` instead of being decoded without a size bound. Error statuses in such an encoding are still retried and reported by status.
