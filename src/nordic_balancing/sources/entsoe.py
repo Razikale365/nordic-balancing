@@ -53,6 +53,8 @@ BASE_URL = "https://web-api.tp.entsoe.eu/api"
 # 4-21 s for 31 to 367 days), so ask for a whole (leap) year at a time.
 _CHUNK = timedelta(days=366)
 _CAPACITY_CHUNK = timedelta(days=7)
+# A year of daily documents is a few hundred members; far more is not a response.
+_MAX_MEMBERS = 10_000
 _INSTANCE_LIMIT = "exceeds the allowed maximum"
 _HOUR = timedelta(hours=1)
 _NO = (BiddingZone.NO1, BiddingZone.NO2, BiddingZone.NO3, BiddingZone.NO4, BiddingZone.NO5)
@@ -452,7 +454,15 @@ class EntsoeClient:
             if detail:
                 message += f": {detail[:200]}"
             raise SourceError(message)
-        return _members(response.content)
+        members = _members(response.content)
+        if response.status_code != 200 and not all(map(_is_acknowledgement, members)):
+            # A 400 is read only for its acknowledgement; data in an error response
+            # is not an answer to trust.
+            detail = _redact(response.text, self._api_key)[:200]
+            raise SourceError(
+                f"{SOURCE}: HTTP {response.status_code} without an acknowledgement: {detail}"
+            )
+        return members
 
     def _fetch(
         self, zone: BiddingZone, chunk_start: datetime, chunk_end: datetime
@@ -624,7 +634,11 @@ def _members(body: bytes) -> list[bytes]:
         return [body]
     try:
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
-            members = [info for info in archive.infolist() if not info.is_dir()]
+            entries = archive.infolist()
+            # Directory entries count too: each is still parsed from the central directory.
+            if len(entries) > _MAX_MEMBERS:
+                raise SourceError(f"{SOURCE}: ZIP archive has more than {_MAX_MEMBERS} members")
+            members = [info for info in entries if not info.is_dir()]
             if not any(info.filename.lower().endswith(".xml") for info in members):
                 raise SourceError(f"{SOURCE}: ZIP archive has no XML member")
             if sum(info.file_size for info in members) > _LIMIT:
@@ -641,6 +655,14 @@ def _members(body: bytes) -> list[bytes]:
         lzma.LZMAError,
     ) as exc:
         raise SourceError(f"{SOURCE}: response is not a valid ZIP archive") from exc
+
+
+def _is_acknowledgement(member: bytes) -> bool:
+    # Decided by the parsed root, so a comment or an encoding cannot pass or fail it.
+    try:
+        return _local(ElementTree.fromstring(member).tag) == "Acknowledgement_MarketDocument"
+    except (ElementTree.ParseError, ValueError, LookupError):
+        return False
 
 
 def _points(
@@ -805,6 +827,10 @@ def _period_points(
         # A partial last step would be expanded past the Period end.
         raise SourceError(f"{SOURCE}: Period is not a whole number of {resolution}")
     count = (period_end - period_start) // step
+    if capacity and period_end - period_start > _CAPACITY_CHUNK + timedelta(days=1):
+        # A81 Periods are delivery days inside a 7-day request; one far longer is
+        # not an answer to it, and filling it hour by hour would not terminate soon.
+        raise SourceError(f"{SOURCE}: capacity Period is longer than the request")
     explicit: dict[int, _Point] = {}
     for element in _children(period, "Point", groups):
         fields = _group(element)
@@ -950,8 +976,13 @@ def _reject_repeated_categories(
     existing: Iterable[dict[str, Any]], incoming: Iterable[dict[str, Any]]
 ) -> None:
     # Equal prices merge only across distinct categories (A04 and A05); the same
-    # category twice, or two points without one, is a duplicate record (contract C3).
-    repeated = {entry["category"] for entry in existing} & {entry["category"] for entry in incoming}
+    # category twice, or a point without one beside any other, is a duplicate
+    # record (contract C3): an absent category is not a category of its own.
+    existing_names = {entry["category"] for entry in existing}
+    incoming_names = {entry["category"] for entry in incoming}
+    repeated = existing_names & incoming_names
+    if None in existing_names | incoming_names:
+        repeated.add(None)
     if repeated:
         names = ", ".join(sorted(name or "none" for name in repeated))
         raise SourceError(f"{SOURCE}: duplicate price for category {names}")

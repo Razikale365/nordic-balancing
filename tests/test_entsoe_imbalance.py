@@ -2146,3 +2146,96 @@ def test_merged_publications_track_flow_direction() -> None:
         entsoe_client(
             lambda _: httpx.Response(200, text=merged_document("A01", "A02"))
         ).imbalance_prices(START, START + INTERVAL, [BiddingZone.SE3])
+
+
+@pytest.mark.parametrize("categories", [(None, "A04"), ("A04", "A05", None)])
+def test_uncategorised_point_repeating_a_categorised_one_is_a_duplicate(
+    categories: tuple[str | None, ...],
+) -> None:
+    body = entsoe_document(
+        *[
+            entsoe_series(
+                entsoe_period(
+                    "2026-01-15T00:00Z", "2026-01-15T00:15Z", entsoe_point(1, 21.0, category)
+                )
+            )
+            for category in categories
+        ]
+    )
+    with pytest.raises(SourceError, match="duplicate price for category"):
+        entsoe_client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, START + INTERVAL, [BiddingZone.FI]
+        )
+
+
+def test_zip_with_more_members_than_the_cap_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(entsoe_module, "_MAX_MEMBERS", 3)
+    archive = zipped(*[ONE_HOUR] * 4)
+    with pytest.raises(SourceError, match="more than 3 members"):
+        entsoe_client(
+            lambda _: httpx.Response(
+                200, content=archive, headers={"Content-Type": "application/zip"}
+            )
+        ).imbalance_prices(START, END, [BiddingZone.SE3])
+
+
+def test_zip_member_cap_is_ten_thousand() -> None:
+    assert entsoe_module._MAX_MEMBERS == 10_000
+    archive = zipped(*[b""] * 10_001)
+    with pytest.raises(SourceError, match="more than 10000 members"):
+        entsoe_module._members(archive)
+
+
+def test_error_status_carrying_a_data_document_is_rejected() -> None:
+    with pytest.raises(SourceError, match="HTTP 400 without an acknowledgement"):
+        entsoe_client(lambda _: httpx.Response(400, text=ONE_HOUR)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("archive", [False, True])
+def test_error_status_with_an_acknowledgement_name_only_in_a_comment_is_rejected(
+    archive: bool,
+) -> None:
+    body = ONE_HOUR.replace("<type>", "<!-- Acknowledgement_MarketDocument --><type>", 1)
+    payload = zipped(body) if archive else body.encode()
+    with pytest.raises(SourceError, match="HTTP 400"):
+        entsoe_client(lambda _: httpx.Response(400, content=payload)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("prefix", [False, True])
+@pytest.mark.parametrize("archive", [False, True])
+def test_utf16_acknowledgement_with_default_or_prefixed_root_returns_empty(
+    prefix: bool, archive: bool
+) -> None:
+    body = entsoe_acknowledgement("No matching data found")
+    if prefix:
+        body = (
+            body.replace("xmlns=", "xmlns:ack=")
+            .replace("<Acknowledgement_MarketDocument", "<ack:Acknowledgement_MarketDocument")
+            .replace("</Acknowledgement_MarketDocument>", "</ack:Acknowledgement_MarketDocument>")
+        )
+    payload = ('<?xml version="1.0" encoding="utf-16"?>' + body).encode("utf-16")
+    if archive:
+        payload = zipped(payload)
+    prices = entsoe_client(lambda _: httpx.Response(400, content=payload)).imbalance_prices(
+        START, END, [BiddingZone.SE3]
+    )
+    assert prices == []
+
+
+def test_zip_directory_entries_count_toward_the_member_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(entsoe_module, "_MAX_MEMBERS", 3)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for index in range(3):
+            archive.writestr(f"dir{index}/", b"")
+        archive.writestr("data.xml", ONE_HOUR)
+    with pytest.raises(SourceError, match="more than 3 members"):
+        entsoe_client(lambda _: httpx.Response(200, content=buffer.getvalue())).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )

@@ -146,8 +146,10 @@ Observed 2026-10-09 unless noted; file references are under
 - A Point without an amount gives `imbalance_price_eur=None`. `Financial_Price`
   components, categories, `flowDirection.direction` and the namespace are kept in
   `raw` but not interpreted. Equal dual-category prices collapse to one value; different
-  ones raise. Acknowledgement documents, ZIP and plain XML bodies are handled, with a
-  64 MiB cap.
+  ones raise; a point without a category beside one with a category is a duplicate.
+  Acknowledgement documents, ZIP and plain XML bodies are handled, with a 64 MiB cap
+  (enforced while reading, and on the ZIP members' total size) and at most 10,000 ZIP
+  members. An HTTP 400 is accepted only when it carries an acknowledgement.
 - Further checks taken from the XSDs:
   - The document-level area is `controlArea_Domain.mRID` in v3.0–v4.0 and
     `area_Domain.mRID` from v4.1. It is optional in all versions, and when present it

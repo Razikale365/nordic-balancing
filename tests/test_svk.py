@@ -792,3 +792,15 @@ def test_svk_sorts_zones_before_directions_within_each_quarter() -> None:
         for zone in (BiddingZone.SE3, BiddingZone.SE4)
         for direction in (Direction.DOWN, Direction.UP)
     ]
+
+
+def test_total_larger_than_the_filter_can_match_is_not_paged_through() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=svk_search([{"_id": 0}] * 100, total=60_000))
+
+    with pytest.raises(SourceError, match="total 60000 is too large"):
+        svk_client(handler).capacity_market(ReserveProduct.MFRR, START, END, [BiddingZone.SE3])
+    assert len(seen) == 1

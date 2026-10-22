@@ -11,7 +11,7 @@ from typing import Any, Self
 
 import httpx
 
-from nordic_balancing._http import check_base_url, get_json
+from nordic_balancing._http import ACCEPT_ENCODING, check_base_url, get_json, read_capped
 from nordic_balancing._validate import finite_number, reject_duplicate
 from nordic_balancing.errors import SourceError
 from nordic_balancing.models import (
@@ -63,7 +63,10 @@ class _AuthenticatedTransport(httpx.BaseTransport):
         self._before_request()
         # Never follow a redirect: the key header would be sent to the new host.
         with self._http.stream(
-            "GET", request.url, headers={"x-api-key": self._api_key}, follow_redirects=False
+            "GET",
+            request.url,
+            headers={**ACCEPT_ENCODING, "x-api-key": self._api_key},
+            follow_redirects=False,
         ) as response:
             return httpx.Response(
                 response.status_code,
@@ -72,7 +75,9 @@ class _AuthenticatedTransport(httpx.BaseTransport):
                     for name, value in response.headers.items()
                     if name not in ("content-encoding", "content-length")
                 },
-                content=b"" if response.is_error else response.read(),
+                content=b""
+                if response.is_error
+                else read_capped(response, source=SOURCE, path=request.url.path),
             )
 
 

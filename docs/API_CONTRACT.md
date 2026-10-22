@@ -270,7 +270,9 @@ bidding zone, product, direction, and 15-minute UTC interval:
   lack a value key or a requested column raise `SourceError`; only an explicit null
   becomes `None`, except that eSett DK1/DK2 mark an unsettled interval with `0.0`
   in every price column (`imblSalesPrice`, `imblPurchasePrice`, `upRegPrice`,
-  `downRegPrice`), which maps to `None` the same way.
+  `downRegPrice`) and a `mainDirRegPowerPerMBA` of `0` or null, which maps to `None`
+  the same way (prices and direction). An all-zero row with an up or down direction
+  is a settled price and is kept.
 - **Numbers**: numeric source values must be finite JSON numbers convertible to
   `float` (`bool`, `NaN`, and infinities are rejected with `SourceError`).
   ENTSO-E XML values must be ASCII `xs:decimal` text and positions ASCII

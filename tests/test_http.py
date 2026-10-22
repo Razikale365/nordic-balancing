@@ -1,13 +1,19 @@
-from collections.abc import Callable
+import contextlib
+import gzip
+import tracemalloc
+import zlib
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 import pytest
 from fakes import (
     http_client,
+    svk_package_show,
 )
 
-from nordic_balancing import BiddingZone, _http
+from nordic_balancing import BiddingZone, ReserveProduct, _http
 from nordic_balancing._http import _request, check_base_url, get_json
 from nordic_balancing._http import _retry_after as retry_after
 from nordic_balancing._validate import finite_number
@@ -563,3 +569,262 @@ def test_every_client_rejects_a_malformed_base_url(
 ) -> None:
     with pytest.raises(ValueError, match="base_url must be an absolute http or https URL"):
         make(base_url)
+
+
+class ChunkedBody(httpx.SyncByteStream):
+    """A body of ``total`` spaces in 1 KiB chunks that counts what the client pulled."""
+
+    def __init__(self, total: int) -> None:
+        self.total = total
+        self.consumed = 0
+
+    def __iter__(self) -> Iterator[bytes]:
+        chunk = b" " * 1024
+        for _ in range(self.total // len(chunk)):
+            self.consumed += len(chunk)
+            yield chunk
+        raise httpx.ReadError("the body was read to its end")
+
+
+@pytest.mark.parametrize("source", ["esett", "eds", "entsoe", "fingrid", "svk"])
+def test_every_client_stops_reading_a_body_at_the_size_cap(
+    monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    # The cap applies while the body streams in, so an endless body is never held in full;
+    # it is shrunk here so the test needs no large body.
+    monkeypatch.setattr(_http, "_LIMIT", 4096)
+    body = ChunkedBody(1024 * 1024)
+    start = datetime(2026, 1, 15, tzinfo=UTC)
+    end = start + timedelta(minutes=15)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/package_show"):
+            return httpx.Response(200, json=svk_package_show())
+        return httpx.Response(200, stream=body)
+
+    with http_client(handler) as http:
+        clients: dict[str, Callable[[], Any]] = {
+            "esett": lambda: ESettClient(http, max_retries=0),
+            "eds": lambda: EnergiDataServiceClient(http, max_retries=0),
+            "entsoe": lambda: EntsoeClient("key", http, max_retries=0, max_workers=1),
+            "fingrid": lambda: FingridClient("key", http, max_retries=0, min_interval=0),
+            "svk": lambda: SvKClient(http, max_retries=0),
+        }
+        with clients[source]() as client, pytest.raises(SourceError, match="exceeds 4096 bytes"):
+            if source == "fingrid":
+                client.series(319, start, end)
+            elif source == "svk":
+                client.capacity_market(ReserveProduct.MFRR, start, end)
+            else:
+                client.imbalance_prices(start, end, [BiddingZone.DK1])
+    assert 4096 < body.consumed <= 4096 + 1024
+
+
+class ClosableBody(httpx.SyncByteStream):
+    def __init__(self, *chunks: bytes) -> None:
+        self.chunks = chunks
+        self.closed = False
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield from self.chunks
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.parametrize(
+    ("encoding", "compress"),
+    [("gzip", gzip.compress), ("deflate", zlib.compress)],
+)
+def test_compressed_body_is_bounded_while_it_is_decoded(
+    monkeypatch: pytest.MonkeyPatch, encoding: str, compress: Callable[[bytes], bytes]
+) -> None:
+    # A small compressed body must not be inflated whole before the cap is checked.
+    monkeypatch.setattr(_http, "_LIMIT", 4096)
+    stream = ClosableBody(compress(b" " * (16 * 1024 * 1024)))
+    http = http_client(
+        lambda _: httpx.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
+    )
+    with http:
+        tracemalloc.start()
+        try:
+            with pytest.raises(SourceError, match="exceeds 4096"):
+                _request(
+                    http,
+                    "https://example.test",
+                    "/",
+                    {},
+                    source="test",
+                    max_retries=0,
+                    sleep=lambda _: None,
+                )
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+    assert peak < 4096 + 1024 * 1024
+    assert stream.closed
+
+
+def test_gzip_streamed_body_under_the_cap_decodes() -> None:
+    payload = b'{"ok": true}' * 1000
+    stream = ClosableBody(gzip.compress(payload))
+    http = http_client(
+        lambda _: httpx.Response(200, headers={"Content-Encoding": "gzip"}, stream=stream)
+    )
+    with http:
+        response = _request(
+            http,
+            "https://example.test",
+            "/",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    assert response.content == payload
+    assert stream.closed
+
+
+def fetch_encoded(
+    data: bytes, encoding: str, chunk: int = 0, *, stream: ClosableBody | None = None
+) -> bytes:
+    pieces = [data] if chunk == 0 else [data[i : i + chunk] for i in range(0, len(data), chunk)]
+    body = stream or ClosableBody(*pieces)
+    http = http_client(
+        lambda _: httpx.Response(200, headers={"Content-Encoding": encoding}, stream=body)
+    )
+    with http:
+        response = _request(
+            http,
+            "https://example.test",
+            "/",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    assert body.closed
+    content: bytes = response.content
+    return content
+
+
+def chain(inner: bytes, encoding: str) -> bytes:
+    return gzip.compress(inner) if encoding == "gzip, gzip" else zlib.compress(inner)
+
+
+@pytest.mark.parametrize("encoding", ["gzip, gzip", "gzip, deflate"])
+def test_chained_compression_past_the_cap_is_bounded(
+    monkeypatch: pytest.MonkeyPatch, encoding: str
+) -> None:
+    monkeypatch.setattr(_http, "_LIMIT", 4096)
+    packed = chain(gzip.compress(b" " * (16 * 1024 * 1024)), encoding)
+    tracemalloc.start()
+    try:
+        with pytest.raises(SourceError, match="exceeds 4096"):
+            fetch_encoded(packed, encoding)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 4096 + 1024 * 1024
+
+
+@pytest.mark.parametrize("encoding", ["gzip, gzip", "gzip, deflate"])
+@pytest.mark.parametrize("chunk", [0, 1])
+def test_chained_compression_under_the_cap_decodes(encoding: str, chunk: int) -> None:
+    payload = b'{"ok": true}' * 100
+    assert fetch_encoded(chain(gzip.compress(payload), encoding), encoding, chunk) == payload
+
+
+@pytest.mark.parametrize("wbits", [9, 12])
+@pytest.mark.parametrize("chunk", [0, 1])
+def test_zlib_deflate_with_a_small_window_decodes(wbits: int, chunk: int) -> None:
+    payload = b'{"normal":true,"text":"Nordic"}' * 500
+    assert fetch_encoded(zlib.compress(payload, wbits=wbits), "deflate", chunk) == payload
+
+
+def test_raw_deflate_that_starts_with_a_zlib_looking_byte_decodes() -> None:
+    packed = b"\x78\x02\x00\xfd\xff[]\x01\x00\x00\xff\xff"
+    assert zlib.decompress(packed, -zlib.MAX_WBITS) == b"[]"
+    assert fetch_encoded(packed, "deflate") == b"[]"
+
+
+def test_public_client_reads_a_small_window_deflate_body() -> None:
+    packed = zlib.compress(b"[]", wbits=9)
+    stream = ClosableBody(packed)
+    start = datetime(2026, 1, 15, tzinfo=UTC)
+    http = http_client(
+        lambda _: httpx.Response(200, headers={"Content-Encoding": "deflate"}, stream=stream)
+    )
+    with http, ESettClient(http, max_retries=0) as client:
+        prices = client.imbalance_prices(start, start + timedelta(minutes=15), [BiddingZone.FI])
+    assert prices == []
+
+
+def ambiguous_raw_deflate(cmf: int, flg: int) -> tuple[bytes, bytes]:
+    # Raw deflate whose first two bytes also form a valid zlib header.
+    payload = b"[]" + b" " * (flg - 2)
+    packed = bytes([cmf, flg, 0, flg ^ 255, 255]) + payload + b"\x01\x00\x00\xff\xff"
+    assert ((cmf << 8) | flg) % 31 == 0
+    assert zlib.decompress(packed, -zlib.MAX_WBITS) == payload
+    return packed, payload
+
+
+@pytest.mark.parametrize(("cmf", "flg"), [(0x78, 0x9C), (0x18, 0x95)])
+@pytest.mark.parametrize("chunk", [0, 1, 7])
+def test_raw_deflate_with_a_valid_zlib_header_prefix_decodes(
+    cmf: int, flg: int, chunk: int
+) -> None:
+    packed, payload = ambiguous_raw_deflate(cmf, flg)
+    assert fetch_encoded(packed, "deflate", chunk) == payload
+
+
+@pytest.mark.parametrize(("cmf", "flg"), [(0x78, 0x9C), (0x18, 0x95)])
+def test_public_client_reads_ambiguous_raw_deflate(cmf: int, flg: int) -> None:
+    packed, _ = ambiguous_raw_deflate(cmf, flg)
+    stream = ClosableBody(packed)
+    calls = 0
+    start = datetime(2026, 1, 15, tzinfo=UTC)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, headers={"Content-Encoding": "deflate"}, stream=stream)
+
+    with http_client(handler) as http, ESettClient(http, max_retries=1) as client:
+        prices = client.imbalance_prices(start, start + timedelta(minutes=15), [BiddingZone.FI])
+    assert prices == []
+    assert calls == 1
+
+
+@pytest.mark.parametrize("source", ["esett", "eds", "entsoe", "fingrid", "svk"])
+def test_every_client_asks_for_gzip_and_deflate_only(source: str) -> None:
+    seen: list[str | None] = []
+    start = datetime(2026, 1, 15, tzinfo=UTC)
+    end = start + timedelta(minutes=15)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("accept-encoding"))
+        if request.url.path.endswith("/package_show"):
+            return httpx.Response(200, json=svk_package_show())
+        return httpx.Response(200, json=[])
+
+    supplied = {"Accept-Encoding": "br, zstd, gzip, deflate", "X-Caller": "kept"}
+    with httpx.Client(transport=httpx.MockTransport(handler), headers=supplied) as http:
+        clients: dict[str, Callable[[], Any]] = {
+            "esett": lambda: ESettClient(http, max_retries=0),
+            "eds": lambda: EnergiDataServiceClient(http, max_retries=0),
+            "entsoe": lambda: EntsoeClient("key", http, max_retries=0, max_workers=1),
+            "fingrid": lambda: FingridClient("key", http, max_retries=0, min_interval=0),
+            "svk": lambda: SvKClient(http, max_retries=0),
+        }
+        with clients[source]() as client, contextlib.suppress(SourceError):
+            if source == "fingrid":
+                client.series(319, start, end)
+            elif source == "svk":
+                client.capacity_market(ReserveProduct.MFRR, start, end)
+            else:
+                client.imbalance_prices(start, end, [BiddingZone.DK1])
+        assert http.headers["accept-encoding"] == "br, zstd, gzip, deflate"
+        assert http.headers["x-caller"] == "kept"
+    assert seen
+    assert set(seen) == {"gzip, deflate"}

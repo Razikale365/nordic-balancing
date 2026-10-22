@@ -1572,3 +1572,14 @@ def test_entsoe_matching_zero_real_series_is_unchanged(zone: BiddingZone) -> Non
     assert with_placeholder == fetch_placeholder_case(ET.tostring(root), zone)
     assert len(with_placeholder) == 96
     assert all(r.price_eur_per_mw == r.volume_mw == 0.0 for r in with_placeholder)
+
+
+def test_entsoe_capacity_period_far_longer_than_the_request_is_rejected() -> None:
+    body = capacity_document(capacity_point(1)).replace("2026-10-06T01:00Z", "9999-12-31T23:00Z")
+    with pytest.raises(SourceError, match="capacity Period is longer than the request"):
+        capacity_prices(body)
+
+
+def test_entsoe_capacity_period_of_a_delivery_day_still_parses() -> None:
+    body = capacity_document(capacity_point(1)).replace("2026-10-06T01:00Z", "2026-10-06T23:00Z")
+    assert capacity_prices(body)

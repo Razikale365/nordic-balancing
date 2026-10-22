@@ -4,10 +4,10 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the public API is defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it
 is listed here.
 
-## 1.0.0rc1 — 2026-10-21
+## 1.0.0rc1 — 2026-10-22
 
-Release candidate for 1.0: 0.4.0 plus one fix. Install it with `pip install --pre nordic-balancing`
-or `pip install nordic-balancing==1.0.0rc1`.
+Release candidate for 1.0: 0.4.0 plus the fixes below. Install it with
+`pip install --pre nordic-balancing` or `pip install nordic-balancing==1.0.0rc1`.
 
 ### Compatibility promise
 From 1.0.0 the public API defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md) follows Semantic
@@ -17,6 +17,13 @@ and a provider change that breaks parsing of valid data is fixed in a bug-fix re
 
 ### Fixed
 - **ENTSO-E:** the API token is redacted from error messages in any percent-encoding (lowercase hex, or `/` left unescaped), not only the two most common ones. Keys in ENTSO-E's usual UUID format need no encoding and were not affected.
+- The 64 MiB response limit is enforced while the body is read, so an oversized, endless or highly compressed response stops early instead of being held in memory first.
+- **ENTSO-E:** an imbalance price published once without a category and again with one is rejected as a duplicate, instead of being merged as if it were a second category.
+- **ENTSO-E:** a reserve-capacity Period far longer than the request, a ZIP response with more than 10,000 members, and an HTTP 400 that carries data instead of an acknowledgement raise `SourceError` instead of being processed.
+- **eSett:** a DK1/DK2 row with all prices `0.0` and a null direction is reported as unsettled (`None`), like the same row with direction `0`.
+- **Svenska kraftnät:** a result total larger than the query can match raises `SourceError` before any further pages are fetched.
+- `reconcile_imbalance_prices` reports a NaN or infinite price against an unpublished one as a PRICE divergence, as documented.
+- `changes_between` raises `ValueError`, not `TypeError`, for an unhashable `zones` member.
 
 ## 0.4.0 — 2026-10-20
 

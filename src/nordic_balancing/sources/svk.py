@@ -181,6 +181,10 @@ class SvKClient:
             if isinstance(page_total, bool) or not isinstance(page_total, int) or page_total < 0:
                 raise SourceError(f"{SOURCE}: datastore_search has invalid total")
             if total is None:
+                # Each (start, zone, direction) the filter names is at most one row;
+                # a larger total cannot be honest, so it is not paged through.
+                if page_total > len(chunk) * 4 * len(zones) * len(_DIRECTIONS):
+                    raise SourceError(f"{SOURCE}: datastore_search total {page_total} is too large")
                 total = page_total
             elif page_total != total:
                 raise SourceError(

@@ -132,3 +132,9 @@ def test_unverified_fi_formula_change_has_no_entry() -> None:
     assert not [
         c for c in CHANGES if BiddingZone.FI in c.zones and window[0] <= c.effective < window[1]
     ]
+
+
+@pytest.mark.parametrize("zones", [[[]], [{}], [BiddingZone.FI, []]])
+def test_unhashable_zone_member_is_a_value_error(zones: list[object]) -> None:
+    with pytest.raises(ValueError, match="BiddingZone"):
+        changes_between(MARCH_2026, MARCH_2026, zones=zones)  # type: ignore[arg-type]

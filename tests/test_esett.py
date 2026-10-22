@@ -682,3 +682,14 @@ def test_purchase_only_price_is_kept_not_dropped() -> None:
     ]
     assert price.imbalance_price_eur == 33.5
     assert price.raw["imblSalesPrice"] is None
+
+
+def test_dk_all_zero_prices_with_a_null_direction_are_the_unpublished_placeholder() -> None:
+    record = {**DK_PLACEHOLDER, "mainDirRegPowerPerMBA": None}
+    prices = esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
+        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
+        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
+        [BiddingZone.DK2],
+    )
+    assert prices[0].imbalance_price_eur is None
+    assert prices[0].dominating_direction is None

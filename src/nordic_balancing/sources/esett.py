@@ -287,9 +287,15 @@ def _parse_imbalance(record: object, times: dict[str, datetime]) -> ImbalancePri
     # price published in only one column is that price (never observed in ~107k
     # records, 2021-11 to 2026-10, but it must not be dropped as None).
     single = sales if sales is not None else purchase
-    if zone in _DK_ZONES and sales == purchase == up == down == 0.0 and direction is Direction.NONE:
+    if (
+        zone in _DK_ZONES
+        and sales == purchase == up == down == 0.0
+        and direction in (Direction.NONE, None)
+    ):
         # The pre-settlement DK placeholder is not a price; report it as
-        # unpublished, like the null rows the other zones send for it.
+        # unpublished, like the null rows the other zones send for it. Its
+        # direction is 0 as observed; a null one is no settlement either. An
+        # all-zero row with an activation direction is a real settled price.
         single = up = down = direction = None
     # start comes from _parse_time (a plain UTC datetime) and record was decoded for
     # this call alone; hourly quarters are copied from it through dataclasses.replace.

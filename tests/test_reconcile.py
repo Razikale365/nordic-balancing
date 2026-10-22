@@ -410,3 +410,16 @@ def test_report_and_divergences_pickle() -> None:
     assert restored == report
     primary = restored.divergences[0].primary
     assert primary is not None and dict(primary.raw) == {}
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+@pytest.mark.parametrize("published_is_primary", [True, False])
+def test_non_finite_price_against_an_unpublished_one_is_a_price_divergence(
+    value: float, published_is_primary: bool
+) -> None:
+    published, unpublished = record("a", price=value), record("b", price=None)
+    primary, reference = (
+        ([published], [unpublished]) if published_is_primary else ([unpublished], [published])
+    )
+    report = reconcile_imbalance_prices(primary, reference)
+    assert DivergenceKind.PRICE in report.counts()

@@ -212,6 +212,14 @@ def _compare(
                 f"{_price(p)} vs {_price(r)}",
             )
         )
+        # The published side may itself be NaN or inf: that is always PRICE too.
+        published = p if p is not None else r
+        if published is not None and not math.isfinite(published):
+            divergences.append(
+                Divergence(
+                    zone, start, DivergenceKind.PRICE, primary, reference, f"{p} vs {r} EUR/MWh"
+                )
+            )
     elif p is not None and r is not None:
         diff = abs(p - r)
         # A non-finite diff means a NaN or inf price on at least one side; it is

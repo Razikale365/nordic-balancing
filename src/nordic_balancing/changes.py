@@ -103,12 +103,18 @@ def changes_between(
     end_utc = to_utc(end, "end")
     if end_utc < start_utc:
         raise ValueError("end must be after start")
-    wanted = None if zones is None else frozenset(zones)
-    if wanted is not None:
-        if any(not isinstance(z, BiddingZone) for z in wanted):
+    wanted = None
+    if zones is not None:
+        # Validated before hashing: an unhashable member is still a bad value.
+        try:
+            members = list(zones)
+        except TypeError as exc:
+            raise ValueError("zones must contain only BiddingZone values") from exc
+        if any(not isinstance(z, BiddingZone) for z in members):
             raise ValueError("zones must contain only BiddingZone values")
-        if not wanted:
+        if not members:
             raise ValueError("zones must not be empty")
+        wanted = frozenset(members)
     return [
         change
         for change in CHANGES

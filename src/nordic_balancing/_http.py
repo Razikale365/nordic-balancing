@@ -1,6 +1,7 @@
 """Shared bounded retries so sources handle throttling consistently."""
 
-from collections.abc import Callable, Mapping
+import zlib
+from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -22,9 +23,14 @@ _TRANSIENT_ERRORS = (
 _DEFAULT_RETRY_AFTER = 10.0
 # A longer requested wait is not slept through: RateLimitError reports it instead.
 _MAX_RETRY_AFTER = 300.0
-# A body larger than this is rejected before decoding; the ENTSO-E path applies
-# the same bound to the raw responses it reads itself.
+# A body that decodes to more than this is rejected while it is read, before it is
+# held in full; the ENTSO-E path also bounds the members of ZIP responses by it.
 _LIMIT = 64 * 1024 * 1024
+# Only codings that _decoded inflates in bounded steps are asked for: httpx would
+# also offer br and zstd when their packages happen to be installed.
+ACCEPT_ENCODING = {"Accept-Encoding": "gzip, deflate"}
+# Most bytes one decompression step may produce before the size is checked again.
+_DECODE_STEP = 64 * 1024
 
 
 def get_json(
@@ -75,7 +81,7 @@ def _request(
     for attempt in range(max_retries + 1):
         last = attempt == max_retries
         try:
-            response = http.get(f"{base_url}{path}", params=query_params)
+            response = _get(http, f"{base_url}{path}", query_params, source=source, path=path)
         except _TRANSIENT_ERRORS:
             # Timeouts, dropped connections and undecodable bodies are retried;
             # callers wrap the last one.
@@ -95,8 +101,6 @@ def _request(
         else:
             # The body is decoded inside the loop so an uninterpretable one is
             # retried like a transport decoding failure, within the same budget.
-            if len(response.content) > _LIMIT:
-                raise SourceError(f"{source}: response for {path} exceeds {_LIMIT} bytes")
             # A deeply nested body exhausts the decoder's recursion limit; that
             # is still an uninterpretable body, not an internal error.
             try:
@@ -113,6 +117,117 @@ def _request(
         where = f" for {path}" if path else ""
         raise SourceError(f"{source}: HTTP {response.status_code}{where}{detail}")
     return response
+
+
+def _get(
+    http: httpx.Client,
+    url: str,
+    params: Mapping[str, str] | tuple[tuple[str, str], ...],
+    *,
+    source: str,
+    path: str,
+) -> httpx.Response:
+    # Streamed so the size bound stops the read itself: a buffered get would hold
+    # an oversized (or endless, or decompression-bomb) body before it is checked.
+    with http.stream("GET", url, params=params, headers=ACCEPT_ENCODING) as response:
+        return httpx.Response(
+            response.status_code,
+            # Raw bytes: a header that is not ASCII (a malformed Retry-After, say)
+            # must reach the same checks as before rather than fail to re-encode.
+            headers=[
+                (name, value)
+                for name, value in response.headers.raw
+                if name.lower() not in (b"content-encoding", b"content-length")
+            ],
+            content=read_capped(response, source=source, path=path),
+            request=response.request,
+        )
+
+
+def read_capped(response: httpx.Response, *, source: str, path: str) -> bytes:
+    """Read a streamed body, raising SourceError once it decodes past ``_LIMIT`` bytes."""
+    chunks = []
+    size = 0
+    for chunk in _decoded(response):
+        size += len(chunk)
+        if size > _LIMIT:
+            # An empty path is deliberate (the URL carries a secret): name no slot.
+            where = f" for {path}" if path else ""
+            raise SourceError(f"{source}: response{where} exceeds {_LIMIT} bytes")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _decoded(response: httpx.Response) -> Iterator[bytes]:
+    # httpx inflates each network chunk whole before yielding it, so a small
+    # compressed chunk can become an arbitrarily large allocation. gzip and deflate,
+    # including chained codings, are inflated here in bounded steps instead; any
+    # other coding (only sent if not asked for: see ACCEPT_ENCODING) keeps httpx's.
+    if response.is_stream_consumed:
+        # Already read in full (a transport that buffers, such as a response built
+        # from bytes): nothing is left to bound, only to check.
+        yield from response.iter_bytes()
+        return
+    header = response.headers.get("content-encoding", "")
+    codings = [c.strip().lower() for c in header.split(",") if c.strip()]
+    codings = [c for c in codings if c != "identity"]
+    if any(c not in ("gzip", "x-gzip", "deflate") for c in codings):
+        yield from response.iter_bytes()
+        return
+    chunks: Iterator[bytes] = response.iter_raw()
+    # Codings are listed in the order applied, so they are undone in reverse.
+    for coding in reversed(codings):
+        chunks = _inflate(chunks, coding)
+    try:
+        yield from chunks
+    except zlib.error as exc:
+        # Retried like httpx's own decoding failures.
+        raise httpx.DecodingError(f"invalid {header} body") from exc
+
+
+def _inflate(chunks: Iterator[bytes], coding: str) -> Iterator[bytes]:
+    if coding != "deflate":
+        decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        for raw in chunks:
+            yield from _drain(decoder, raw)
+        yield decoder.flush()
+        return
+    # "deflate" is zlib-wrapped by the standard and raw in practice, and a raw
+    # stream can begin with bytes that read as a zlib header. Like httpx, try zlib
+    # first and fall back to raw, replaying what was read, if it fails before any
+    # output; once output exists the format is settled.
+    decoder = zlib.decompressobj()
+    retained: bytearray | None = bytearray()
+    for raw in chunks:
+        if retained is None:
+            yield from _drain(decoder, raw)
+            continue
+        retained += raw
+        try:
+            for out in _drain(decoder, raw):
+                retained = None
+                yield out
+        except zlib.error:
+            if retained is None:
+                raise
+            decoder = zlib.decompressobj(-zlib.MAX_WBITS)
+            data, retained = bytes(retained), None
+            yield from _drain(decoder, data)
+        if retained is not None and len(retained) > _LIMIT:
+            raise zlib.error("no output from the first bytes of a deflate body")
+    if retained is not None and not decoder.eof:
+        # zlib accepted every byte yet never finished: the body is raw after all.
+        decoder = zlib.decompressobj(-zlib.MAX_WBITS)
+        yield from _drain(decoder, bytes(retained))
+    yield decoder.flush()
+
+
+def _drain(decoder: Any, data: bytes) -> Iterator[bytes]:
+    while data:
+        out = decoder.decompress(data, _DECODE_STEP)
+        if out:
+            yield out
+        data = decoder.unconsumed_tail
 
 
 def _retry_after(
