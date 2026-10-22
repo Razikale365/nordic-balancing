@@ -828,3 +828,51 @@ def test_every_client_asks_for_gzip_and_deflate_only(source: str) -> None:
         assert http.headers["x-caller"] == "kept"
     assert seen
     assert set(seen) == {"gzip, deflate"}
+
+
+@pytest.mark.parametrize("base_url", ["http://", "https:///path"])
+def test_check_base_url_rejects_an_empty_host(base_url: str) -> None:
+    with pytest.raises(ValueError, match="base_url must be an absolute http or https URL"):
+        check_base_url(base_url)
+
+
+def test_error_detail_is_cut_at_200_characters() -> None:
+    http = http_client(lambda _: httpx.Response(400, text="x" * 200 + "y" * 100))
+    with pytest.raises(SourceError) as exc_info:
+        _request(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    assert str(exc_info.value) == f"test: HTTP 400 for /api: {'x' * 200}"
+
+
+@pytest.mark.parametrize("source", ["esett", "eds", "fingrid", "svk"])
+def test_query_after_close_of_an_owned_client_raises_runtime_error(source: str) -> None:
+    start = datetime(2026, 1, 15, tzinfo=UTC)
+    end = start + timedelta(hours=1)
+    clients: dict[str, Callable[[], Any]] = {
+        "esett": lambda: ESettClient(),
+        "eds": lambda: EnergiDataServiceClient(),
+        "fingrid": lambda: FingridClient("key"),
+        "svk": lambda: SvKClient(),
+    }
+    client = clients[source]()
+    client.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        if source == "svk":
+            client.capacity_market(ReserveProduct.MFRR, start, end)
+        else:
+            client.imbalance_prices(start, end)
+
+
+def test_entsoe_query_after_close_of_an_owned_client_is_a_source_error() -> None:
+    start = datetime(2026, 1, 15, tzinfo=UTC)
+    client = EntsoeClient("key")
+    client.close()
+    with pytest.raises(SourceError, match="request failed"):
+        client.imbalance_prices(start, start + timedelta(hours=1))

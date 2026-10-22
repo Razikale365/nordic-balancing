@@ -661,3 +661,12 @@ def test_imbalance_request_sorts_dedupes_zones_and_names_columns() -> None:
         "mFRRMarginalPriceUpEUR",
         "mFRRMarginalPriceDownEUR",
     ]
+
+
+def test_imbalance_prices_reject_a_plain_zone_string() -> None:
+    with pytest.raises(ValueError, match="zones must contain only"):
+        eds_client(lambda _: eds_page([])).imbalance_prices(
+            datetime(2026, 1, 15, tzinfo=UTC),
+            datetime(2026, 1, 15, 1, tzinfo=UTC),
+            "DK1",  # type: ignore[arg-type]
+        )

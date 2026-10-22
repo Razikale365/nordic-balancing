@@ -693,3 +693,20 @@ def test_dk_all_zero_prices_with_a_null_direction_are_the_unpublished_placeholde
     )
     assert prices[0].imbalance_price_eur is None
     assert prices[0].dominating_direction is None
+
+
+def test_rejects_sales_purchase_disagreement_on_an_all_float_row() -> None:
+    record = {**PUBLISHED, "imblPurchasePrice": 22.0}
+    with pytest.raises(SourceError, match="esett: single-price model violated"):
+        esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(START, END)
+
+
+def test_dk_all_zero_prices_with_a_down_direction_stay_real() -> None:
+    record = {**DK_PLACEHOLDER, "mainDirRegPowerPerMBA": -1.0}
+    prices = esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
+        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
+        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
+        [BiddingZone.DK2],
+    )
+    assert prices[0].imbalance_price_eur == 0.0
+    assert prices[0].dominating_direction is Direction.DOWN

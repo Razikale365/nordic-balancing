@@ -362,9 +362,9 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `examples/entsoe_py_comparison/REPORT.md`). Covered by
   `tests/test_esett.py::test_resolution_transition_preserves_source_publication_intervals`,
   `tests/test_esett.py::test_live_hourly_to_quarter_hour_transition`,
-  `tests/test_entsoe.py::test_live_matches_esett_prices_but_not_its_resolution_label`,
+  `tests/test_entsoe_imbalance.py::test_live_matches_esett_prices_but_not_its_resolution_label`,
   and
-  `tests/test_fingrid.py::test_hourly_records_expand_in_imbalance_prices_with_hourly_resolution`.
+  `tests/test_fingrid_imbalance.py::test_hourly_records_expand_in_imbalance_prices_with_hourly_resolution`.
 - **Accepted (part of the contract).** `None` meaning is defined per source, as
   stated in [FIELD_MATRIX.md](FIELD_MATRIX.md): a field that a source never
   provides is `None` on every record from that source, and in a field that a
@@ -373,16 +373,16 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   `tests/test_field_matrix.py::test_field_matrix_doc_matches_dataclass_fields_and_expectations`,
   `tests/test_field_matrix.py::test_imbalance_price_never_provided_fields_are_none_and_column_mapping`,
   `tests/test_field_matrix.py::test_reserve_capacity_never_provided_fields_are_none_and_column_mapping`,
-  `tests/test_energidataservice.py::test_parses_published_and_unpublished_intervals`,
+  `tests/test_energidataservice_imbalance.py::test_parses_published_and_unpublished_intervals`,
   and `tests/test_esett.py::test_parses_published_and_null_prices_and_sorts`.
 - **Accepted (part of the contract).** `EntsoeClient`'s strict parser raises
   `SourceError` on differing dual-category prices and on curve types `A02`, `A04`,
   and `A05`, which `entsoe-py` may tolerate. None of these occurred in the 60 live
   zone-windows checked. Conflicting dual-category prices are covered by
-  `tests/test_entsoe.py::test_rejects_dual_prices_for_the_same_interval` and
-  `tests/test_entsoe.py::test_fixture_v45_conflicting_dual_categories_raise`.
+  `tests/test_entsoe_imbalance.py::test_rejects_dual_prices_for_the_same_interval` and
+  `tests/test_entsoe_imbalance.py::test_fixture_v45_conflicting_dual_categories_raise`.
   Rejection of curve types `A02`, `A04` and `A05` is covered by
-  `tests/test_entsoe.py::test_rejects_malformed_documents`.
+  `tests/test_entsoe_imbalance.py::test_rejects_malformed_documents`.
 - **Accepted (part of the contract).** A possible FI imbalance-price formula
   change around `2026-06-01` is **UNVERIFIED**: no primary source was found, so it
   has no entry in `CHANGES` (`tests/test_changes.py::test_unverified_fi_formula_change_has_no_entry`).
@@ -429,10 +429,10 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   hourly policy only for datasets 319, 244, 106, and 369 (per-interval prices and
   direction). Hourly records from any other dataset raise `SourceError` rather
   than being repeated, since they may be additive totals. Covered by
-  `tests/test_fingrid.py::test_other_datasets_reject_hourly_records`,
-  `tests/test_fingrid.py::test_other_datasets_reject_overlapping_granularities`,
-  `tests/test_fingrid.py::test_imbalance_datasets_keep_their_hourly_policy`, and
-  `tests/test_fingrid.py::test_live_hourly_imbalance_prices_expand_to_quarters`.
+  `tests/test_fingrid_imbalance.py::test_other_datasets_reject_hourly_records`,
+  `tests/test_fingrid_imbalance.py::test_other_datasets_reject_overlapping_granularities`,
+  `tests/test_fingrid_imbalance.py::test_imbalance_datasets_keep_their_hourly_policy`, and
+  `tests/test_fingrid_imbalance.py::test_live_hourly_imbalance_prices_expand_to_quarters`.
 - **Accepted (part of the contract).** eSett: a price published in only one of the
   `imblSalesPrice` or `imblPurchasePrice` columns is taken as the single price
   (never observed in ~107k records sampled 2021-11 to 2026-10; differing non-null
@@ -445,11 +445,11 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   ~16.8k records: only those and `null`); any other value raises `SourceError`.
   Acceptance of the numeric values and rejection of invalid numeric values are
   covered by
-  `tests/test_energidataservice.py::test_accepts_exact_dominating_directions`,
-  `tests/test_energidataservice.py::test_rejects_fractional_dominating_direction`,
-  and `tests/test_energidataservice.py::test_rejects_malformed_records`.
+  `tests/test_energidataservice_imbalance.py::test_accepts_exact_dominating_directions`,
+  `tests/test_energidataservice_imbalance.py::test_rejects_fractional_dominating_direction`,
+  and `tests/test_energidataservice_imbalance.py::test_rejects_malformed_records`.
   `DominatingDirection=null` becomes `None`
-  (`tests/test_energidataservice.py::test_null_dominating_direction_is_none`).
+  (`tests/test_energidataservice_imbalance.py::test_null_dominating_direction_is_none`).
 - **Accepted (part of the contract).** ENTSO-E checks that never triggered on live
   data (60 zone-windows and all 12 zones for 2025, checked 2026-10-12) stay
   strict so they fail loudly if the API changes:
@@ -458,30 +458,30 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
     extra points were observed). A81 FCR capacity documents always cover whole
     delivery days, so `capacity_market` validates the whole Period and keeps only
     the points inside the window. Covered by
-    `tests/test_entsoe.py::test_rejects_malformed_documents`,
-    `tests/test_entsoe.py::test_a03_fill_still_rejects_explicit_point_outside_chunk_window`,
-    `tests/test_fcr_capacity.py::test_entsoe_capacity_clips_whole_delivery_day_after_a03_fill`
+    `tests/test_entsoe_imbalance.py::test_rejects_malformed_documents`,
+    `tests/test_entsoe_imbalance.py::test_a03_fill_still_rejects_explicit_point_outside_chunk_window`,
+    `tests/test_entsoe_capacity.py::test_entsoe_capacity_clips_whole_delivery_day_after_a03_fill`
     and
-    `tests/test_fcr_capacity.py::test_entsoe_capacity_two_chunks_clip_same_delivery_day_without_duplicates`.
+    `tests/test_entsoe_capacity.py::test_entsoe_capacity_two_chunks_clip_same_delivery_day_without_duplicates`.
   - A `TimeSeries` without `curveType` raises `SourceError`, although the element
     is optional in the XSD (every observed `TimeSeries` had `A03`). Covered by
-    `tests/test_entsoe.py::test_rejects_malformed_documents`.
+    `tests/test_entsoe_imbalance.py::test_rejects_malformed_documents`.
   - When present, the response area (`area_Domain.mRID` or
     `controlArea_Domain.mRID`) must equal the bidding-zone EIC sent as
     `controlArea_Domain` (it did in every observed document). Covered by
-    `tests/test_entsoe.py::test_rejects_a_document_for_another_area` and
-    `tests/test_entsoe.py::test_accepts_a_document_for_the_requested_area`.
+    `tests/test_entsoe_imbalance.py::test_rejects_a_document_for_another_area` and
+    `tests/test_entsoe_imbalance.py::test_accepts_a_document_for_the_requested_area`.
 - **Accepted (part of the contract).** ENTSO-E: the token is passed as the
   `securityToken` query parameter, as the API requires. If `INFO` logging is
   enabled for the `httpx` logger, `httpx` logs request URLs and therefore the
   token (documented risk, shown by
-  `tests/test_entsoe.py::test_token_reaches_logs_only_through_httpx_info_logging`,
+  `tests/test_entsoe_imbalance.py::test_token_reaches_logs_only_through_httpx_info_logging`,
   which also checks that the library leaves the `httpx` logger's level and
   handlers unchanged; library exceptions
   redact the token, covered by
-  `tests/test_entsoe.py::test_request_params_eic_codes_and_custom_base_url`,
-  `tests/test_entsoe.py::test_http_errors_include_status_and_redact_token`, and
-  `tests/test_entsoe.py::test_transport_error_does_not_leak_token_or_url`).
+  `tests/test_entsoe_imbalance.py::test_request_params_eic_codes_and_custom_base_url`,
+  `tests/test_entsoe_imbalance.py::test_http_errors_include_status_and_redact_token`, and
+  `tests/test_entsoe_imbalance.py::test_transport_error_does_not_leak_token_or_url`).
 - **Accepted (part of the contract).** SvK: `SvKClient` filters on every
   quarter-hour `start_time_utc` of the requested hours, so a move to 15-minute
   rows is fetched rather than filtered out; any record whose `start_time_utc`

@@ -2,6 +2,7 @@ import dataclasses
 import inspect
 import json
 import os
+import re
 from datetime import datetime
 from enum import Enum, IntEnum
 from pathlib import Path
@@ -361,3 +362,17 @@ def test_snapshot_detects_enum_method_property_and_class_attribute(
         current = build_public_api_snapshot()
         assert current["symbols"]["ImbalancePrice"]["attributes"]["UNIT"] == "str"
         assert "Removed or changed: ImbalancePrice" in _diff_message(baseline, current)
+
+
+def test_contract_test_references_point_at_existing_tests() -> None:
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "docs" / "API_CONTRACT.md").read_text(encoding="utf-8")
+    references = set(re.findall(r"tests/(\w+\.py)::(\w+)", text))
+    assert references
+    missing = []
+    for file, name in sorted(references):
+        path = root / "tests" / file
+        source = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if not re.search(rf"^(?:async )?def {name}\(", source, re.MULTILINE):
+            missing.append(f"tests/{file}::{name}")
+    assert not missing, missing

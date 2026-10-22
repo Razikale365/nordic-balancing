@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -138,3 +138,14 @@ def test_unverified_fi_formula_change_has_no_entry() -> None:
 def test_unhashable_zone_member_is_a_value_error(zones: list[object]) -> None:
     with pytest.raises(ValueError, match="BiddingZone"):
         changes_between(MARCH_2026, MARCH_2026, zones=zones)  # type: ignore[arg-type]
+
+
+def test_zone_filter_keeps_a_change_that_applies_to_only_one_of_the_zones() -> None:
+    fi_only = next(c for c in CHANGES if c.zones == {BiddingZone.FI})
+    found = changes_between(
+        fi_only.effective - timedelta(hours=1),
+        fi_only.effective + timedelta(hours=1),
+        zones=[BiddingZone.DK1, BiddingZone.FI],
+    )
+    assert fi_only in found
+    assert [c.zones for c in found if c is not fi_only] == []
