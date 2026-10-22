@@ -876,3 +876,85 @@ def test_entsoe_query_after_close_of_an_owned_client_is_a_source_error() -> None
     client.close()
     with pytest.raises(SourceError, match="request failed"):
         client.imbalance_prices(start, start + timedelta(hours=1))
+
+
+@pytest.mark.parametrize("chunk", [0, 1, 23])
+def test_every_gzip_member_is_decoded(chunk: int) -> None:
+    # RFC 1952 allows several members in one body; all of them are the data.
+    packed = gzip.compress(b'{"a": ') + gzip.compress(b"1}")
+    assert fetch_encoded(packed, "gzip", chunk) == b'{"a": 1}'
+
+
+def test_null_padding_between_and_after_gzip_members_is_skipped() -> None:
+    packed = gzip.compress(b"[1, ") + bytes(16) + gzip.compress(b"2]") + bytes(16)
+    assert fetch_encoded(packed, "gzip") == b"[1, 2]"
+
+
+def test_data_after_the_end_of_a_deflate_stream_is_ignored() -> None:
+    assert fetch_encoded(zlib.compress(b"[]") + b"trailing", "deflate") == b"[]"
+
+
+@pytest.mark.parametrize(
+    ("encoding", "packed"),
+    [("gzip", gzip.compress(b"[]")), ("deflate", zlib.compress(b"[]"))],
+)
+def test_endless_data_after_a_compressed_stream_stops_at_the_cap(
+    monkeypatch: pytest.MonkeyPatch, encoding: str, packed: bytes
+) -> None:
+    # The padding decodes to nothing, so only the count of raw bytes can stop it.
+    monkeypatch.setattr(_http, "_LIMIT", 4096)
+    read = 0
+
+    class Endless(ClosableBody):
+        def __iter__(self) -> Iterator[bytes]:
+            nonlocal read
+            yield packed
+            while read < 1024 * 1024:
+                read += 1024
+                yield bytes(1024)
+
+    tracemalloc.start()
+    try:
+        with pytest.raises(SourceError, match="exceeds 4096"):
+            fetch_encoded(b"", encoding, stream=Endless())
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert read <= 4096 + 1024
+    assert peak < 1024 * 1024
+
+
+BIG = b"x" * (3 * _http._DECODE_STEP + 1)
+
+
+@pytest.mark.parametrize(
+    ("encoding", "packed", "expected"),
+    [
+        ("gzip", gzip.compress(BIG) + gzip.compress(b"tail"), BIG + b"tail"),
+        ("gzip", gzip.compress(BIG) + bytes(5), BIG),
+        ("gzip", gzip.compress(BIG) + b"junk", BIG),
+        ("deflate", zlib.compress(BIG) + b"trailing", BIG),
+    ],
+    ids=["second-member", "null-padding", "junk", "deflate-trailing"],
+)
+def test_a_stream_ending_inside_a_chunk_with_more_bytes_after_it_decodes(
+    encoding: str, packed: bytes, expected: bytes
+) -> None:
+    # One network chunk holding a stream end that is more than one decoding step
+    # away, then other bytes: decoding must stop at the end, not loop on them.
+    assert fetch_encoded(packed, encoding) == expected
+
+
+@pytest.mark.parametrize("cut", [5, 20])
+def test_a_gzip_body_cut_short_is_a_decoding_error(cut: int) -> None:
+    packed = gzip.compress(b'{"a": 1}' * 100)[:-cut]
+    with pytest.raises(httpx.DecodingError, match="invalid gzip body"):
+        fetch_encoded(packed, "gzip")
+
+
+@pytest.mark.parametrize("encoding", ["br", "zstd", "gzip, br", "compress"])
+def test_a_content_encoding_that_was_not_requested_is_rejected(encoding: str) -> None:
+    # Only gzip and deflate are asked for, and only they are inflated in bounded
+    # steps; anything else would reach an unbounded decoder.
+    with pytest.raises(SourceError, match="not requested"):
+        fetch_encoded(b"\x00" * 64, encoding)

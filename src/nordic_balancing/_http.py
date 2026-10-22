@@ -145,24 +145,52 @@ def _get(
 
 
 def read_capped(response: httpx.Response, *, source: str, path: str) -> bytes:
-    """Read a streamed body, raising SourceError once it decodes past ``_LIMIT`` bytes."""
+    """Read a streamed body, raising SourceError past ``_LIMIT`` bytes, raw or decoded."""
     chunks = []
     size = 0
-    for chunk in _decoded(response):
+    try:
+        for chunk in _decoded(response):
+            size += len(chunk)
+            if size > _LIMIT:
+                raise _TooLarge
+            chunks.append(chunk)
+    except _TooLarge:
+        # An empty path is deliberate (the URL carries a secret): name no slot.
+        where = f" for {path}" if path else ""
+        raise SourceError(f"{source}: response{where} exceeds {_LIMIT} bytes") from None
+    except _Unrequested as exc:
+        where = f" for {path}" if path else ""
+        raise SourceError(
+            f"{source}: response{where} uses content-encoding {exc}, which was not requested"
+        ) from None
+    return b"".join(chunks)
+
+
+class _TooLarge(Exception):
+    pass
+
+
+class _Unrequested(Exception):
+    pass
+
+
+def _raw(response: httpx.Response) -> Iterator[bytes]:
+    # Bytes on the wire count too: data after the end of a compressed stream
+    # decodes to nothing, so the decoded size alone would never stop it.
+    size = 0
+    for chunk in response.iter_raw():
         size += len(chunk)
         if size > _LIMIT:
-            # An empty path is deliberate (the URL carries a secret): name no slot.
-            where = f" for {path}" if path else ""
-            raise SourceError(f"{source}: response{where} exceeds {_LIMIT} bytes")
-        chunks.append(chunk)
-    return b"".join(chunks)
+            raise _TooLarge
+        yield chunk
 
 
 def _decoded(response: httpx.Response) -> Iterator[bytes]:
     # httpx inflates each network chunk whole before yielding it, so a small
     # compressed chunk can become an arbitrarily large allocation. gzip and deflate,
-    # including chained codings, are inflated here in bounded steps instead; any
-    # other coding (only sent if not asked for: see ACCEPT_ENCODING) keeps httpx's.
+    # including chained codings, are inflated here in bounded steps instead. Any
+    # other coding was not asked for (see ACCEPT_ENCODING), so it is not an answer
+    # to the request, and httpx's unbounded decoder is never reached for it.
     if response.is_stream_consumed:
         # Already read in full (a transport that buffers, such as a response built
         # from bytes): nothing is left to bound, only to check.
@@ -172,9 +200,8 @@ def _decoded(response: httpx.Response) -> Iterator[bytes]:
     codings = [c.strip().lower() for c in header.split(",") if c.strip()]
     codings = [c for c in codings if c != "identity"]
     if any(c not in ("gzip", "x-gzip", "deflate") for c in codings):
-        yield from response.iter_bytes()
-        return
-    chunks: Iterator[bytes] = response.iter_raw()
+        raise _Unrequested(repr(header))
+    chunks: Iterator[bytes] = _raw(response)
     # Codings are listed in the order applied, so they are undone in reverse.
     for coding in reversed(codings):
         chunks = _inflate(chunks, coding)
@@ -187,10 +214,7 @@ def _decoded(response: httpx.Response) -> Iterator[bytes]:
 
 def _inflate(chunks: Iterator[bytes], coding: str) -> Iterator[bytes]:
     if coding != "deflate":
-        decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
-        for raw in chunks:
-            yield from _drain(decoder, raw)
-        yield decoder.flush()
+        yield from _gunzip(chunks)
         return
     # "deflate" is zlib-wrapped by the standard and raw in practice, and a raw
     # stream can begin with bytes that read as a zlib header. Like httpx, try zlib
@@ -199,6 +223,10 @@ def _inflate(chunks: Iterator[bytes], coding: str) -> Iterator[bytes]:
     decoder = zlib.decompressobj()
     retained: bytearray | None = bytearray()
     for raw in chunks:
+        if decoder.eof:
+            # Anything after the end of the stream is ignored, as httpx does; it
+            # is not kept (zlib would hold it all as unused_data).
+            continue
         if retained is None:
             yield from _drain(decoder, raw)
             continue
@@ -213,6 +241,8 @@ def _inflate(chunks: Iterator[bytes], coding: str) -> Iterator[bytes]:
             decoder = zlib.decompressobj(-zlib.MAX_WBITS)
             data, retained = bytes(retained), None
             yield from _drain(decoder, data)
+        if decoder.eof:
+            retained = None
         if retained is not None and len(retained) > _LIMIT:
             raise zlib.error("no output from the first bytes of a deflate body")
     if retained is not None and not decoder.eof:
@@ -222,11 +252,41 @@ def _inflate(chunks: Iterator[bytes], coding: str) -> Iterator[bytes]:
     yield decoder.flush()
 
 
+def _gunzip(chunks: Iterator[bytes]) -> Iterator[bytes]:
+    # A gzip body may hold several members, decoded one after another (RFC 1952),
+    # with null padding between or after them skipped, as the gzip module does.
+    decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    started = trailing = False
+    for raw in chunks:
+        data = raw
+        while data and not trailing:
+            if decoder.eof:
+                data = data.lstrip(b"\x00")
+                if not data:
+                    break
+                if not data.startswith(b"\x1f\x8b"[: len(data)]):
+                    # Not another member: ignored, as httpx and gzip -d do.
+                    trailing = True
+                    break
+                decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            started = True
+            yield from _drain(decoder, data)
+            data = decoder.unused_data if decoder.eof else b""
+    yield decoder.flush()
+    if started and not decoder.eof:
+        # A gzip stream ends with a checked trailer; one cut short is not the data.
+        raise zlib.error("gzip body ended before its trailer")
+
+
 def _drain(decoder: Any, data: bytes) -> Iterator[bytes]:
     while data:
         out = decoder.decompress(data, _DECODE_STEP)
         if out:
             yield out
+        if decoder.eof:
+            # Past the end the bytes stay in unconsumed_tail and every further
+            # call only copies them again: stop, and leave them in unused_data.
+            return
         data = decoder.unconsumed_tail
 
 
