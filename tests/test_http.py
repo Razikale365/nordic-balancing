@@ -196,7 +196,7 @@ def test_undecodable_body_is_retried_then_propagates() -> None:
 
     http = http_client(handler)
     sleeps: list[float] = []
-    with pytest.raises(httpx.DecodingError):
+    with pytest.raises(httpx.DecodingError, match="decompressing data"):
         _request(
             http,
             "https://example.test",
@@ -219,7 +219,7 @@ def test_undecodable_rate_limit_body_is_still_retried() -> None:
 
     http = http_client(handler)
     sleeps: list[float] = []
-    with pytest.raises(httpx.DecodingError):
+    with pytest.raises(httpx.DecodingError, match="decompressing data"):
         _request(
             http,
             "https://example.test",

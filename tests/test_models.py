@@ -393,7 +393,7 @@ def test_entsoe_chunking_at_the_last_supported_year_does_not_overflow() -> None:
     # the request is built and the (mocked) server's answer decides the outcome.
     http = http_client(lambda _: httpx.Response(400))
     client = EntsoeClient(api_key="test", http=http, max_retries=0)
-    with client, pytest.raises(NordicBalancingError):
+    with client, pytest.raises(NordicBalancingError, match="HTTP 400 without an acknowledgement"):
         client.imbalance_prices(
             datetime(_MAX_YEAR, 12, 31, tzinfo=UTC),
             datetime(_MAX_YEAR, 12, 31, 23, 45, tzinfo=UTC),

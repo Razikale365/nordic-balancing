@@ -483,7 +483,7 @@ def test_api_key_is_not_sent_to_a_redirect_target() -> None:
 
     http = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
     fingrid = FingridClient(FINGRID_KEY, http, sleep=lambda _: None, clock=lambda: 0.0)
-    with pytest.raises(SourceError):
+    with pytest.raises(SourceError, match="HTTP 302"):
         fingrid.series(319, START, END)
     assert hosts == ["data.fingrid.fi"]
 

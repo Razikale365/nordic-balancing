@@ -2119,7 +2119,7 @@ def test_imbalance_pool_shuts_down_with_pending_cancellation(
         )
     )
     if fail:
-        with pytest.raises(SourceError):
+        with pytest.raises(SourceError, match="document is not XML"):
             entsoe_client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
                 START, END, [BiddingZone.SE3, BiddingZone.FI]
             )

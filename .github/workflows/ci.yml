@@ -23,13 +23,18 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
-      - run: uv run pytest
+      - run: uv run coverage run -m pytest
+      - name: Check branch coverage
+        run: uv run coverage report
       - run: uv build
-      - name: Smoke-test the built wheel in a clean environment
+      - name: Smoke-test the built wheel and sdist in clean environments
         run: |
-          uv venv /tmp/smoke --python ${{ matrix.python-version }}
-          uv pip install --python /tmp/smoke --prerelease=allow dist/*.whl
-          /tmp/smoke/bin/python -c "import nordic_balancing as n; print(n.__version__, len(n.__all__))"
+          for dist in dist/*.whl dist/*.tar.gz; do
+            rm -rf /tmp/smoke
+            uv venv /tmp/smoke --python ${{ matrix.python-version }}
+            uv pip install --python /tmp/smoke --prerelease=allow "$dist"
+            /tmp/smoke/bin/python -c "import nordic_balancing as n; print(n.__version__, len(n.__all__))"
+          done
 
   lowest-direct:
     name: lowest-direct (httpx 0.27.0, pandas 2.1.1, numpy<2; transitive dependencies latest)

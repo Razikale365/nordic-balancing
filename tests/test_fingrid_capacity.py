@@ -115,23 +115,26 @@ def test_fingrid_rejects_duplicate_start(dataset: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "update",
+    ("update", "message"),
     [
-        {"startTime": "2026-10-07T22:15:00Z", "endTime": "2026-10-07T23:15:00Z"},
-        {"endTime": "2026-10-07T22:15:00Z"},
-        {"endTime": "2026-10-08T00:00:00Z"},
-        {"startTime": "2026-10-07T22:00:01Z"},
-        {"value": "NaN"},
-        {"value": "inf"},
-        {"value": "-inf"},
-        {"value": True},
-        {"datasetId": 319},
+        (
+            {"startTime": "2026-10-07T22:15:00Z", "endTime": "2026-10-07T23:15:00Z"},
+            "60-minute record is not on the hour",
+        ),
+        ({"endTime": "2026-10-07T22:15:00Z"}, "capacity requires hourly records"),
+        ({"endTime": "2026-10-08T00:00:00Z"}, "record duration must be 15 or 60 minutes"),
+        ({"startTime": "2026-10-07T22:00:01Z"}, "startTime is not on a 15-minute boundary"),
+        ({"value": "NaN"}, "value is not a number"),
+        ({"value": "inf"}, "value is not a number"),
+        ({"value": "-inf"}, "value is not a number"),
+        ({"value": True}, "value is not a number"),
+        ({"datasetId": 319}, "unexpected datasetId"),
     ],
 )
-def test_fingrid_rejects_invalid_capacity_row(update: dict[str, Any]) -> None:
+def test_fingrid_rejects_invalid_capacity_row(update: dict[str, Any], message: str) -> None:
     bodies = fi_no_datasets()
     bodies[317]["data"][0].update(update)
-    with pytest.raises(SourceError):
+    with pytest.raises(SourceError, match=message):
         fi_no_fingrid_fetch(ReserveProduct.FCR_N, bodies)
 
 

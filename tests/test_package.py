@@ -35,7 +35,8 @@ def test_python_floor_is_3_12_and_ci_tests_every_classified_version() -> None:
     assert matrix is not None
     assert sorted(v.strip().strip('"') for v in matrix.group(1).split(",")) == classified
     assert "python-version: ${{ matrix.python-version }}" in check_block
-    assert "- run: uv run pytest" in check_block
+    assert "- run: uv run coverage run -m pytest" in check_block
+    assert "run: uv run coverage report" in check_block
 
 
 def test_lowest_direct_installs_the_declared_pandas_floor() -> None:

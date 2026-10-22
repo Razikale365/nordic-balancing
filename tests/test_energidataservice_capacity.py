@@ -749,7 +749,15 @@ def test_eds_fcr_rejects_malformed_rows(product: ReserveProduct, bad: str) -> No
     elif bad == "number":
         row["FCRdk_EUR" if domestic else "PriceTotalEUR"] = True
     rows = [row, row.copy()] if bad == "duplicate" else [row]
-    with pytest.raises(SourceError):
+    expected = {
+        "missing": "missing capacity columns",
+        "time": "is not on the hour",
+        "out_of_window": "outside requested window",
+        "zone": "unrequested PriceArea",
+        "number": "is not a number",
+        "duplicate": "duplicate record",
+    }[bad]
+    with pytest.raises(SourceError, match=expected):
         eds_fetch(rows, product, zones)
 
 

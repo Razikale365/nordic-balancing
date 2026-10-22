@@ -1,6 +1,7 @@
 """ENTSO-E reserve capacity (A81): FCR, aFRR and mFRR documents, placeholders and chunking."""
 
 import io
+import re
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
@@ -454,10 +455,15 @@ def test_entsoe_capacity_only_splits_instance_limit_acknowledgements(kind: str) 
         text.text = "permission denied"
         return httpx.Response(400, content=ET.tostring(root))
 
+    expected = {
+        "other_ack": "acknowledgement: permission denied",
+        "http_error": "HTTP 404",
+        "invalid_xml": "document is not XML",
+    }[kind]
     with (
         http_client(handler) as http,
         EntsoeClient("test-token", http, max_workers=1) as client,
-        pytest.raises(SourceError),
+        pytest.raises(SourceError, match=expected),
     ):
         client.capacity_market(ReserveProduct.MFRR, FI_NO_START, FI_NO_END, zones=[BiddingZone.NO1])
     assert len(calls) == 1
@@ -646,7 +652,12 @@ def test_entsoe_placeholder_is_validated_before_filtering(malformation: str) -> 
             position = point.find("{*}position")
             assert position is not None
             position.text = "2"
-    with pytest.raises(SourceError):
+    expected = {
+        "duplicate_position": "duplicate capacity position",
+        "position_two": "missing position 1",
+        "currency": "currency_Unit.name must be EUR",
+    }[malformation]
+    with pytest.raises(SourceError, match=expected):
         fetch_placeholder_case(ET.tostring(root), BiddingZone.NO1)
 
 
@@ -1304,21 +1315,33 @@ def test_entsoe_capacity_optional_price_unit_is_mw(element: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "old,new",
+    "old,new,message",
     [
-        (b"<type>A81", b"<type>A85"),
-        (b"<process.processType>A47", b"<process.processType>A52"),
-        (b"<businessType>B95", b"<businessType>A96"),
-        (b"<flowDirection.direction>A01", b"<flowDirection.direction>A03"),
-        (b"<quantity_Measure_Unit.name>MAW", b"<quantity_Measure_Unit.name>MWH"),
-        (b"<currency_Unit.name>EUR", b"<currency_Unit.name>NOK"),
-        (b"<resolution>PT60M", b"<resolution>PT15M"),
-        (b"<quantity>95", b"<quantity>NaN"),
-        (b"<procurement_Price.amount>1.5", b"<procurement_Price.amount>inf"),
+        (b"<type>A81", b"<type>A85", "unexpected document type"),
+        (b"<process.processType>A47", b"<process.processType>A52", "processType must be A47"),
+        (b"<businessType>B95", b"<businessType>A96", "businessType must be B95"),
+        (
+            b"<flowDirection.direction>A01",
+            b"<flowDirection.direction>A03",
+            "flowDirection.direction must be",
+        ),
+        (
+            b"<quantity_Measure_Unit.name>MAW",
+            b"<quantity_Measure_Unit.name>MWH",
+            "quantity_Measure_Unit.name must be MAW",
+        ),
+        (b"<currency_Unit.name>EUR", b"<currency_Unit.name>NOK", "currency_Unit.name must be EUR"),
+        (b"<resolution>PT60M", b"<resolution>PT15M", "resolution must be PT60M"),
+        (b"<quantity>95", b"<quantity>NaN", "quantity is not finite"),
+        (
+            b"<procurement_Price.amount>1.5",
+            b"<procurement_Price.amount>inf",
+            "procurement_Price.amount is not finite",
+        ),
     ],
 )
-def test_entsoe_rejects_invalid_mfrr_metadata(old: bytes, new: bytes) -> None:
-    with pytest.raises(SourceError):
+def test_entsoe_rejects_invalid_mfrr_metadata(old: bytes, new: bytes, message: str) -> None:
+    with pytest.raises(SourceError, match=re.escape(message)):
         fi_no_entsoe_fetch(fi_no_xml_member().replace(old, new))
 
 

@@ -476,7 +476,7 @@ def test_rejects_sub_minute_offsets_from_the_quarter_hour_grid(time_utc: str) ->
 def test_rejects_bare_date_non_utc_offset_and_overflow_timestamps(time_utc: str) -> None:
     start = datetime(2026, 10, 9, 0, 0, tzinfo=UTC)
     record = {**PUBLISHED, "TimeUTC": time_utc}
-    with pytest.raises(SourceError):
+    with pytest.raises(SourceError, match=r"unparseable TimeUTC|TimeUTC must be UTC"):
         eds_client(lambda _: eds_page([record])).imbalance_prices(start, start + timedelta(hours=3))
     valid_records = [
         {**PUBLISHED, "TimeUTC": "2026-10-09T02:30:00Z", "PriceArea": "DK1"},

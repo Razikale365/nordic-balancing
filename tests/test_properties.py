@@ -662,7 +662,9 @@ def test_entsoe_periods_return_only_published_in_window_records(
     with pytest.MonkeyPatch().context() as patch:
         patch.setattr(entsoe, "_CHUNK", timedelta(days=1))
         if not valid:
-            with pytest.raises(SourceError):
+            with pytest.raises(
+                SourceError, match=r"missing position \d+ in Period|point outside requested window"
+            ):
                 client.imbalance_prices(start, end, [zone])
             return
         prices = client.imbalance_prices(start, end, [zone])

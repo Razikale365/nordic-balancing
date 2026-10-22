@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Coverage data
+.coverage
+
 # Local secrets (API keys)
 .env
 

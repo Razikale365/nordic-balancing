@@ -65,6 +65,7 @@ dev = [
     "hypothesis>=6.168.5",
     "pandas-stubs>=3.0.5.260914",
     "pandas>=2.1",
+    "coverage>=7.6",
 ]
 
 [build-system]
@@ -81,6 +82,14 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 [tool.mypy]
 strict = true
 files = ["src", "tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["nordic_balancing"]
+
+[tool.coverage.report]
+fail_under = 98
+skip_covered = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
