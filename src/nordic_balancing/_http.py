@@ -159,6 +159,11 @@ def read_capped(response: httpx.Response, *, source: str, path: str) -> bytes:
         where = f" for {path}" if path else ""
         raise SourceError(f"{source}: response{where} exceeds {_LIMIT} bytes") from None
     except _Unrequested as exc:
+        if response.status_code != 200:
+            # Only a 200 body is data. An error page (or no body) in a coding that
+            # was not asked for still has to reach the status handling: retries,
+            # Retry-After and the HTTP status in the message.
+            return b""
         where = f" for {path}" if path else ""
         raise SourceError(
             f"{source}: response{where} uses content-encoding {exc}, which was not requested"
@@ -200,7 +205,7 @@ def _decoded(response: httpx.Response) -> Iterator[bytes]:
     codings = [c.strip().lower() for c in header.split(",") if c.strip()]
     codings = [c for c in codings if c != "identity"]
     if any(c not in ("gzip", "x-gzip", "deflate") for c in codings):
-        raise _Unrequested(repr(header))
+        raise _Unrequested(repr(header[:40]))
     chunks: Iterator[bytes] = _raw(response)
     # Codings are listed in the order applied, so they are undone in reverse.
     for coding in reversed(codings):

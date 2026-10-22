@@ -958,3 +958,47 @@ def test_a_content_encoding_that_was_not_requested_is_rejected(encoding: str) ->
     # steps; anything else would reach an unbounded decoder.
     with pytest.raises(SourceError, match="not requested"):
         fetch_encoded(b"\x00" * 64, encoding)
+
+
+def test_a_long_unrequested_content_encoding_is_cut_in_the_message() -> None:
+    with pytest.raises(SourceError, match="not requested") as caught:
+        fetch_encoded(b"\x00" * 64, "br" * 30_000)
+    assert len(str(caught.value)) < 200
+
+
+def status_in_unrequested_coding(status: int, calls: list[int]) -> httpx.Client:
+    def respond(_: httpx.Request) -> httpx.Response:
+        calls.append(status)
+        return httpx.Response(
+            status, headers={"Content-Encoding": "br"}, stream=ClosableBody(b"\x00" * 64)
+        )
+
+    return http_client(respond)
+
+
+@pytest.mark.parametrize(
+    ("status", "error", "message", "calls"),
+    [
+        (503, RateLimitError, None, 3),
+        (502, SourceError, "HTTP 502", 3),
+        (404, SourceError, "HTTP 404", 1),
+        (204, SourceError, "HTTP 204", 1),
+    ],
+)
+def test_a_status_other_than_200_in_an_unrequested_coding_reaches_status_handling(
+    status: int, error: type[Exception], message: str | None, calls: int
+) -> None:
+    # Error pages from proxies are where Accept-Encoding is most often ignored: the
+    # status must still be retried and reported, not hidden behind the coding.
+    seen: list[int] = []
+    with status_in_unrequested_coding(status, seen) as http, pytest.raises(error, match=message):
+        _request(
+            http,
+            "https://example.test",
+            "/p",
+            {},
+            source="test",
+            max_retries=2,
+            sleep=lambda _: None,
+        )
+    assert len(seen) == calls

@@ -145,7 +145,25 @@ def _stage_setup(name: str, http: httpx.Client, timers: dict[str, Timer]) -> lis
         restores.append((obj, attr, getattr(obj, attr)))
         setattr(obj, attr, value)
 
-    patch(http, "get", timers["transport"].timed(http.get))
+    from nordic_balancing import _http
+
+    if hasattr(_http, "_get"):
+        # Requests are streamed and read through _http._get (the size bound stops
+        # the read itself), so the transport stage is timed there, body included.
+        patch(_http, "_get", timers["transport"].timed(_http._get))
+    else:
+        patch(http, "get", timers["transport"].timed(http.get))
+
+    def time_constructors(module) -> None:
+        # Sources build records through the models' owned constructors, which skip
+        # the defensive copy; the public classes are wrapped too, for older code.
+        for name in ("ImbalancePrice", "ReserveCapacity"):
+            if hasattr(module, name):
+                patch(module, name, timers["construction"].wrap_class(getattr(module, name)))
+        for name in ("_owned_imbalance_price", "_owned_reserve_capacity"):
+            if hasattr(module, name):
+                patch(module, name, timers["construction"].timed(getattr(module, name)))
+
     if workload.provider == "entsoe":
         from nordic_balancing.sources import entsoe
 
@@ -160,20 +178,11 @@ def _stage_setup(name: str, http: httpx.Client, timers: dict[str, Timer]) -> lis
             ),
         )
         patch(entsoe, "_points", timers["parse_validate"].timed(entsoe._points))
-        patch(
-            entsoe,
-            "ImbalancePrice",
-            timers["construction"].wrap_class(entsoe.ImbalancePrice),
-        )
-        patch(
-            entsoe,
-            "ReserveCapacity",
-            timers["construction"].wrap_class(entsoe.ReserveCapacity),
-        )
-        # dataclasses.replace builds records via obj.__class__, bypassing the
-        # module-global patches above; timed separately (merges and _Point
-        # replacements share this counter).
-        patch(entsoe, "replace", timers["dataclass_replace"].timed(entsoe.replace))
+        time_constructors(entsoe)
+        if hasattr(entsoe, "replace"):
+            # Older code merged records with dataclasses.replace, which builds them
+            # via obj.__class__ and bypasses the patches above; timed separately.
+            patch(entsoe, "replace", timers["dataclass_replace"].timed(entsoe.replace))
     else:
         # Both JSON sources decode through response.json() inside get_json.
         patch(httpx.Response, "json", timers["decode"].timed(httpx.Response.json))
@@ -194,13 +203,7 @@ def _stage_setup(name: str, http: httpx.Client, timers: dict[str, Timer]) -> lis
                 "_fcr_capacity",
                 timers["parse_validate"].timed(module.EnergiDataServiceClient._fcr_capacity),
             )
-        for record_class in ("ImbalancePrice", "ReserveCapacity", "_owned_imbalance_price"):
-            if hasattr(module, record_class):
-                patch(
-                    module,
-                    record_class,
-                    timers["construction"].wrap_class(getattr(module, record_class)),
-                )
+        time_constructors(module)
         if workload.provider == "esett":
             # Hourly records expand to quarters through dataclasses.replace;
             # each replacement re-runs __post_init__ and the raw deep copy.

@@ -18,6 +18,7 @@ and a provider change that breaks parsing of valid data is fixed in a bug-fix re
 ### Fixed
 - **ENTSO-E:** the API token is redacted from error messages in any percent-encoding (lowercase hex, or `/` left unescaped), not only the two most common ones. Keys in ENTSO-E's usual UUID format need no encoding and were not affected.
 - The 64 MiB response limit is enforced while the body is read, so an oversized, endless or highly compressed response stops early instead of being held in memory first.
+- Compressed responses: every member of a multi-member gzip body is read (not only the first), bytes after the end of a compressed stream no longer stall the read, a gzip body cut short is retried like other undecodable bodies, and a body in an encoding that was not requested (such as `br`) raises `SourceError` instead of being decoded without a size bound. Error statuses in such an encoding are still retried and reported by status.
 - **ENTSO-E:** an imbalance price published once without a category and again with one is rejected as a duplicate, instead of being merged as if it were a second category.
 - **ENTSO-E:** a reserve-capacity Period far longer than the request, a ZIP response with more than 10,000 members, and an HTTP 400 that carries data instead of an acknowledgement raise `SourceError` instead of being processed.
 - **eSett:** a DK1/DK2 row with all prices `0.0` and a null direction is reported as unsettled (`None`), like the same row with direction `0`.
