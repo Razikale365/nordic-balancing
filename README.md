@@ -20,7 +20,7 @@ hours; in DK, FI, SE3 and SE4 the average spread within an hour is over 100 EUR/
 A backtest of quarter-hour flexibility, or a model trained across that date, would treat
 repeated hourly prices as real quarter-hour ones. The switch is also not the mFRR energy
 market go-live on 4 March 2025 that most people would guess.
-[Full analysis](examples/mfrr_transition/README.md).
+[Full analysis](https://github.com/Razikale365/nordic-balancing/blob/main/examples/mfrr_transition/README.md).
 
 `nordic-balancing` records that kind of change as data. Every record keeps the resolution the
 source published at, and `changes_between(start, end)` returns the dated market changes
@@ -65,13 +65,13 @@ frame = to_frame(prices).set_index(["start", "zone"])  # needs the pandas extra
 
 Keys are free: ENTSO-E from the [Transparency Platform](https://transparency.entsoe.eu/),
 Fingrid from [developer-data.fingrid.fi](https://developer-data.fingrid.fi). Coverage and
-history start per source are in [docs/FIELD_MATRIX.md](docs/FIELD_MATRIX.md) and
-[docs/SOURCE_NOTES.md](docs/SOURCE_NOTES.md).
+history start per source are in [docs/FIELD_MATRIX.md](https://github.com/Razikale365/nordic-balancing/blob/main/docs/FIELD_MATRIX.md) and
+[docs/SOURCE_NOTES.md](https://github.com/Razikale365/nordic-balancing/blob/main/docs/SOURCE_NOTES.md).
 
 ## Data contracts
 
 Every client enforces the same rules and raises `SourceError` when a source breaks them.
-The full text is in [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
+The full text is in [docs/API_CONTRACT.md](https://github.com/Razikale365/nordic-balancing/blob/main/docs/API_CONTRACT.md).
 
 - **Exact windows.** Timezone-aware `[start, end)` in, exactly the intervals starting in it out.
 - **No gap filling.** An interval the source did not return is absent; a value it has not
@@ -88,14 +88,14 @@ price, direction, resolution, missing, unpublished); it never merges series or p
 
 ## What it has found in the real data
 
-Each is reproducible with a script in [examples/](examples/).
+Each is reproducible with a script in [examples/](https://github.com/Razikale365/nordic-balancing/tree/main/examples).
 
 - **ENTSO-E is missing 7,361 zone-quarters of 2025** that eSett has, and 86 DK quarters read
-  `0.0` where eSett has a price ([entsoe_validation](examples/entsoe_validation/README.md)).
+  `0.0` where eSett has a price ([entsoe_validation](https://github.com/Razikale365/nordic-balancing/blob/main/examples/entsoe_validation/README.md)).
 - **eSett marks unsettled DK intervals with `0.0`** in every price column instead of null.
   This library returns `None` for them, as for any unpublished value.
 - **Reading "unpublished" as zero is invisible downstream.** In a battery replay on
-  [ArcticGrid](benchmarks/arcticgrid_reference/README.md), one unpublished quarter read as
+  [ArcticGrid](https://github.com/Razikale365/nordic-balancing/blob/main/benchmarks/arcticgrid_reference/README.md), one unpublished quarter read as
   0 EUR/MWh changed the dispatch but left the cash total identical.
 - **Energi Data Service reads query times as Danish local time** unless told otherwise, so a
   naive query shifts by one or two hours.
@@ -105,17 +105,17 @@ Each is reproducible with a script in [examples/](examples/).
   per quarter since 2023; the prices agree, the labels do not.
 - **A dropped row in entsoe-py** at its yearly query boundary
   ([issue #529](https://github.com/EnergieID/entsoe-py/issues/529)), reproduced offline
-  ([entsoe_py_comparison](examples/entsoe_py_comparison/REPORT.md)).
+  ([entsoe_py_comparison](https://github.com/Razikale365/nordic-balancing/blob/main/examples/entsoe_py_comparison/REPORT.md)).
 
-All observed source behaviour, with dates, is in [docs/SOURCE_NOTES.md](docs/SOURCE_NOTES.md).
+All observed source behaviour, with dates, is in [docs/SOURCE_NOTES.md](https://github.com/Razikale365/nordic-balancing/blob/main/docs/SOURCE_NOTES.md).
 
 ## Status
 
 Release candidate for 1.0 (`1.0.0rc1`) on [PyPI](https://pypi.org/project/nordic-balancing/);
 install it with `pip install --pre nordic-balancing`, since pip skips pre-releases by default. The
-public API is pinned by a snapshot test against [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and
+public API is pinned by a snapshot test against [docs/API_CONTRACT.md](https://github.com/Razikale365/nordic-balancing/blob/main/docs/API_CONTRACT.md), and
 from 1.0 it follows Semantic Versioning. Every source is checked against its live API daily. Performance, including a comparison with entsoe-py and
-esett-py on identical recorded responses, is in [benchmarks/](benchmarks/README.md).
+esett-py on identical recorded responses, is in [benchmarks/](https://github.com/Razikale365/nordic-balancing/blob/main/benchmarks/README.md).
 
 Not covered yet: activated balancing energy volumes. Out of scope: day-ahead price clients and
 mFRR bid submission, which other projects already cover.
@@ -129,11 +129,11 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy
 uv run pytest -m live      # calls the real APIs; needs the keys above
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](https://github.com/Razikale365/nordic-balancing/blob/main/CONTRIBUTING.md) and [SECURITY.md](https://github.com/Razikale365/nordic-balancing/blob/main/SECURITY.md).
 
 ## Licence
 
-The code is MIT-licensed, see [LICENSE](LICENSE).
+The code is MIT-licensed, see [LICENSE](https://github.com/Razikale365/nordic-balancing/blob/main/LICENSE).
 
 The data is not covered by that licence; it stays under each provider's own terms. Energinet,
 Svenska kraftnät and Fingrid publish under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
