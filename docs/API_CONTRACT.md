@@ -313,7 +313,8 @@ bidding zone, product, direction, and 15-minute UTC interval:
   timeouts, dropped connections and undecodable response bodies are retried within
   the same `max_retries` budget and then raise `SourceError`. Every client raises
   `ValueError` at construction for a `base_url` that is not an absolute http or https
-  URL. A query that needs HTTP after an owned client is closed raises `RuntimeError`
+  URL or that contains a user name or password; `EntsoeClient` and `FingridClient`,
+  which send an API key, also require `https`. A query that needs HTTP after an owned client is closed raises `RuntimeError`
   for Energi Data Service, eSett, Fingrid and SvK; ENTSO-E wraps it as
   `SourceError("entsoe: request failed (RuntimeError)")`. Calling `close()` leaves a
   caller-supplied HTTP client open, although Fingrid closes its own authenticated
@@ -509,6 +510,11 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   directly for the 200 most recent `mfrr_capacity_market` rows
   (`sort="start_time_utc desc"`, `limit="200"`) without an hour filter and asserts
   that every `start_time_utc` has zero minute, second, and microsecond fields.
+- **Accepted (part of the contract).** The library never logs, and never puts a key in a
+  URL or a request it logs. `httpcore` logs response headers at `DEBUG` and `httpx` logs the
+  response status line at `INFO`, so a server that echoed a key in a response header or status
+  line would expose it there; no supported provider is known to do so. A response body that
+  echoes the key is rejected (`SourceError`, no provider text).
 - **Accepted (part of the contract).** Redirects are not followed and proxy errors
   are not retried: a `3xx` raises `SourceError` naming the status
   (`tests/test_http.py::test_fingrid_client_reports_redirect_status`), and an

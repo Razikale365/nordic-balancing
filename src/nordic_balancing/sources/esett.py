@@ -202,28 +202,34 @@ def _format(value: datetime) -> str:
     return value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def _short(value: object) -> str:
+    """repr() of a provider value, cut so a huge field stays a short message."""
+    text = repr(value)
+    return text if len(text) <= 64 else text[:64] + "..."
+
+
 def _parse_time(value: object, cache: dict[str, datetime]) -> datetime:
     if type(value) is str and (cached := cache.get(value)) is not None:
         return cached
     if not isinstance(value, str):
-        raise SourceError(f"{SOURCE}: timestampUTC is missing or not a string: {value!r}")
+        raise SourceError(f"{SOURCE}: timestampUTC is missing or not a string: {_short(value)}")
     if "T" not in value and "t" not in value and " " not in value:
-        raise SourceError(f"{SOURCE}: unparseable timestampUTC {value!r}")
+        raise SourceError(f"{SOURCE}: unparseable timestampUTC {_short(value)}")
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError as exc:
-        raise SourceError(f"{SOURCE}: unparseable timestampUTC {value!r}") from exc
+        raise SourceError(f"{SOURCE}: unparseable timestampUTC {_short(value)}") from exc
     if (
         parsed.tzinfo is None
         or parsed.utcoffset() != timedelta(0)
         or not value.endswith(("Z", "z", "+00:00"))
     ):
-        raise SourceError(f"{SOURCE}: timestampUTC must be UTC: {value!r}")
+        raise SourceError(f"{SOURCE}: timestampUTC must be UTC: {_short(value)}")
     parsed = parsed.astimezone(UTC)
     if parsed.minute % 15 or parsed.second or parsed.microsecond:
-        raise SourceError(f"{SOURCE}: timestampUTC {value!r} is not on a 15-minute boundary")
+        raise SourceError(f"{SOURCE}: timestampUTC {_short(value)} is not on a 15-minute boundary")
     if parsed < _HOURLY_END and parsed.minute:
-        raise SourceError(f"{SOURCE}: hourly timestampUTC {value!r} is not on the hour")
+        raise SourceError(f"{SOURCE}: hourly timestampUTC {_short(value)} is not on the hour")
     cache[value] = parsed
     return parsed
 
@@ -244,17 +250,17 @@ def _direction(record: dict[str, Any]) -> Direction | None:
         return None
     direction = _DIRECTIONS.get(value)
     if direction is None:
-        raise SourceError(f"{SOURCE}: unknown mainDirRegPowerPerMBA {value!r}")
+        raise SourceError(f"{SOURCE}: unknown mainDirRegPowerPerMBA {_short(value)}")
     return direction
 
 
 def _parse_imbalance(record: object, times: dict[str, datetime]) -> ImbalancePrice:
     if not isinstance(record, dict):
-        raise SourceError(f"{SOURCE}: record is not a JSON object: {record!r}")
+        raise SourceError(f"{SOURCE}: record is not a JSON object: {_short(record)}")
     area = record.get("mba")
     zone = _ZONES.get(area) if isinstance(area, str) else None
     if zone is None:
-        raise SourceError(f"{SOURCE}: unknown mba {area!r}")
+        raise SourceError(f"{SOURCE}: unknown mba {_short(area)}")
     start = _parse_time(record.get("timestampUTC"), times)
     if not record.keys() >= _VALUE_KEY_SET:
         missing = [key for key in _VALUE_KEYS if key not in record]
@@ -273,7 +279,7 @@ def _parse_imbalance(record: object, times: dict[str, datetime]) -> ImbalancePri
             raise SourceError(f"{SOURCE}: single-price model violated: sales != purchase")
         direction = _DIRECTIONS.get(flow)
         if direction is None:
-            raise SourceError(f"{SOURCE}: unknown mainDirRegPowerPerMBA {flow!r}")
+            raise SourceError(f"{SOURCE}: unknown mainDirRegPowerPerMBA {_short(flow)}")
     else:
         # Same checks one column at a time, in the order that decides which error wins.
         sales = _number(record, "imblSalesPrice")

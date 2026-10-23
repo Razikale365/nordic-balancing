@@ -231,21 +231,27 @@ def _number(record: dict[str, Any], column: str) -> float | None:
     return finite_number(record.get(column), source=SOURCE, column=column)
 
 
+def _short(value: object) -> str:
+    """repr() of a provider value, cut so a huge field stays a short message."""
+    text = repr(value)
+    return text if len(text) <= 64 else text[:64] + "..."
+
+
 def _parse_time(value: object) -> datetime:
     if not isinstance(value, str):
-        raise SourceError(f"{SOURCE}: start_time_utc is missing or not a string: {value!r}")
+        raise SourceError(f"{SOURCE}: start_time_utc is missing or not a string: {_short(value)}")
     if "T" not in value and "t" not in value and " " not in value:
-        raise SourceError(f"{SOURCE}: unparseable start_time_utc {value!r}")
+        raise SourceError(f"{SOURCE}: unparseable start_time_utc {_short(value)}")
     try:
         parsed = datetime.fromisoformat(value)
     except (ValueError, OverflowError) as exc:
-        raise SourceError(f"{SOURCE}: unparseable start_time_utc {value!r}") from exc
+        raise SourceError(f"{SOURCE}: unparseable start_time_utc {_short(value)}") from exc
     if parsed.tzinfo is not None and (
         parsed.utcoffset() != timedelta(0) or not value.endswith(("Z", "z", "+00:00"))
     ):
-        raise SourceError(f"{SOURCE}: start_time_utc must be UTC: {value!r}")
+        raise SourceError(f"{SOURCE}: start_time_utc must be UTC: {_short(value)}")
     if parsed.minute or parsed.second or parsed.microsecond:
-        raise SourceError(f"{SOURCE}: start_time_utc {value!r} is not on the hour")
+        raise SourceError(f"{SOURCE}: start_time_utc {_short(value)} is not on the hour")
     return parsed.replace(tzinfo=UTC)
 
 
@@ -257,25 +263,25 @@ def _parse_record(
     seen: set[tuple[datetime, BiddingZone, Direction]],
 ) -> ReserveCapacity:
     if not isinstance(record, dict):
-        raise SourceError(f"{SOURCE}: record is not a JSON object: {record!r}")
+        raise SourceError(f"{SOURCE}: record is not a JSON object: {_short(record)}")
     actual_product = record.get("reserve_product")
     if actual_product != _DATASETS[product][1]:
-        raise SourceError(f"{SOURCE}: unexpected reserve_product {actual_product!r}")
+        raise SourceError(f"{SOURCE}: unexpected reserve_product {_short(actual_product)}")
     zone_value = record.get("bidding_zone")
     zone = BiddingZone.__members__.get(zone_value) if isinstance(zone_value, str) else None
     if zone is None or zone not in zones:
-        raise SourceError(f"{SOURCE}: not a requested bidding_zone {zone_value!r}")
+        raise SourceError(f"{SOURCE}: not a requested bidding_zone {_short(zone_value)}")
     direction_value = record.get("reserve_direction")
     direction = _DIRECTIONS.get(direction_value) if isinstance(direction_value, str) else None
     if direction is None:
-        raise SourceError(f"{SOURCE}: unknown reserve_direction {direction_value!r}")
+        raise SourceError(f"{SOURCE}: unknown reserve_direction {_short(direction_value)}")
     start = _parse_time(record.get("start_time_utc"))
     if start not in chunk:
         raise SourceError(f"{SOURCE}: start_time_utc outside requested chunk")
     if record.get("price_unit") != "EUR-MW":
-        raise SourceError(f"{SOURCE}: unexpected price_unit {record.get('price_unit')!r}")
+        raise SourceError(f"{SOURCE}: unexpected price_unit {_short(record.get('price_unit'))}")
     if record.get("volume_unit") != "MW":
-        raise SourceError(f"{SOURCE}: unexpected volume_unit {record.get('volume_unit')!r}")
+        raise SourceError(f"{SOURCE}: unexpected volume_unit {_short(record.get('volume_unit'))}")
     # A null price or volume is unpublished; a missing key means the schema changed.
     missing = [key for key in ("price", "volume") if key not in record]
     if missing:

@@ -17,6 +17,8 @@ and a provider change that breaks parsing of valid data is fixed in a bug-fix re
 
 ### Security
 - **ENTSO-E:** the API token is sent in a request header instead of the URL. Until now `httpx` logged it with every request URL at `INFO`, so an application with `logging.basicConfig(level=logging.INFO)` wrote the token to its logs. Rotate your ENTSO-E token if such logs may have been kept or shared.
+- **ENTSO-E and Fingrid:** keys are better protected from a hostile or misbehaving server and from misconfiguration. A response that echoes the key is rejected instead of being returned in `raw`; provider text that might hide the key in an encoded form is withheld from error messages; errors no longer keep the original exception (which could hold the key) as their context; non-`httpx` errors from a caller's transport are wrapped by class name; and `base_url` must use `https` and must not contain a user name or password.
+- Hostile responses are bounded: Fingrid and Energi Data Service FCR paging stop with `SourceError` once a response claims more rows than the query can return; ENTSO-E XML with a DTD is rejected; a ZIP response with too many entries is rejected before its directory is parsed; provider text in error messages has control characters escaped and long values cut.
 
 ### Added
 - Python 3.11 is supported.

@@ -12,8 +12,14 @@ wheels/
 # Coverage data
 .coverage
 
-# Local secrets (API keys)
+# Local secrets (API keys, key files)
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 
 # jpcp worker scratch
 .jpcp/

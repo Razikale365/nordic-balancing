@@ -411,8 +411,9 @@ def test_get_json_reports_a_deeply_nested_body_as_not_json(
 
 @pytest.mark.parametrize("status", [302, 204])
 def test_entsoe_status_outside_passthrough_has_no_path_slot(status: int) -> None:
-    # ENTSO-E calls _request with an empty path because the URL holds the token,
-    # so statuses raised by the shared layer (redirects, 2xx != 200) name no path.
+    # ENTSO-E calls _request with an empty path because the request carries
+    # credentials, so statuses raised by the shared layer (redirects, 2xx != 200)
+    # name no path.
     http = http_client(lambda _: httpx.Response(status))
     client = EntsoeClient("test-entsoe-token", http, max_retries=0, sleep=lambda _: None)
     start = datetime(2026, 1, 15, tzinfo=UTC)
@@ -571,6 +572,26 @@ def test_check_base_url_rejects_urls_without_http_host(base_url: str) -> None:
 )
 def test_check_base_url_accepts_absolute_http_urls(base_url: str) -> None:
     check_base_url(base_url)
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    ["https://user@example.test", "https://user:pass@example.test", "http://u@x.test"],
+)
+def test_check_base_url_rejects_credentials(base_url: str) -> None:
+    # httpx turns userinfo into a Basic credential; a base URL must not carry one.
+    with pytest.raises(ValueError, match="base_url must not contain credentials"):
+        check_base_url(base_url)
+
+
+def test_check_base_url_credentialed_requires_https() -> None:
+    check_base_url("https://example.test", credentialed=True)
+    # An uncredentialed source may still use plain http.
+    check_base_url("http://example.test")
+    with pytest.raises(
+        ValueError, match="base_url must use https because the client sends an API key"
+    ):
+        check_base_url("http://example.test", credentialed=True)
 
 
 @pytest.mark.parametrize(
@@ -870,6 +891,24 @@ def test_error_detail_is_cut_at_200_characters() -> None:
             sleep=lambda _: None,
         )
     assert str(exc_info.value) == f"test: HTTP 400 for /api: {'x' * 200}"
+
+
+def test_error_detail_escapes_control_characters() -> None:
+    # A provider newline or ANSI escape must not forge log lines or reach a terminal.
+    http = http_client(lambda _: httpx.Response(500, content=b"bad\nforged\x1b[31m"))
+    with pytest.raises(SourceError) as exc_info:
+        _request(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    message = str(exc_info.value)
+    assert "\n" not in message and "\x1b" not in message
+    assert "\\x0a" in message and "\\x1b" in message
 
 
 @pytest.mark.parametrize("source", ["esett", "eds", "fingrid", "svk"])

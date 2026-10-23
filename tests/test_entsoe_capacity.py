@@ -1608,3 +1608,31 @@ def test_entsoe_capacity_period_far_longer_than_the_request_is_rejected() -> Non
 def test_entsoe_capacity_period_of_a_delivery_day_still_parses() -> None:
     body = capacity_document(capacity_point(1)).replace("2026-10-06T01:00Z", "2026-10-06T23:00Z")
     assert capacity_prices(body)
+
+
+def test_capacity_error_keeps_no_suppressed_exception_context() -> None:
+    # A raise inside the handler would keep the original error as __context__.
+    with pytest.raises(SourceError) as caught:
+        entsoe_client(lambda _: httpx.Response(500, text="denied")).capacity_market(
+            ReserveProduct.FCR_N,
+            FCR_START,
+            FCR_START + HOUR,
+            zones=(BiddingZone.NO1,),
+        )
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+
+
+def test_instance_limit_error_keeps_no_suppressed_exception_context() -> None:
+    # The one-hour instance-limit raise also happens outside its handler.
+    http = http_client(lambda _: httpx.Response(400, content=instance_limit_ack()))
+    with (
+        EntsoeClient("test-token", http, max_workers=1) as client,
+        pytest.raises(SourceError) as caught,
+    ):
+        client.capacity_market(
+            ReserveProduct.FCR_N,
+            FCR_START,
+            FCR_START + HOUR,
+            zones=[BiddingZone.NO1],
+        )
+    assert caught.value.__context__ is None and caught.value.__cause__ is None

@@ -366,6 +366,15 @@ def test_rejects_unrequested_zone_and_out_of_window_record() -> None:
         esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(START, END)
 
 
+def test_error_messages_bound_echoed_provider_values() -> None:
+    record = {**PUBLISHED, "timestampUTC": "x" * 10_000}
+    with pytest.raises(SourceError, match="unparseable timestampUTC") as caught:
+        esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(START, END)
+    message = str(caught.value)
+    assert len(message) < 200
+    assert "timestampUTC" in message
+
+
 # --- Unsettled Danish rows ---------------------------------------------------------------------
 
 

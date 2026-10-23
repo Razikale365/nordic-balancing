@@ -452,6 +452,50 @@ def test_eds_nd_stops_paging_when_a_full_page_repeats(
     assert len(calls) == 2
 
 
+def test_eds_nd_stops_paging_when_every_row_invents_an_auction_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # AuctionType is part of the row key, so a server minting a fresh name per
+    # row defeats the repeated-page and duplicate guards: without a bound on
+    # what the window can hold the client pages and buffers forever.
+    monkeypatch.setattr(energidataservice, "PAGE_SIZE", 4)
+    base = next(
+        r
+        for r in nd_rows()
+        if r["ProductName"] == "FCR-N" and r["PriceArea"] == "DK2" and r["AuctionType"] == "Total"
+    )
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if len(calls) > 10:
+            pytest.fail("paging did not stop at the row bound")
+        offset = int(request.url.params["offset"])
+        rows = [{**base, "AuctionType": f"AT-{offset + i}"} for i in range(4)]
+        return httpx.Response(200, json={"total": len(rows), "records": rows})
+
+    with (
+        http_client(handler) as http,
+        pytest.raises(SourceError, match="auction types"),
+    ):
+        EnergiDataServiceClient(http).capacity_market(
+            ReserveProduct.FCR_N,
+            FCR_START,
+            FCR_START + HOUR,
+            zones=(BiddingZone.DK2,),
+        )
+    assert len(calls) <= 3
+
+
+def test_eds_error_messages_bound_echoed_provider_values() -> None:
+    row = {**ND_TOTAL, "HourUTC": "x" * 10_000}
+    with pytest.raises(SourceError, match="unparseable HourUTC") as caught:
+        eds_fcr([row], FCR_START, FCR_START + HOUR)
+    message = str(caught.value)
+    assert len(message) < 200
+    assert "HourUTC" in message
+
+
 # --- Arguments and client lifecycle ------------------------------------------------------------
 
 

@@ -50,6 +50,12 @@ _FCR_PRODUCTS = {
     "FCR-D upp": (ReserveProduct.FCR_D, Direction.UP),
     "FCR-D ned": (ReserveProduct.FCR_D, Direction.DOWN),
 }
+# FcrNdDK2 has one row per hour, area, product and auction type; the test
+# fixtures show "Total", "D-1 early" and "D-1 late". The
+# type is a free string rather than an enum, so a cap of eight distinct values
+# per (hour, area, product) leaves room for new auctions while a server minting
+# a fresh name per row — which defeats the duplicate guard — is rejected.
+_FCR_MAX_AUCTIONS = 8
 _FCR_ND_COLUMNS = (
     "HourUTC",
     "HourDK",
@@ -289,7 +295,7 @@ class EnergiDataServiceClient:
             area = record["PriceArea"]
             zone = BiddingZone.__members__.get(area) if isinstance(area, str) else None
             if zone is None or zone not in zone_list:
-                raise SourceError(f"{SOURCE}: unrequested PriceArea {area!r}")
+                raise SourceError(f"{SOURCE}: unrequested PriceArea {_short(area)}")
             reject_duplicate(
                 seen,
                 (hour, zone),
@@ -364,10 +370,27 @@ class EnergiDataServiceClient:
             params["end"] = _format(query_end)
         parsed: list[tuple[datetime, BiddingZone, str, dict[str, Any]]] = []
         dataset = "FcrDK1" if domestic else "FcrNdDK2"
+        # Bound what the window can hold so paging cannot run forever: FcrDK1
+        # has one row per hour; FcrNdDK2 one per (hour, area, product, auction
+        # type), where the October fall-back day can publish an hour twice
+        # (01:00 and 01:01), at most once per covered year. The API's `total`
+        # is the page's row count, not the query's, so only the bound stops a
+        # server that keeps answering full pages.
+        hours = math.ceil((query_end - query_start) / _HOUR)
+        if domestic:
+            max_rows = hours
+        else:
+            max_rows = (
+                (hours + query_end.year - query_start.year + 1)
+                * len(zones)
+                * len(names)
+                * _FCR_MAX_AUCTIONS
+            )
         # Unlike the other paths, rows are buffered before grouping, so the
         # duplicate check runs while paging: a server ignoring `offset` then
         # raises on page two instead of requesting and buffering forever.
         seen_rows: set[tuple[datetime, BiddingZone, str, str]] = set()
+        auctions_per_group: dict[tuple[datetime, BiddingZone, str], set[str]] = {}
         # Rows repeat the same HourUTC and AuctionType strings many times over.
         times: dict[str, datetime] = {}
         auction_keys: dict[str, str] = {}
@@ -402,20 +425,34 @@ class EnergiDataServiceClient:
             area = "DK1" if domestic else row["PriceArea"]
             zone = BiddingZone.__members__.get(area) if isinstance(area, str) else None
             if zone is None or zone not in zones:
-                raise SourceError(f"{SOURCE}: unrequested PriceArea {area!r}")
+                raise SourceError(f"{SOURCE}: unrequested PriceArea {_short(area)}")
             name = "FCR" if domestic else row["ProductName"]
             if not domestic and (not isinstance(name, str) or name not in _FCR_PRODUCTS):
-                raise SourceError(f"{SOURCE}: unknown ProductName {name!r}")
+                raise SourceError(f"{SOURCE}: unknown ProductName {_short(name)}")
             if not domestic and _FCR_PRODUCTS[name][0] is not product:
-                raise SourceError(f"{SOURCE}: unrequested ProductName {name!r}")
+                raise SourceError(f"{SOURCE}: unrequested ProductName {_short(name)}")
+            auction = auction_key(row.get("AuctionType"))
             reject_duplicate(
                 seen_rows,
-                (hour, zone, name, auction_key(row.get("AuctionType"))),
+                (hour, zone, name, auction),
                 source=SOURCE,
                 detail=f"record for {hour.isoformat()} {zone} {name}",
             )
+            if not domestic:
+                group = auctions_per_group.setdefault((hour, zone, name), set())
+                group.add(auction)
+                if len(group) > _FCR_MAX_AUCTIONS:
+                    raise SourceError(
+                        f"{SOURCE}: more than {_FCR_MAX_AUCTIONS} auction types "
+                        f"for {hour.isoformat()} {zone} {name}"
+                    )
             for column in numeric:
                 _number(row, column)
+            if len(parsed) >= max_rows:
+                raise SourceError(
+                    f"{SOURCE}: {dataset} returned more than {max_rows} rows "
+                    "for the requested window"
+                )
             parsed.append((hour, zone, name, row))
         # Days with a 01:01 row: shift that day's 01:00 rows to 00:00 and 01:01 to 01:00,
         # but only when the 00:00 hour they stand in for is really missing.
@@ -429,7 +466,8 @@ class EnergiDataServiceClient:
             elif hour - _HOUR in repeated:
                 if row["HourDK"] != f"{hour:%Y-%m-%d}T02:00:00":
                     raise SourceError(
-                        f"{SOURCE}: HourDK {row['HourDK']!r} for HourUTC 01:00 on a day with 01:01"
+                        f"{SOURCE}: HourDK {_short(row['HourDK'])} for HourUTC 01:00 "
+                        "on a day with 01:01"
                     )
                 hour -= _HOUR
             groups.setdefault((hour, zone, name), []).append(row)
@@ -455,7 +493,7 @@ class EnergiDataServiceClient:
                         auctions,
                         auction_key(r["AuctionType"]),
                         source=SOURCE,
-                        detail=f"{r['AuctionType']} for {hour} {zone} {name}",
+                        detail=f"{_short(r['AuctionType'])} for {hour} {zone} {name}",
                     )
                     raw["auctions"].append(r)
             volume = _number(row, "FCRdomestic_MW" if domestic else "PurchasedVolumeLocal")
@@ -533,23 +571,29 @@ def _format(value: datetime) -> str:
     return value.strftime("%Y-%m-%dT%H:%M")
 
 
+def _short(value: object) -> str:
+    """repr() of a provider value, cut so a huge field stays a short message."""
+    text = repr(value)
+    return text if len(text) <= 64 else text[:64] + "..."
+
+
 def _parse_time(value: object, *, column: str = "TimeUTC") -> datetime:
     if not isinstance(value, str):
-        raise SourceError(f"{SOURCE}: {column} is missing or not a string: {value!r}")
+        raise SourceError(f"{SOURCE}: {column} is missing or not a string: {_short(value)}")
     if "T" not in value and "t" not in value and " " not in value:
-        raise SourceError(f"{SOURCE}: unparseable {column} {value!r}")
+        raise SourceError(f"{SOURCE}: unparseable {column} {_short(value)}")
     try:
         parsed = datetime.fromisoformat(value)
     except (ValueError, OverflowError) as exc:
-        raise SourceError(f"{SOURCE}: unparseable {column} {value!r}") from exc
+        raise SourceError(f"{SOURCE}: unparseable {column} {_short(value)}") from exc
     if parsed.tzinfo is not None and (
         parsed.utcoffset() != timedelta(0) or not value.endswith(("Z", "z", "+00:00"))
     ):
-        raise SourceError(f"{SOURCE}: {column} must be UTC: {value!r}")
+        raise SourceError(f"{SOURCE}: {column} must be UTC: {_short(value)}")
     parsed = parsed.replace(tzinfo=UTC)
     # Check every field: int(timestamp()) would drop fractional seconds (00:00:00.5).
     if parsed.minute % 15 or parsed.second or parsed.microsecond:
-        raise SourceError(f"{SOURCE}: {column} {value!r} is not on a 15-minute boundary")
+        raise SourceError(f"{SOURCE}: {column} {_short(value)} is not on a 15-minute boundary")
     return parsed
 
 
@@ -596,7 +640,7 @@ def _direction(record: dict[str, Any]) -> Direction | None:
         return None
     # Exact match: int() would silently truncate a fractional value (0.6 -> 0).
     if value not in (-1, 0, 1):
-        raise SourceError(f"{SOURCE}: unknown DominatingDirection {value!r}")
+        raise SourceError(f"{SOURCE}: unknown DominatingDirection {_short(value)}")
     return Direction(int(value))
 
 
@@ -608,7 +652,7 @@ def _parse_imbalance(record: object) -> ImbalancePrice:
         raise SourceError(f"{SOURCE}: missing imbalance columns {sorted(missing)}")
     area = record.get("PriceArea")
     if not isinstance(area, str) or area not in _DK:
-        raise SourceError(f"{SOURCE}: unknown PriceArea {area!r}")
+        raise SourceError(f"{SOURCE}: unknown PriceArea {_short(area)}")
     zone = BiddingZone[area]
     # start comes from _parse_time (a plain UTC datetime) and record was decoded for
     # this call alone, so it becomes the price's own raw without a copy.

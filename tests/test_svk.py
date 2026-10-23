@@ -421,6 +421,17 @@ def test_rejects_malformed_records(override: dict[str, Any], message: str) -> No
         )
 
 
+def test_error_messages_bound_echoed_provider_values() -> None:
+    record = {**RECORD, "start_time_utc": "x" * 10_000}
+    with pytest.raises(SourceError, match="unparseable start_time_utc") as caught:
+        svk_client(lambda _: httpx.Response(200, json=svk_search([record]))).capacity_market(
+            ReserveProduct.MFRR, START, END, [BiddingZone.SE3]
+        )
+    message = str(caught.value)
+    assert len(message) < 200
+    assert "start_time_utc" in message
+
+
 @pytest.mark.parametrize("key", ["price", "volume"])
 def test_rejects_a_record_missing_price_or_volume(key: str) -> None:
     # A null price or volume is unpublished; a missing key is a schema change.

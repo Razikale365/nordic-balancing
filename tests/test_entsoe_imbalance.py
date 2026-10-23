@@ -541,6 +541,21 @@ def test_rejects_non_printable_or_internal_whitespace_keys(
     assert key not in str(caught.value)
 
 
+@pytest.mark.parametrize(
+    ("base_url", "match"),
+    [
+        ("http://example.test/api", "must use https"),
+        ("https://user@example.test/api", "must not contain credentials"),
+        ("https://user:pass@example.test/api", "must not contain credentials"),
+    ],
+)
+def test_entsoe_client_rejects_an_unsafe_base_url(base_url: str, match: str) -> None:
+    # The client sends its key with every request: credentials may only go to
+    # an https URL that is free of userinfo.
+    with pytest.raises(ValueError, match=match):
+        EntsoeClient(ENTSOE_KEY, base_url=base_url)
+
+
 # --- Token redaction and logging ---------------------------------------------------------------
 
 
@@ -708,6 +723,126 @@ def test_source_error_redacts_token_echoed_in_remote_fields() -> None:
     assert "[REDACTED_SECRET]" in str(caught.value)
 
 
+@pytest.mark.parametrize(
+    "encode",
+    [
+        pytest.param(lambda key: key.replace("/", "\\/"), id="json_slash"),
+        pytest.param(lambda key: "".join(f"\\u{ord(c):04x}" for c in key), id="json_unicode"),
+        pytest.param(lambda key: quote(quote(key, safe=""), safe=""), id="double_percent"),
+        pytest.param(lambda key: "".join(f"&#x{ord(c):x};" for c in key), id="xml_charref"),
+        pytest.param(lambda key: "".join(f"&#{ord(c)};" for c in key), id="xml_decimal_charref"),
+    ],
+)
+def test_withholds_provider_text_echoing_the_token_in_an_encoding(
+    encode: Callable[[str], str],
+) -> None:
+    key = "SYNTHETIC/audit+key=123"
+    echoed = encode(key)
+    assert key not in echoed
+    http = http_client(lambda _: httpx.Response(401, text=f'{{"error":"{echoed}"}}'))
+    with pytest.raises(SourceError, match="provider text withheld") as caught:
+        EntsoeClient(key, http, max_retries=0).imbalance_prices(START, END, [BiddingZone.SE3])
+    message = "".join(traceback.format_exception(caught.value))
+    assert key not in message and echoed not in message
+
+
+def test_withholds_provider_text_echoing_the_token_as_xml_entities() -> None:
+    key = "SYNTHETIC&audit<key>123"
+    echoed = key.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    http = http_client(lambda _: httpx.Response(401, text=f"<error>{echoed}</error>"))
+    with pytest.raises(SourceError, match="provider text withheld") as caught:
+        EntsoeClient(key, http, max_retries=0).imbalance_prices(START, END, [BiddingZone.SE3])
+    message = "".join(traceback.format_exception(caught.value))
+    assert key not in message and echoed not in message
+
+
+def test_withholds_provider_text_matching_only_the_token_skeleton() -> None:
+    # An alphanumeric-only skeleton catches a spelling broken up by punctuation.
+    key = "syntheticauditkey1234"
+    echoed = "s.y.n.t.h.e.t.i.c-a.u.d.i.t-k.e.y.1.2.3.4"
+    http = http_client(lambda _: httpx.Response(401, text=f"denied: {echoed}"))
+    with pytest.raises(SourceError, match="provider text withheld") as caught:
+        EntsoeClient(key, http, max_retries=0).imbalance_prices(START, END, [BiddingZone.SE3])
+    assert echoed not in "".join(traceback.format_exception(caught.value))
+
+
+def test_short_skeleton_keys_skip_the_skeleton_check() -> None:
+    # ENTSOE_KEY's skeleton is 15 characters: below the floor the check is
+    # skipped and the spaced spelling stays provider text.
+    echoed = " ".join(ENTSOE_KEY)
+    with pytest.raises(SourceError) as caught:
+        entsoe_client(lambda _: httpx.Response(401, text=f"denied: {echoed}")).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    assert echoed in str(caught.value)
+
+
+@pytest.mark.parametrize("archive", [False, True])
+@pytest.mark.parametrize(
+    "echoed",
+    [
+        pytest.param(lambda key: key, id="raw"),
+        pytest.param(lambda key: key.lower(), id="lowercase"),
+        pytest.param(lambda key: key.upper(), id="uppercase"),
+        pytest.param(lambda key: quote(key, safe=""), id="percent"),
+        pytest.param(lambda key: quote(key, safe="").lower(), id="percent_lower_hex"),
+    ],
+)
+def test_a_document_echoing_the_token_is_rejected(
+    archive: bool, echoed: Callable[[str], str]
+) -> None:
+    key = "SyNtHeTiC/audit+Key=123"
+    body = ONE_HOUR.replace(
+        "</Point>",
+        f"<flowDirection.direction>{echoed(key)}</flowDirection.direction></Point>",
+    )
+    content = zipped(body) if archive else body.encode()
+    http = http_client(lambda _: httpx.Response(200, content=content))
+    with pytest.raises(SourceError, match="response contains the API token") as caught:
+        EntsoeClient(key, http).imbalance_prices(START, END, [BiddingZone.SE3])
+    assert key not in "".join(traceback.format_exception(caught.value))
+
+
+def test_http_error_keeps_no_suppressed_exception_context() -> None:
+    # A raise inside the handler would keep the original error as __context__.
+    with pytest.raises(SourceError) as caught:
+        entsoe_client(lambda _: httpx.Response(500, text="denied")).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+
+
+def test_transport_error_keeps_no_suppressed_exception_context() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(ENTSOE_KEY, request=request)
+
+    with pytest.raises(SourceError) as caught:
+        entsoe_client(handler).imbalance_prices(START, END, [BiddingZone.SE3])
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+
+
+def test_escapes_control_characters_in_acknowledgement_text() -> None:
+    body = entsoe_acknowledgement("bad\nforged log line\ttabbed")
+    with pytest.raises(SourceError) as caught:
+        entsoe_client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    message = str(caught.value)
+    assert "\n" not in message and "\t" not in message
+    assert "\\x0a" in message and "\\x09" in message
+
+
+def test_escapes_ansi_sequences_in_http_error_body() -> None:
+    body = "\x1b[2J\x1b[31mterminal reset\x1b[0m"
+    with pytest.raises(SourceError) as caught:
+        entsoe_client(lambda _: httpx.Response(500, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    message = str(caught.value)
+    assert "\x1b" not in message
+    assert "\\x1b" in message
+
+
 # --- Retries, transport errors and API key handling --------------------------------------------
 
 
@@ -742,7 +877,7 @@ def test_retry_budget_is_bounded_and_reports_source() -> None:
     assert sleeps == [3.0] * 3
 
 
-# The request URL carries the token, so the HTTP error names no path at all.
+# The request carries credentials, so the HTTP error names no path at all.
 def test_http_error_message_has_no_path_slot() -> None:
     with pytest.raises(SourceError) as caught:
         entsoe_client(lambda _: httpx.Response(404, text="oops")).imbalance_prices(
@@ -2211,6 +2346,63 @@ def test_zip_member_cap_is_ten_thousand() -> None:
     archive = zipped(*[b""] * 10_001)
     with pytest.raises(SourceError, match="more than 10000 members"):
         entsoe_module._members(archive)
+
+
+def test_zip_member_cap_counts_signatures_before_infolist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # PK\x01\x02 opens every central-directory record; counting them rejects an
+    # oversized directory before infolist() parses all of it.
+    def no_infolist(self: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+        raise AssertionError("infolist parsed the central directory")
+
+    monkeypatch.setattr(zipfile.ZipFile, "infolist", no_infolist)
+    archive = zipped(*[b""] * 10_001)
+    with pytest.raises(SourceError, match="more than 10000 members"):
+        entsoe_module._members(archive)
+
+
+@pytest.mark.parametrize("archive", [False, True])
+@pytest.mark.parametrize(
+    "doctype",
+    [
+        pytest.param('<!DOCTYPE x [<!ENTITY u "' + "U" * 1000 + '">]>', id="entity_expansion"),
+        pytest.param(
+            '<!DOCTYPE x [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>',
+            id="external_entity",
+        ),
+        pytest.param("<!DOCTYPE x>", id="doctype_only"),
+    ],
+)
+def test_documents_with_a_dtd_are_rejected(archive: bool, doctype: str) -> None:
+    body = doctype + ONE_HOUR
+    content = zipped(body) if archive else body.encode()
+    with pytest.raises(SourceError, match="document has a DTD"):
+        entsoe_client(lambda _: httpx.Response(200, content=content)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize("archive", [False, True])
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-16-le", "utf-16-be"])
+def test_documents_with_a_dtd_are_rejected_in_any_encoding(archive: bool, encoding: str) -> None:
+    # The ASCII bytes of "<!DOCTYPE" never appear in UTF-16, which the parser also
+    # reads (it does not read UTF-32 at all).
+    body = ('<!DOCTYPE x [<!ENTITY u "' + "U" * 1000 + '">]>' + ONE_HOUR).encode(encoding)
+    content = zipped(body) if archive else body
+    with pytest.raises(SourceError, match="document has a DTD"):
+        entsoe_client(lambda _: httpx.Response(200, content=content)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+def test_a_huge_provider_value_is_cut_in_the_message() -> None:
+    body = f"<{'x' * 1_000_000}/>"
+    with pytest.raises(SourceError, match="unknown root element") as caught:
+        entsoe_client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+    assert len(str(caught.value)) < 200
 
 
 def test_error_status_carrying_a_data_document_is_rejected() -> None:

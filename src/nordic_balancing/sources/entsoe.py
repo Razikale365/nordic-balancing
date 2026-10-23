@@ -14,6 +14,7 @@ strict: any deviation from these assumptions raises ``SourceError`` instead of
 passing silently.
 """
 
+import html
 import io
 import lzma
 import math
@@ -29,11 +30,13 @@ from datetime import UTC, datetime, timedelta
 from operator import attrgetter
 from types import TracebackType
 from typing import Any, Self
+from urllib.parse import quote, unquote
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 import httpx
 
-from nordic_balancing._http import _LIMIT, _request, check_base_url
+from nordic_balancing._http import _LIMIT, _escape, _request, check_base_url
 from nordic_balancing.errors import NordicBalancingError, SourceError
 from nordic_balancing.models import (
     INTERVAL,
@@ -73,6 +76,10 @@ _BALANCING_NS = re.compile(r"urn:iec62325\.351:tc57wg16:451-6:balancingdocument:
 # The xs:positiveInteger and xs:decimal lexical forms, ASCII digits only.
 _POSITION_TEXT = re.compile(r"\+?[0-9]+")
 _DECIMAL_TEXT = re.compile(r"[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)")
+# Provider text echoed into an error body may carry the token behind escapes
+# the token pattern does not match; _decoded undoes them for the check.
+_JSON_ESCAPE = re.compile(r"\\u[0-9a-fA-F]{4}|\\[\\/]")
+_NON_ALNUM = re.compile(r"[^a-z0-9]+")
 # The timeInterval lexical form: extended layout with a T separator and the Z
 # or +00:00 UTC designator (real documents send HH:MM with no seconds). The
 # other zero-offset spellings fromisoformat accepts (-00:00, +00, +0000, offset
@@ -146,7 +153,7 @@ class EntsoeClient:
         if any(not "!" <= character <= "~" for character in key):
             raise ValueError("api_key must contain only printable ASCII without whitespace")
         self._api_key = key
-        check_base_url(base_url)
+        check_base_url(base_url, credentialed=True)
         self._owns_http = http is None
         # Observed latency reached 42 s for a single request.
         self._http = http if http is not None else httpx.Client(timeout=120.0)
@@ -195,6 +202,7 @@ class EntsoeClient:
             raise ValueError("zones must not be empty")
         jobs = _jobs(start_utc, end_utc, zone_list)
         workers = min(self._max_workers, len(jobs))
+        detail: str | None = None
         try:
             if workers == 1:
                 parts = [self._fetch(*job) for job in jobs]
@@ -206,7 +214,11 @@ class EntsoeClient:
                 finally:
                     pool.shutdown(cancel_futures=True)
         except SourceError as exc:
-            raise SourceError(_redact(str(exc), self._api_key)) from None
+            # The sanitized error is raised after the handler: inside it the new
+            # error would keep the original as __context__, provider text and all.
+            detail = _redact(str(exc), self._api_key)
+        if detail is not None:
+            raise SourceError(detail)
         # Each job covers one zone and a disjoint chunk; overlapping keys
         # indicate invalid chunk results, even when the prices agree.
         collected: dict[tuple[BiddingZone, datetime], ImbalancePrice] = {}
@@ -273,6 +285,8 @@ class EntsoeClient:
             raise ValueError("zones must not be empty")
         jobs = _jobs(start_utc, end_utc, zone_list, max_chunk=_CAPACITY_CHUNK)
         pool = ThreadPoolExecutor(min(self._max_workers, len(jobs)))
+        collected: dict[tuple[BiddingZone, datetime, Direction], ReserveCapacity] = {}
+        detail: str | None = None
         try:
             try:
                 parts = list(
@@ -280,7 +294,6 @@ class EntsoeClient:
                 )
             finally:
                 pool.shutdown(cancel_futures=True)
-            collected: dict[tuple[BiddingZone, datetime, Direction], ReserveCapacity] = {}
             for part in parts:
                 for record in part:
                     key = (record.zone, record.start, record.direction)
@@ -298,12 +311,16 @@ class EntsoeClient:
                             f"{record.zone} at {record.start} ({record.direction.name})"
                         )
                     collected.setdefault(key, record)
-            return sorted(
-                (r for r in collected.values() if start_utc <= r.start < end_utc),
-                key=attrgetter("start", "zone", "direction"),
-            )
         except SourceError as exc:
-            raise SourceError(_redact(str(exc), self._api_key)) from None
+            # The sanitized error is raised after the handler: inside it the new
+            # error would keep the original as __context__, provider text and all.
+            detail = _redact(str(exc), self._api_key)
+        if detail is not None:
+            raise SourceError(detail)
+        return sorted(
+            (r for r in collected.values() if start_utc <= r.start < end_utc),
+            key=attrgetter("start", "zone", "direction"),
+        )
 
     def _fetch_capacity(
         self,
@@ -315,6 +332,7 @@ class EntsoeClient:
     ) -> list[ReserveCapacity]:
         records: list[ReserveCapacity] = []
         process = "A47" if product is ReserveProduct.MFRR else "A52"
+        message: str | None = None
         try:
             points = [
                 point
@@ -334,13 +352,18 @@ class EntsoeClient:
         except _CapacityInstanceLimit as exc:
             hours = (chunk_end - chunk_start) // _HOUR
             if hours <= 1:
-                raise SourceError(str(exc)) from None
-            # Both bounds are whole hours. Round midpoint ties upward, keeping
-            # both halves nonempty and reusing per-response whole-day clipping.
-            midpoint = chunk_start + ((hours + 1) // 2) * _HOUR
-            return self._fetch_capacity(
-                zone, chunk_start, midpoint, product=product
-            ) + self._fetch_capacity(zone, midpoint, chunk_end, product=product)
+                # The message is already redacted; it is raised after the
+                # handler so the new error keeps no __context__.
+                message = str(exc)
+            else:
+                # Both bounds are whole hours. Round midpoint ties upward, keeping
+                # both halves nonempty and reusing per-response whole-day clipping.
+                midpoint = chunk_start + ((hours + 1) // 2) * _HOUR
+                return self._fetch_capacity(
+                    zone, chunk_start, midpoint, product=product
+                ) + self._fetch_capacity(zone, midpoint, chunk_end, product=product)
+        if message is not None:
+            raise SourceError(message)
         if product is ReserveProduct.MFRR:
             # Validate all members before filtering: a placeholder may precede
             # its real counterpart, even in a different member of this response.
@@ -423,6 +446,7 @@ class EntsoeClient:
                     ("Type_MarketAgreement.Type", "A01"),
                 ]
             )
+        failure: str | None = None
         try:
             response = _request(
                 self._http,
@@ -445,9 +469,11 @@ class EntsoeClient:
             # A declared class name cannot, so it is kept for diagnosis; a dynamically
             # built name that is not a short identifier is dropped.
             name = type(exc).__name__
-            if not (name.isidentifier() and len(name) <= 64):
-                name = "Exception"
-            raise SourceError(f"{SOURCE}: request failed ({name})") from None
+            failure = name if name.isidentifier() and len(name) <= 64 else "Exception"
+        if failure is not None:
+            # Raised after the handler: inside it the new error would keep the
+            # original as __context__, request URL and token and all.
+            raise SourceError(f"{SOURCE}: request failed ({failure})")
         if response.is_error and response.status_code not in _PASSTHROUGH:
             detail = _redact(response.text, self._api_key)
             message = f"{SOURCE}: HTTP {response.status_code}"
@@ -563,14 +589,25 @@ def _format(value: datetime) -> str:
     return value.strftime("%Y%m%d%H%M")
 
 
+def _short(value: object) -> str:
+    """repr() of a provider value, cut so a huge field stays a short message."""
+    text = repr(value)
+    return text if len(text) <= 64 else text[:64] + "..."
+
+
 def _redact(text: str, api_key: str) -> str:
     # An error body echoing the request URL or query carries the token as httpx
     # sent it — percent-encoded — so the raw form alone does not cover it. Each
     # character may appear raw or as its escape in either hex case, so any mix
     # of encoders (slash left unescaped, lowercase hex) is matched too.
     if not api_key:
-        return text
-    return re.sub(_token_pattern(api_key), "[REDACTED_SECRET]", text)
+        return _escape(text)
+    redacted = re.sub(_token_pattern(api_key), "[REDACTED_SECRET]", text)
+    if _hides_token(redacted, api_key):
+        # An encoding the pattern does not match is still the key; none of the
+        # provider text is safe to echo.
+        return "provider text withheld: it may contain the API token"
+    return _escape(redacted)
 
 
 def _token_pattern(api_key: str) -> str:
@@ -580,6 +617,49 @@ def _token_pattern(api_key: str) -> str:
         escaped = "%" + "".join(f"[{d.upper()}{d.lower()}]" for d in f"{ord(char):02x}")
         parts.append(f"(?:{escaped}|{re.escape(char)})")
     return "".join(parts)
+
+
+def _hides_token(text: str, api_key: str) -> bool:
+    """Whether ``text`` still holds the token in an encoding ``_token_pattern`` misses."""
+    decoded = _decoded(text)
+    key = api_key.lower()
+    if key in decoded:
+        return True
+    # Only the alphanumeric characters are compared, so a spelling like
+    # "s.e.c.r.e.t" is caught too; under 16 of them a match could be a
+    # coincidence, so the skeleton test is skipped for short keys.
+    skeleton = _NON_ALNUM.sub("", key)
+    return len(skeleton) >= 16 and skeleton in _NON_ALNUM.sub("", decoded)
+
+
+def _decoded(text: str) -> str:
+    # Up to three rounds, each undoing one layer of every escape a structured
+    # error body can wrap the token in: percent-encoding, JSON \/ and \uXXXX
+    # escapes and XML character and entity references.
+    for _ in range(3):
+        decoded = html.unescape(_JSON_ESCAPE.sub(_json_escape, unquote(text)))
+        if decoded == text:
+            break
+        text = decoded
+    return text.lower()
+
+
+def _json_escape(match: re.Match[str]) -> str:
+    escape = match.group(0)
+    if escape == r"\/":
+        return "/"
+    if escape == "\\\\":
+        return "\\"
+    return chr(int(escape[2:], 16))
+
+
+def _echoes_token(body: bytes, api_key: str) -> bool:
+    # A bytes find per form keeps it cheap on the data path: the raw key, its
+    # case folds and its percent-encoding.
+    key = api_key.encode()
+    encoded = quote(key, safe="").encode()
+    forms = (key, key.lower(), key.upper(), encoded, encoded.lower())
+    return any(form in body for form in forms)
 
 
 def _local(tag: str) -> str:
@@ -631,30 +711,69 @@ def _members(body: bytes) -> list[bytes]:
     if len(body) > _LIMIT:
         raise SourceError(f"{SOURCE}: response exceeds {_LIMIT} bytes")
     if not body.startswith(b"PK"):
-        return [body]
+        members = [body]
+    else:
+        # Every central-directory record starts with PK\x01\x02: counting them
+        # rejects an oversized directory before it is parsed in full.
+        if body.count(b"PK\x01\x02") > _MAX_MEMBERS:
+            raise SourceError(f"{SOURCE}: ZIP archive has more than {_MAX_MEMBERS} members")
+        try:
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                entries = archive.infolist()
+                # Directory entries count too: each is still parsed from the central directory.
+                if len(entries) > _MAX_MEMBERS:
+                    raise SourceError(f"{SOURCE}: ZIP archive has more than {_MAX_MEMBERS} members")
+                infos = [info for info in entries if not info.is_dir()]
+                if not any(info.filename.lower().endswith(".xml") for info in infos):
+                    raise SourceError(f"{SOURCE}: ZIP archive has no XML member")
+                if sum(info.file_size for info in infos) > _LIMIT:
+                    raise SourceError(f"{SOURCE}: ZIP members exceed {_LIMIT} bytes uncompressed")
+                members = [archive.read(info) for info in infos]
+        except (
+            zipfile.BadZipFile,
+            RuntimeError,
+            zlib.error,
+            EOFError,
+            NotImplementedError,
+            ValueError,
+            OSError,
+            lzma.LZMAError,
+        ) as exc:
+            raise SourceError(f"{SOURCE}: response is not a valid ZIP archive") from exc
+    for member in members:
+        # An ENTSO-E document never carries a DTD: one can only declare entities
+        # for expansion or external references.
+        if _declares_dtd(member):
+            raise SourceError(f"{SOURCE}: document has a DTD")
+    return members
+
+
+class _DoctypeFound(Exception):
+    pass
+
+
+def _declares_dtd(member: bytes) -> bool:
+    if b"<!DOCTYPE" in member or b"<!ENTITY" in member:
+        return True
+    if b"\x00" not in member:
+        return False
+    # UTF-16 or UTF-32, which the parser also accepts: every ASCII character carries
+    # a zero byte, so the byte check above cannot see the declaration. These are
+    # rare, so the parser itself is asked, stopping at the first declaration.
+    parser = expat.ParserCreate()
+
+    def found(*_: object) -> None:
+        raise _DoctypeFound
+
+    parser.StartDoctypeDeclHandler = found
+    parser.EntityDeclHandler = found
     try:
-        with zipfile.ZipFile(io.BytesIO(body)) as archive:
-            entries = archive.infolist()
-            # Directory entries count too: each is still parsed from the central directory.
-            if len(entries) > _MAX_MEMBERS:
-                raise SourceError(f"{SOURCE}: ZIP archive has more than {_MAX_MEMBERS} members")
-            members = [info for info in entries if not info.is_dir()]
-            if not any(info.filename.lower().endswith(".xml") for info in members):
-                raise SourceError(f"{SOURCE}: ZIP archive has no XML member")
-            if sum(info.file_size for info in members) > _LIMIT:
-                raise SourceError(f"{SOURCE}: ZIP members exceed {_LIMIT} bytes uncompressed")
-            return [archive.read(info) for info in members]
-    except (
-        zipfile.BadZipFile,
-        RuntimeError,
-        zlib.error,
-        EOFError,
-        NotImplementedError,
-        ValueError,
-        OSError,
-        lzma.LZMAError,
-    ) as exc:
-        raise SourceError(f"{SOURCE}: response is not a valid ZIP archive") from exc
+        parser.Parse(member, True)
+    except _DoctypeFound:
+        return True
+    except expat.ExpatError:
+        return False
+    return False
 
 
 def _is_acknowledgement(member: bytes) -> bool:
@@ -684,23 +803,25 @@ def _points(
         _acknowledgement(root, api_key, capacity=capacity)
         return []
     if name != "Balancing_MarketDocument":
-        raise SourceError(f"{SOURCE}: unknown root element {name!r}")
+        raise SourceError(f"{SOURCE}: unknown root element {_short(name)}")
     namespace = root.tag[1:].partition("}")[0] if root.tag.startswith("{") else ""
     if _BALANCING_NS.fullmatch(namespace) is None:
-        raise SourceError(f"{SOURCE}: unsupported namespace {namespace!r}")
+        raise SourceError(f"{SOURCE}: unsupported namespace {_short(namespace)}")
     groups = _group(root)
     document_type = _text(root, "type", groups)
     if document_type != ("A81" if capacity else "A85"):
         # Other balancing documents (A86 imbalance volumes, ...) carry no prices;
         # parsing one would yield only unpublished intervals.
-        raise SourceError(f"{SOURCE}: unexpected document type {document_type!r}")
+        raise SourceError(f"{SOURCE}: unexpected document type {_short(document_type)}")
     if capacity and _text(root, "process.processType", groups) != capacity_process:
         raise SourceError(f"{SOURCE}: capacity process.processType must be {capacity_process}")
     for element in _AREA_ELEMENTS:
         area = _code(root, element, groups)
         if area is not None and area != eic:
-            raise SourceError(f"{SOURCE}: {element} {area!r} does not match requested {eic!r}")
-    return [
+            raise SourceError(
+                f"{SOURCE}: {element} {_short(area)} does not match requested {_short(eic)}"
+            )
+    points = [
         point
         for series in _children(root, "TimeSeries", groups)
         for point in _series_points(
@@ -712,6 +833,12 @@ def _points(
             capacity_process=capacity_process,
         )
     ]
+    # A document echoing the credential would carry it into raw and pickles.
+    # Checked only once the document read as an answer: one failing an earlier
+    # check reports what failed, redacted, like any other response.
+    if api_key and _echoes_token(member, api_key):
+        raise SourceError(f"{SOURCE}: response contains the API token")
+    return points
 
 
 def _acknowledgement(root: ElementTree.Element, api_key: str, *, capacity: bool = False) -> None:
@@ -769,13 +896,15 @@ def _series_points(
     currency = _only_child(series, "currency_Unit.name", groups)
     if currency is not None and (currency.text or "").strip() != "EUR":
         raise SourceError(
-            f"{SOURCE}: unsupported currency_Unit.name {(currency.text or '').strip()!r}"
+            f"{SOURCE}: unsupported currency_Unit.name {_short((currency.text or '').strip())}"
         )
     for element in _PRICE_UNIT_ELEMENTS:
         unit = _only_child(series, element, groups)
         expected_unit = "MAW" if capacity else "MWH"
         if unit is not None and (unit.text or "").strip() != expected_unit:
-            raise SourceError(f"{SOURCE}: unsupported {element} {(unit.text or '').strip()!r}")
+            raise SourceError(
+                f"{SOURCE}: unsupported {element} {_short((unit.text or '').strip())}"
+            )
     curve_type = _text(series, "curveType", groups)
     # A02, A04 and A05 have different semantics (instants or variable-size
     # blocks, not a fixed-resolution series) and must not be guessed.
@@ -819,7 +948,7 @@ def _period_points(
     if capacity and resolution != "PT60M":
         raise SourceError(f"{SOURCE}: capacity resolution must be PT60M")
     if resolution not in _RESOLUTIONS:
-        raise SourceError(f"{SOURCE}: unsupported resolution {resolution!r}")
+        raise SourceError(f"{SOURCE}: unsupported resolution {_short(resolution)}")
     if period_end <= period_start:
         raise SourceError(f"{SOURCE}: Period end is not after its start")
     step = _RESOLUTIONS[resolution]
@@ -961,7 +1090,9 @@ def _financial_price(element: ElementTree.Element) -> dict[str, float | str | No
 
 def _flow_direction(first: str | None, second: str | None) -> str | None:
     if first is not None and second is not None and first != second:
-        raise SourceError(f"{SOURCE}: conflicting flowDirection.direction {first!r} and {second!r}")
+        raise SourceError(
+            f"{SOURCE}: conflicting flowDirection.direction {_short(first)} and {_short(second)}"
+        )
     return first if first is not None else second
 
 
@@ -990,12 +1121,12 @@ def _reject_repeated_categories(
 
 def _position(text: str) -> int:
     if _POSITION_TEXT.fullmatch(text) is None:
-        raise SourceError(f"{SOURCE}: unparseable position {text!r}")
+        raise SourceError(f"{SOURCE}: unparseable position {_short(text)}")
     try:
         position = int(text, 10)
     except ValueError as exc:
         # A digit string past the interpreter's conversion limit still fails here.
-        raise SourceError(f"{SOURCE}: unparseable position {text!r}") from exc
+        raise SourceError(f"{SOURCE}: unparseable position {_short(text)}") from exc
     if position < 1:
         raise SourceError(f"{SOURCE}: position {position} is not 1-based")
     return position
@@ -1005,11 +1136,11 @@ def _amount(text: str, name: str) -> float:
     try:
         amount = float(text)
     except ValueError as exc:
-        raise SourceError(f"{SOURCE}: unparseable {name} {text!r}") from exc
+        raise SourceError(f"{SOURCE}: unparseable {name} {_short(text)}") from exc
     if not math.isfinite(amount):
-        raise SourceError(f"{SOURCE}: {name} is not finite: {text!r}")
+        raise SourceError(f"{SOURCE}: {name} is not finite: {_short(text)}")
     if _DECIMAL_TEXT.fullmatch(text) is None:
-        raise SourceError(f"{SOURCE}: unparseable {name} {text!r}")
+        raise SourceError(f"{SOURCE}: unparseable {name} {_short(text)}")
     return amount
 
 
@@ -1017,11 +1148,11 @@ def _time(text: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError as exc:
-        raise SourceError(f"{SOURCE}: unparseable timeInterval time {text!r}") from exc
+        raise SourceError(f"{SOURCE}: unparseable timeInterval time {_short(text)}") from exc
     if (
         parsed.tzinfo is None
         or parsed.utcoffset() != timedelta(0)
         or _TIME_TEXT.fullmatch(text) is None
     ):
-        raise SourceError(f"{SOURCE}: timeInterval time must be UTC: {text!r}")
+        raise SourceError(f"{SOURCE}: timeInterval time must be UTC: {_short(text)}")
     return parsed.astimezone(UTC)

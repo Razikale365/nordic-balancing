@@ -1,5 +1,6 @@
 """Shared bounded retries so sources handle throttling consistently."""
 
+import re
 import zlib
 from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, datetime
@@ -31,6 +32,9 @@ _LIMIT = 64 * 1024 * 1024
 ACCEPT_ENCODING = {"Accept-Encoding": "gzip, deflate"}
 # Most bytes one decompression step may produce before the size is checked again.
 _DECODE_STEP = 64 * 1024
+# Provider text spliced into an error message is escaped before it is cut, so a
+# newline or an ANSI escape cannot forge a log line or reach the terminal.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 def get_json(
@@ -55,14 +59,28 @@ def get_json(
     )
 
 
-def check_base_url(base_url: str) -> None:
-    """Reject a ``base_url`` that is not an absolute http or https URL."""
+def check_base_url(base_url: str, *, credentialed: bool = False) -> None:
+    """Reject a ``base_url`` that is not an absolute http or https URL.
+
+    Userinfo is always rejected: httpx turns it into a Basic credential in the
+    URL. A ``credentialed`` client sends an API key with every request, so its
+    base URL must be https.
+    """
     try:
         url = httpx.URL(base_url)
     except httpx.InvalidURL as exc:
         raise ValueError("base_url must be an absolute http or https URL") from exc
     if url.scheme not in ("http", "https") or not url.host:
         raise ValueError("base_url must be an absolute http or https URL")
+    if url.username or url.password:
+        raise ValueError("base_url must not contain credentials")
+    if credentialed and url.scheme != "https":
+        raise ValueError("base_url must use https because the client sends an API key")
+
+
+def _escape(text: str) -> str:
+    """Return ``text`` with C0/C1 control characters written as ``\\xNN``."""
+    return _CONTROL.sub(lambda match: f"\\x{ord(match.group()):02x}", text)
 
 
 def _request(
@@ -115,7 +133,7 @@ def _request(
     # Only 200 carries a complete body: 204 has none, 202 is not yet processed and 206
     # is a partial body.
     if response.status_code != 200 and response.status_code not in passthrough_statuses:
-        detail = f": {response.text[:200]}" if response.is_error and response.text else ""
+        detail = f": {_escape(response.text)[:200]}" if response.is_error and response.text else ""
         # An empty path is deliberate: the one endpoint has no slot to name.
         where = f" for {path}" if path else ""
         raise SourceError(f"{source}: HTTP {response.status_code}{where}{detail}")

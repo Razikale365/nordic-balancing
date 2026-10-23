@@ -3,7 +3,7 @@
 import gzip
 import json
 import os
-import time
+import threading
 import traceback
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -435,7 +435,7 @@ def test_bounded_retry_budget(status: int) -> None:
     "response, message",
     [
         (httpx.Response(401, text=FINGRID_KEY), "fingrid: HTTP 401"),
-        (httpx.Response(200, text=FINGRID_KEY), "is not JSON"),
+        (httpx.Response(200, text=FINGRID_KEY), "response contains the API key"),
     ],
 )
 def test_errors_and_tracebacks_do_not_leak_key(response: httpx.Response, message: str) -> None:
@@ -454,6 +454,42 @@ def test_transport_error_does_not_leak_key() -> None:
     with pytest.raises(SourceError, match="request failed") as caught:
         fingrid_client(handler).series(319, START, END)
     assert FINGRID_KEY not in "".join(traceback.format_exception(caught.value))
+
+
+def test_transport_error_keeps_no_suppressed_context_holding_the_key() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(FINGRID_KEY, request=request)
+
+    with pytest.raises(SourceError, match="request failed") as caught:
+        fingrid_client(handler).series(319, START, END)
+    assert caught.value.__context__ is None
+    assert caught.value.__cause__ is None
+
+
+def test_non_httpx_transport_error_is_wrapped_without_its_message() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        raise RuntimeError(FINGRID_KEY)
+
+    with pytest.raises(SourceError, match=r"request failed \(RuntimeError\)") as caught:
+        fingrid_client(handler).series(319, START, END)
+    assert FINGRID_KEY not in str(caught.value)
+    assert caught.value.__context__ is None
+    assert caught.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    ("base_url", "match"),
+    [
+        ("http://example.test/api", "must use https"),
+        ("https://user@example.test/api", "must not contain credentials"),
+        ("https://user:pass@example.test/api", "must not contain credentials"),
+    ],
+)
+def test_fingrid_client_rejects_an_unsafe_base_url(base_url: str, match: str) -> None:
+    # The client sends its key with every request: credentials may only go to
+    # an https URL that is free of userinfo.
+    with pytest.raises(ValueError, match=match):
+        FingridClient(FINGRID_KEY, base_url=base_url)
 
 
 @pytest.mark.parametrize("retries", [-1, True, 1.5])
@@ -489,6 +525,29 @@ def test_api_key_is_not_sent_to_a_redirect_target() -> None:
     with pytest.raises(SourceError, match="HTTP 302"):
         fingrid.series(319, START, END)
     assert hosts == ["data.fingrid.fi"]
+
+
+@pytest.mark.parametrize(
+    "echoed",
+    ["s3cr/t=e+t", "S3CR/T=E+T", "s3cr%2Ft%3De%2Bt", "s3cr%2ft%3de%2bt"],
+    ids=["raw", "uppercase", "percent_encoded", "percent_encoded_lower_hex"],
+)
+def test_a_response_echoing_the_api_key_is_rejected(echoed: str) -> None:
+    record = {**PUBLISHED, "echoed_key": echoed}
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"data": [record], "pagination": {"total": 1, "lastPage": 1}}
+        )
+
+    with (
+        http_client(handler) as http,
+        FingridClient("s3cr/t=e+t", http, sleep=lambda _: None, clock=lambda: 0.0) as fingrid,
+        pytest.raises(SourceError, match="response contains the API key") as caught,
+    ):
+        fingrid.series(319, START, END)
+    assert "s3cr/t=e+t" not in str(caught.value)
+    assert echoed not in str(caught.value)
 
 
 def test_strips_surrounding_whitespace_from_key_and_redacts_stripped_key(
@@ -743,6 +802,36 @@ def test_full_pages_falling_short_of_page_one_total_are_rejected(
         fingrid_client(handler).series(319, START, END)
 
 
+def test_a_total_larger_than_the_window_is_rejected_after_one_request() -> None:
+    pages: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        pages.append(request.url.params["page"])
+        return httpx.Response(
+            200,
+            json={"data": [{}], "pagination": {"total": 10**12, "lastPage": 10**12, "perPage": 1}},
+        )
+
+    with pytest.raises(SourceError, match="total"):
+        fingrid_client(handler).series(319, START, END)
+    assert pages == ["1"]
+
+
+def test_an_inflated_last_page_is_bounded() -> None:
+    pages: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        pages.append(request.url.params["page"])
+        return httpx.Response(
+            200,
+            json={"data": [{}], "pagination": {"total": 4, "lastPage": 10**12, "perPage": 1}},
+        )
+
+    with pytest.raises(SourceError):
+        fingrid_client(handler).series(319, START, END)
+    assert len(pages) == 5
+
+
 # --- Arguments and client lifecycle ------------------------------------------------------------
 
 
@@ -891,7 +980,8 @@ def test_invalid_direction(value: float) -> None:
         ({"datasetId": 244}, "unexpected datasetId"),
         ({"datasetId": 319.0}, "unexpected datasetId"),
         ({"startTime": None}, "startTime is missing"),
-        ({"startTime": FINGRID_KEY}, "unparseable startTime"),
+        ({"startTime": "invalid"}, "unparseable startTime"),
+        ({"startTime": FINGRID_KEY}, "response contains the API key"),
         ({"startTime": "2026-01-15T00:00:00"}, "must be UTC"),
         ({"startTime": "2026-01-15T01:00:00+01:00"}, "must be UTC"),
         ({"startTime": "2026-01-15T01:00:00-01:00"}, "must be UTC"),
@@ -905,7 +995,7 @@ def test_invalid_direction(value: float) -> None:
         ({"endTime": "invalid"}, "unparseable endTime"),
         ({"endTime": "2026-01-15T00:30:00Z"}, "duration must be 15 or 60 minutes"),
         ({"endTime": "2026-01-15T00:00:00Z"}, "duration must be 15 or 60 minutes"),
-        ({"value": FINGRID_KEY}, "not a number"),
+        ({"value": FINGRID_KEY}, "response contains the API key"),
         ({"value": True}, "not a number"),
         ({"value": []}, "not a number"),
     ],
@@ -1093,21 +1183,37 @@ def test_wrapper_client_inherits_the_wrapped_clients_timeout() -> None:
 
 
 def test_shared_client_spaces_requests_across_threads() -> None:
-    interval = 0.2
+    interval = 0.25
+    now = [0.0]
     stamps: list[float] = []
+    slept = 0
+    # Both waiting threads resume at clock 1.0, long past the slots they
+    # reserved: spacing must be rechecked at send time, not trusted from before
+    # the sleep. The thread that loses the wake-up races sleeps again, and its
+    # second sleep advances the clock by what it waited.
+    barrier = threading.Barrier(2, action=lambda: now.__setitem__(0, 1.0))
+
+    def sleep(seconds: float) -> None:
+        nonlocal slept
+        slept += 1
+        if slept <= 2:
+            barrier.wait(timeout=10)
+        else:
+            now[0] += seconds
 
     def handler(_: httpx.Request) -> httpx.Response:
-        stamps.append(time.monotonic())
+        stamps.append(now[0])
         return fingrid_page([])
 
     with (
         http_client(handler) as http,
-        FingridClient(FINGRID_KEY, http, min_interval=interval) as fingrid,
-        ThreadPoolExecutor(max_workers=6) as pool,
+        FingridClient(
+            FINGRID_KEY, http, min_interval=interval, clock=lambda: now[0], sleep=sleep
+        ) as fingrid,
+        ThreadPoolExecutor(max_workers=2) as pool,
     ):
-        list(pool.map(lambda _: fingrid.series(319, START, END), range(6)))
-    stamps.sort()
-    assert len(stamps) == 6
+        fingrid.series(319, START, END)
+        list(pool.map(lambda _: fingrid.series(319, START, END), range(2)))
+    assert stamps == [0.0, 1.0, 1.25]
     gaps = [later - earlier for earlier, later in pairwise(stamps)]
-    # Allow for coarse OS timer resolution; unpaced threads show gaps near zero.
-    assert min(gaps) >= 0.6 * interval
+    assert all(gap >= interval for gap in gaps)

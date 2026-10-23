@@ -2,6 +2,7 @@
 
 import math
 import os
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -14,7 +15,7 @@ import httpx
 
 from nordic_balancing._http import ACCEPT_ENCODING, check_base_url, get_json, read_capped
 from nordic_balancing._validate import finite_number, reject_duplicate
-from nordic_balancing.errors import SourceError
+from nordic_balancing.errors import NordicBalancingError, SourceError
 from nordic_balancing.models import (
     INTERVAL,
     BiddingZone,
@@ -59,6 +60,7 @@ class _AuthenticatedTransport(httpx.BaseTransport):
         self._http = http
         self._api_key = api_key
         self._before_request = before_request
+        self._key_pattern = _key_pattern(api_key)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         self._before_request()
@@ -69,6 +71,16 @@ class _AuthenticatedTransport(httpx.BaseTransport):
             headers={**ACCEPT_ENCODING, "x-api-key": self._api_key},
             follow_redirects=False,
         ) as response:
+            content = (
+                b""
+                if response.is_error
+                else read_capped(response, source=SOURCE, path=request.url.path)
+            )
+            # A 200 body echoes into returned data; if it carries the credential
+            # it is not an answer to return. The message must not repeat the
+            # provider's text.
+            if response.status_code == 200 and self._key_pattern.search(content):
+                raise SourceError(f"{SOURCE}: response contains the API key")
             return httpx.Response(
                 response.status_code,
                 headers={
@@ -76,9 +88,7 @@ class _AuthenticatedTransport(httpx.BaseTransport):
                     for name, value in response.headers.items()
                     if name not in ("content-encoding", "content-length")
                 },
-                content=b""
-                if response.is_error
-                else read_capped(response, source=SOURCE, path=request.url.path),
+                content=content,
             )
 
 
@@ -127,7 +137,7 @@ class FingridClient:
         ):
             raise ValueError("min_interval must be a finite non-negative number")
         self._api_key = key
-        check_base_url(base_url)
+        check_base_url(base_url, credentialed=True)
         self._owns_http = http is None
         self._http = http if http is not None else httpx.Client(timeout=30.0)
         self._base_url = base_url.rstrip("/")
@@ -136,6 +146,7 @@ class FingridClient:
         self._min_interval = min_interval
         self._clock = clock
         self._last_request: float | None = None
+        self._pace_generation = 0
         self._pace_lock = threading.Lock()
         # Keep authentication and pacing local, without changing the supplied client.
         # httpx does not enforce a client timeout around a custom transport, but
@@ -293,22 +304,27 @@ class FingridClient:
         return records
 
     def _pace(self) -> None:
-        # Reserve this request's slot under the lock; sleep outside it so threads
-        # sharing a client are spaced by min_interval without serialising on the sleep.
-        with self._pace_lock:
-            now = self._clock()
-            slot = now
-            if self._last_request is not None:
-                slot = max(now, self._last_request + self._min_interval)
-            self._last_request = slot
-        if slot > now:
-            self._sleep(slot - now)
+        # Spacing is rechecked after every sleep: a thread that wakes late must
+        # not send on a slot it reserved while another thread sent in between.
+        while True:
             with self._pace_lock:
-                # Re-anchor to the real post-sleep time unless a later thread has reserved.
-                if self._last_request == slot:
+                now = self._clock()
+                if self._last_request is None or now - self._last_request >= self._min_interval:
+                    self._last_request = now
+                    self._pace_generation += 1
+                    return
+                seen = self._pace_generation
+                wait = self._last_request + self._min_interval - now
+            self._sleep(wait)
+            with self._pace_lock:
+                if self._pace_generation == seen:
+                    # Nobody sent while sleeping; the slot is still free to take.
                     self._last_request = self._clock()
+                    self._pace_generation += 1
+                    return
 
     def _get(self, path: str, params: dict[str, str]) -> Any:
+        error: SourceError
         try:
             return get_json(
                 self._authenticated_http,
@@ -320,9 +336,28 @@ class FingridClient:
                 sleep=self._sleep,
             )
         except SourceError as exc:
-            raise SourceError(str(exc).replace(self._api_key, "[REDACTED_SECRET]")) from None
+            error = SourceError(str(exc).replace(self._api_key, "[REDACTED_SECRET]"))
+        except NordicBalancingError:
+            # RateLimitError carries no key; keep its type and retry_after.
+            raise
         except httpx.HTTPError:
-            raise SourceError(f"{SOURCE}: request failed for {path}") from None
+            error = SourceError(f"{SOURCE}: request failed for {path}")
+        except Exception as exc:
+            if self._authenticated_http.is_closed or self._http.is_closed:
+                # A closed client raises its own error before any transport
+                # code runs; keep it instead of wrapping it.
+                raise
+            # A caller-supplied transport can raise anything; its message or
+            # traceback may hold the key it was built with. A declared class
+            # name cannot, so it is kept for diagnosis; a dynamically built
+            # name that is not a short identifier is dropped.
+            name = type(exc).__name__
+            if not (name.isidentifier() and len(name) <= 64):
+                name = "Exception"
+            error = SourceError(f"{SOURCE}: request failed ({name})")
+        # Raised outside the except blocks so the handled exception, which may
+        # carry the key in its message, is not retained as __context__/__cause__.
+        raise error
 
     def _records(self, dataset_id: int, start: datetime, end: datetime) -> list[_Record]:
         if isinstance(dataset_id, bool) or not isinstance(dataset_id, int) or dataset_id <= 0:
@@ -413,6 +448,18 @@ class FingridClient:
         elif isinstance(per_page, bool) or not isinstance(per_page, int) or per_page < 1:
             raise SourceError(f"{SOURCE}: page 1 has invalid perPage")
         full_page = min(per_page, PAGE_SIZE)
+        # The window admits at most one row per quarter-hour start and one per
+        # hour start (both granularities were published in the switch-over era),
+        # so a larger total cannot be honest.
+        span = query_end - query_start
+        max_rows = math.ceil(span / INTERVAL) + math.ceil(span / _HOUR)
+        if total > max_rows:
+            raise SourceError(
+                f"{SOURCE}: page-1 total {total} exceeds the {max_rows} rows the window can hold"
+            )
+        # With total bounded, so is the loop whatever lastPage claims: every page
+        # before the last must be full (or the check below raises), an empty page
+        # raises, and rows beyond total raise.
         rows: list[Any] = []
         for page in range(1, last_page + 1):
             if page > 1:
@@ -436,6 +483,17 @@ class FingridClient:
                 "data changed or truncated"
             )
         return rows
+
+
+def _key_pattern(api_key: str) -> re.Pattern[bytes]:
+    # The key is printable ASCII, so each character is one byte. An echo may
+    # carry it raw, case-normalised, or percent-escaped per character in either
+    # hex case, like a URL — the same shapes _redact covers in entsoe.py.
+    parts = []
+    for char in api_key:
+        escaped = "%" + "".join(f"[{d}{d.lower()}]" for d in f"{ord(char):02X}")
+        parts.append(f"(?:{escaped}|{re.escape(char)})")
+    return re.compile("".join(parts).encode("ascii"), re.IGNORECASE)
 
 
 def _page_rows(body: Any) -> list[Any]:

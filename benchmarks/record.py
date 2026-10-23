@@ -51,7 +51,8 @@ def _secret_bytes() -> list[bytes]:
     for name in SECRET_ENV_VARS:
         value = os.environ.get(name, "").strip()
         if value:
-            secrets.extend({value.encode(), quote(value).encode(), quote_plus(value).encode()})
+            forms = {value, value.lower(), value.upper(), quote(value), quote_plus(value)}
+            secrets.extend(form.encode() for form in forms)
     return secrets
 
 
@@ -67,7 +68,9 @@ def _record(name: str, root: Path, secrets: list[bytes]) -> None:
     workload = workloads.WORKLOADS[name]
     set_dir = root / name
     set_dir.mkdir(parents=True, exist_ok=True)
-    transport = fixtures.RecordTransport(set_dir, min_interval_s=workload.min_interval_s)
+    transport = fixtures.RecordTransport(
+        set_dir, min_interval_s=workload.min_interval_s, secrets=secrets
+    )
     http = httpx.Client(transport=transport, timeout=120.0)
     began = time.perf_counter()
     records: int | None = None

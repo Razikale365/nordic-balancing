@@ -3,8 +3,10 @@
 Record: pass ``httpx.Client(transport=RecordTransport(set_dir))`` as a client's
 ``http=`` argument. Every response body is stored verbatim in ``NNNNNN.bin``
 and one ``manifest.jsonl`` line is appended per exchange. Secrets are never
-written: API-token query parameters are removed from the manifest key and no
-request headers or bodies are recorded at all.
+written: API-token query parameters are removed from the manifest key, no
+request headers or bodies are recorded at all, and a response that echoes one of
+the ``secrets`` (in its body or in a member of a ZIP body) is refused before
+anything is written for it.
 
 Replay: ``ReplayTransport(set_dir)`` answers each request with the recorded
 response for its canonical key; an unrecorded key raises ``ReplayMissError``
@@ -14,14 +16,19 @@ Recorded sets live under ``FIXTURES_ROOT``: ``$NB_FIXTURES`` when set, else the
 git-ignored ``benchmarks/.fixtures/``. They are API payloads and are never committed.
 """
 
+import io
 import json
 import os
 import threading
 import time
+import zipfile
+from collections.abc import Iterable
 from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
+
+from nordic_balancing.sources.entsoe import _hides_token
 
 FIXTURES_ROOT = Path(os.environ.get("NB_FIXTURES", Path(__file__).resolve().parent / ".fixtures"))
 
@@ -52,6 +59,25 @@ def request_key(request: httpx.Request) -> str:
     return f"{request.method} {url.scheme}://{url.host}{url.path}?{urlencode(items)}"
 
 
+def contains_secret(body: bytes, secrets: Iterable[bytes]) -> bool:
+    """Whether a secret appears in ``body`` or, for a ZIP body, in one of its members."""
+    blobs = [body]
+    if body.startswith(b"PK"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                blobs.extend(archive.read(info) for info in archive.infolist())
+        except zipfile.BadZipFile:
+            pass
+    secrets = list(secrets)
+    if any(secret in blob for blob in blobs for secret in secrets):
+        return True
+    # The same decoding the ENTSO-E client applies to error text: JSON, XML and
+    # nested percent escapes of a key are still the key.
+    texts = [blob.decode("utf-8", "replace") for blob in blobs]
+    keys = [secret.decode("ascii", "ignore") for secret in secrets]
+    return any(_hides_token(text, key) for text in texts for key in keys if key)
+
+
 class RecordTransport(httpx.BaseTransport):
     """Wrap a live transport and persist every response in the manifest format above.
 
@@ -67,6 +93,7 @@ class RecordTransport(httpx.BaseTransport):
         *,
         min_interval_s: float = 0.0,
         transport: httpx.BaseTransport | None = None,
+        secrets: Iterable[bytes] = (),
     ) -> None:
         self.set_dir = Path(set_dir)
         self.set_dir.mkdir(parents=True, exist_ok=True)
@@ -77,6 +104,7 @@ class RecordTransport(httpx.BaseTransport):
         self._transport = transport if transport is not None else httpx.HTTPTransport()
         self._lock = threading.Lock()
         self._last_request = 0.0
+        self._secrets = [secret for secret in secrets if secret]
         self._index = 0
         self._seen: set[str] = set()
         self.duplicates: list[str] = []
@@ -91,6 +119,9 @@ class RecordTransport(httpx.BaseTransport):
             response = self._transport.handle_request(request)
             body = response.read()
             elapsed = time.perf_counter() - began
+            if contains_secret(body, self._secrets):
+                # Checked in memory, before any file is written for this exchange.
+                raise FixtureError("a response echoes an API key value; nothing was written for it")
             key = request_key(request)
             if key in self._seen:
                 self.duplicates.append(key)
