@@ -4,6 +4,10 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the public API is defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it
 is listed here.
 
+## Unreleased
+
+- Add `reconcile_reserve_capacity`, `CapacityDivergence`, `CapacityReconciliationReport` and `DivergenceKind.VOLUME` to classify reserve capacity price, volume and coverage differences between sources.
+
 ## 1.0.0rc1 — 2026-10-22
 
 Release candidate for 1.0: 0.4.0 plus the fixes below. Install it with

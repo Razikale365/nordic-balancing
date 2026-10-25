@@ -2,6 +2,8 @@
   "__all__": [
     "BiddingZone",
     "CHANGES",
+    "CapacityDivergence",
+    "CapacityReconciliationReport",
     "Direction",
     "Divergence",
     "DivergenceKind",
@@ -22,6 +24,7 @@
     "__version__",
     "changes_between",
     "reconcile_imbalance_prices",
+    "reconcile_reserve_capacity",
     "to_frame"
   ],
   "sources": {
@@ -58,6 +61,80 @@
     "CHANGES": {
       "kind": "constant",
       "type": "tuple"
+    },
+    "CapacityDivergence": {
+      "attributes": {},
+      "bases": [
+        "object"
+      ],
+      "fields": [
+        "zone: nordic_balancing.models.BiddingZone (compare=True, repr=True)",
+        "product: nordic_balancing.models.ReserveProduct (compare=True, repr=True)",
+        "direction: nordic_balancing.models.Direction (compare=True, repr=True)",
+        "start: datetime.datetime (compare=True, repr=True)",
+        "kind: nordic_balancing.reconcile.DivergenceKind (compare=True, repr=True)",
+        "primary: nordic_balancing.models.ReserveCapacity | None (compare=True, repr=True)",
+        "reference: nordic_balancing.models.ReserveCapacity | None (compare=True, repr=True)",
+        "detail: str (compare=True, repr=True)"
+      ],
+      "frozen": true,
+      "kind": "dataclass",
+      "methods": {
+        "__init__": "(self, zone: nordic_balancing.models.BiddingZone, product: nordic_balancing.models.ReserveProduct, direction: nordic_balancing.models.Direction, start: datetime.datetime, kind: nordic_balancing.reconcile.DivergenceKind, primary: nordic_balancing.models.ReserveCapacity | None, reference: nordic_balancing.models.ReserveCapacity | None, detail: str) -> None"
+      },
+      "params": {
+        "eq": true,
+        "frozen": true,
+        "init": true,
+        "kw_only": false,
+        "match_args": true,
+        "order": false,
+        "repr": true,
+        "slots": true,
+        "unsafe_hash": false,
+        "weakref_slot": false
+      },
+      "properties": {},
+      "slots": true
+    },
+    "CapacityReconciliationReport": {
+      "attributes": {},
+      "bases": [
+        "object"
+      ],
+      "fields": [
+        "primary_source: str (compare=True, repr=True)",
+        "reference_source: str (compare=True, repr=True)",
+        "zones: tuple[nordic_balancing.models.BiddingZone, ...] (compare=True, repr=True)",
+        "products: tuple[nordic_balancing.models.ReserveProduct, ...] (compare=True, repr=True)",
+        "compared: int (compare=True, repr=True)",
+        "identical: int (compare=True, repr=True)",
+        "divergences: tuple[nordic_balancing.reconcile.CapacityDivergence, ...] (compare=True, repr=True)",
+        "primary_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = () (compare=True, repr=True)",
+        "reference_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = () (compare=True, repr=True)",
+        "primary_only_products: tuple[nordic_balancing.models.ReserveProduct, ...] = () (compare=True, repr=True)",
+        "reference_only_products: tuple[nordic_balancing.models.ReserveProduct, ...] = () (compare=True, repr=True)"
+      ],
+      "frozen": true,
+      "kind": "dataclass",
+      "methods": {
+        "__init__": "(self, primary_source: str, reference_source: str, zones: tuple[nordic_balancing.models.BiddingZone, ...], products: tuple[nordic_balancing.models.ReserveProduct, ...], compared: int, identical: int, divergences: tuple[nordic_balancing.reconcile.CapacityDivergence, ...], primary_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = (), reference_only_zones: tuple[nordic_balancing.models.BiddingZone, ...] = (), primary_only_products: tuple[nordic_balancing.models.ReserveProduct, ...] = (), reference_only_products: tuple[nordic_balancing.models.ReserveProduct, ...] = ()) -> None",
+        "counts": "(self) -> dict[nordic_balancing.reconcile.DivergenceKind, int]"
+      },
+      "params": {
+        "eq": true,
+        "frozen": true,
+        "init": true,
+        "kw_only": false,
+        "match_args": true,
+        "order": false,
+        "repr": true,
+        "slots": true,
+        "unsafe_hash": false,
+        "weakref_slot": false
+      },
+      "properties": {},
+      "slots": true
     },
     "Direction": {
       "attributes": {},
@@ -119,7 +196,8 @@
         "PRICE": "price",
         "RESOLUTION": "resolution",
         "ROUNDING": "rounding",
-        "UNPUBLISHED": "unpublished"
+        "UNPUBLISHED": "unpublished",
+        "VOLUME": "volume"
       },
       "methods": {},
       "properties": {}
@@ -411,6 +489,10 @@
     "reconcile_imbalance_prices": {
       "kind": "function",
       "signature": "(primary: collections.abc.Iterable[nordic_balancing.models.ImbalancePrice], reference: collections.abc.Iterable[nordic_balancing.models.ImbalancePrice], *, tolerance_eur: float = 0.01) -> nordic_balancing.reconcile.ReconciliationReport"
+    },
+    "reconcile_reserve_capacity": {
+      "kind": "function",
+      "signature": "(primary: collections.abc.Iterable[nordic_balancing.models.ReserveCapacity], reference: collections.abc.Iterable[nordic_balancing.models.ReserveCapacity], *, tolerance_eur_per_mw: float = 0.01, tolerance_mw: float = 0.0) -> nordic_balancing.reconcile.CapacityReconciliationReport"
     },
     "to_frame": {
       "kind": "function",
