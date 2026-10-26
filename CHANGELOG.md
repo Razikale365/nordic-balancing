@@ -4,7 +4,7 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the public API is defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it
 is listed here.
 
-## 1.0.0rc2 — unreleased
+## 1.0.0rc2 — 2026-10-26
 
 Second release candidate: fixes from a wide pre-1.0 audit.
 
