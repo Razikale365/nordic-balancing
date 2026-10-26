@@ -248,6 +248,23 @@ def test_chunks_long_windows_without_gaps_or_duplicate_intervals() -> None:
     assert all(p.resolution == INTERVAL for p in prices)
 
 
+@pytest.mark.parametrize("offset", [timedelta(seconds=28.5), timedelta(minutes=7, milliseconds=1)])
+def test_chunk_boundaries_stay_on_the_quarter_hour_grid(offset: timedelta) -> None:
+    # Live eSett leaves out the interval at an unaligned boundary from both chunks.
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=[])
+
+    esett_client(handler).imbalance_prices(
+        START + offset, START + timedelta(days=65), [BiddingZone.SE3]
+    )
+    inner = [datetime.fromisoformat(r.url.params["end"]) for r in seen[:-1]]
+    assert inner == [START + timedelta(days=31), START + timedelta(days=62)]
+    assert [datetime.fromisoformat(r.url.params["start"]) for r in seen[1:]] == inner
+
+
 @pytest.mark.parametrize(
     "override",
     [
@@ -410,6 +427,26 @@ def test_dk_settled_row_with_a_single_zero_price_is_real() -> None:
     )
     assert prices[0].imbalance_price_eur == 42.0
     assert prices[0].mfrr_down_price_eur == 0.0
+    assert prices[0].dominating_direction is Direction.NONE
+
+
+def test_dk_equal_non_zero_prices_without_a_direction_stay_real() -> None:
+    # Only all-zero prices make the placeholder: equal prices alone are a real price.
+    record = {
+        **DK_PLACEHOLDER,
+        "imblSalesPrice": 50.0,
+        "imblPurchasePrice": 50.0,
+        "upRegPrice": 50.0,
+        "downRegPrice": 50.0,
+    }
+    prices = esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
+        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
+        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
+        [BiddingZone.DK2],
+    )
+    assert prices[0].imbalance_price_eur == 50.0
+    assert prices[0].mfrr_up_price_eur == 50.0
+    assert prices[0].mfrr_down_price_eur == 50.0
     assert prices[0].dominating_direction is Direction.NONE
 
 

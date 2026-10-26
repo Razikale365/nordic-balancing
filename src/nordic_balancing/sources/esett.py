@@ -135,7 +135,13 @@ class ESettClient:
         # All zones share each timestamp string, so parse it once per call.
         times: dict[str, datetime] = {}
         while query_start < query_end:
-            chunk_end = min(query_start + _CHUNK, query_end)
+            # Boundaries between chunks sit on the quarter-hour grid: eSett leaves
+            # out the interval at an unaligned boundary from both neighbouring chunks.
+            step = query_start + _CHUNK
+            step -= timedelta(
+                minutes=step.minute % 15, seconds=step.second, microseconds=step.microsecond
+            )
+            chunk_end = min(step, query_end)
             params = [
                 ("start", _format(query_start)),
                 ("end", _format(chunk_end)),

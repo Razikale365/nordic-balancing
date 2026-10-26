@@ -35,6 +35,10 @@ _DECODE_STEP = 64 * 1024
 # Provider text spliced into an error message is escaped before it is cut, so a
 # newline or an ANSI escape cannot forge a log line or reach the terminal.
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+# Real provider documents nest only a few levels deep. A body deeper than this
+# is not an answer to the request, and raw on a returned record must stay inside
+# what _copy_raw can recurse over.
+_JSON_MAX_NESTING = 32
 
 
 def get_json(
@@ -55,8 +59,36 @@ def get_json(
         source=source,
         max_retries=max_retries,
         sleep=sleep,
-        decode=lambda response: response.json(),
+        decode=_decode_json,
     )
+
+
+def _decode_json(response: httpx.Response) -> Any:
+    document: Any = response.json(object_pairs_hook=_unique_members)
+    # Iterative breadth descent, not recursion: a deeply nested body is exactly
+    # what must not spend recursion budget, here or in the record copying
+    # downstream. ``level`` holds containers only, so leaf scalars are skipped.
+    if type(document) not in (dict, list):
+        return document
+    level = [document]
+    for _ in range(_JSON_MAX_NESTING):
+        level = [
+            child
+            for node in level
+            for child in (node.values() if type(node) is dict else node)
+            if type(child) in (dict, list)
+        ]
+        if not level:
+            return document
+    raise ValueError("JSON is nested too deeply")
+
+
+def _unique_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """object_pairs_hook rejecting a repeated member name before last-wins hides it."""
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise ValueError("duplicate object member")
+    return result
 
 
 def check_base_url(base_url: str, *, credentialed: bool = False) -> None:
@@ -227,16 +259,18 @@ def _decoded(response: httpx.Response) -> Iterator[bytes]:
     # including chained codings, are inflated here in bounded steps instead. Any
     # other coding was not asked for (see ACCEPT_ENCODING), so it is not an answer
     # to the request, and httpx's unbounded decoder is never reached for it.
-    if response.is_stream_consumed:
-        # Already read in full (a transport that buffers, such as a response built
-        # from bytes): nothing is left to bound, only to check.
-        yield from response.iter_bytes()
-        return
     header = response.headers.get("content-encoding", "")
     codings = [c.strip().lower() for c in header.split(",") if c.strip()]
     codings = [c for c in codings if c != "identity"]
     if any(c not in ("gzip", "x-gzip", "deflate") for c in codings):
         raise _Unrequested(repr(header[:40]))
+    if response.is_stream_consumed:
+        # Already read in full by a transport that buffers: only httpx's decoded
+        # copy is left to check against the size cap. Its stream must not be
+        # iterated again; behind it may be a pooled connection now serving
+        # another request. httpx keeps only the first member of a gzip body.
+        yield from response.iter_bytes()
+        return
     chunks: Iterator[bytes] = _raw(response)
     # Codings are listed in the order applied, so they are undone in reverse.
     for coding in reversed(codings):

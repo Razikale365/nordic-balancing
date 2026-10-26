@@ -35,7 +35,7 @@ jobs:
       - run: uv run mypy
       - run: uv run pytest
       - run: uv build
-      - run: uvx twine@6.1.0 check dist/*
+      - run: uv run --locked --group release twine check dist/*
       - name: Smoke-test the built wheel in a clean environment
         run: |
           uv venv /tmp/smoke --python 3.12

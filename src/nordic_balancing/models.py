@@ -131,6 +131,13 @@ def to_utc(value: datetime, name: str) -> datetime:
         raise ValueError(
             f"{name} must be between years {_MIN_YEAR} and {_MAX_YEAR}, got {utc.isoformat()}"
         )
+    if type(utc) is not datetime:
+        # A datetime subclass can carry sub-microsecond precision
+        # (pandas.Timestamp keeps nanoseconds); window arithmetic works at
+        # microsecond resolution, so the finer part is dropped, not rounded.
+        utc = datetime(
+            utc.year, utc.month, utc.day, utc.hour, utc.minute, utc.second, utc.microsecond, UTC
+        )
     return utc
 
 

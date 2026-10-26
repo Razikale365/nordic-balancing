@@ -815,3 +815,12 @@ def test_total_larger_than_the_filter_can_match_is_not_paged_through() -> None:
     with pytest.raises(SourceError, match="total 60000 is too large"):
         svk_client(handler).capacity_market(ReserveProduct.MFRR, START, END, [BiddingZone.SE3])
     assert len(seen) == 1
+
+
+def test_a_total_one_over_the_filter_bound_is_rejected() -> None:
+    # One hour and one zone name eight (start, zone, direction) rows; a total
+    # of nine cannot be honest.
+    with pytest.raises(SourceError, match="total 9 is too large"):
+        svk_client(lambda _: svk_page([], total=9)).capacity_market(
+            ReserveProduct.MFRR, START, END, [BiddingZone.SE3]
+        )

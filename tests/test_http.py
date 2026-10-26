@@ -1,5 +1,6 @@
 import contextlib
 import gzip
+import json
 import tracemalloc
 import zlib
 from collections.abc import Callable, Iterator
@@ -9,11 +10,14 @@ from typing import Any
 import httpx
 import pytest
 from fakes import (
+    esett_row,
+    fingrid_row,
     http_client,
     svk_package_show,
+    svk_row,
 )
 
-from nordic_balancing import BiddingZone, ReserveProduct, _http
+from nordic_balancing import INTERVAL, BiddingZone, ReserveProduct, _http
 from nordic_balancing._http import _request, check_base_url, get_json
 from nordic_balancing._http import _retry_after as retry_after
 from nordic_balancing._validate import finite_number
@@ -409,6 +413,191 @@ def test_get_json_reports_a_deeply_nested_body_as_not_json(
     assert str(exc_info.value) == "test: response for /api is not JSON"
 
 
+def test_get_json_rejects_a_repeated_member_name() -> None:
+    # A repeated member would silently keep only its last value; like any
+    # undecodable body it is retried within the budget, then reported.
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, content=b'{"price": 7.2, "price": -999.0}')
+
+    http = http_client(handler)
+    sleeps: list[float] = []
+    with pytest.raises(SourceError, match=r"^test: response for /api is not JSON$"):
+        get_json(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=3,
+            sleep=sleeps.append,
+        )
+    assert len(calls) == 4
+    assert sleeps == [10.0] * 3
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"row": {"price": 7.2, "price": -999.0}}',
+        b'{"price": NaN, "price": 21.0}',
+    ],
+    ids=["nested-object", "nan-hidden"],
+)
+def test_get_json_rejects_a_repeated_member_at_any_depth(body: bytes) -> None:
+    # Repeats in nested objects count too: one can erase a non-finite value
+    # before the finite-number checks ever see it.
+    http = http_client(lambda _: httpx.Response(200, content=body))
+    with pytest.raises(SourceError, match=r"^test: response for /api is not JSON$"):
+        get_json(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+
+
+# Bodies may nest this many containers (provider JSON uses only a few); more is rejected.
+@pytest.mark.parametrize("depth", [31, 32])
+def test_get_json_decodes_a_body_within_the_nesting_bound(depth: int) -> None:
+    body = ("[" * depth + "0" + "]" * depth).encode()
+    http = http_client(lambda _: httpx.Response(200, content=body))
+    document: Any = get_json(
+        http,
+        "https://example.test",
+        "/api",
+        {},
+        source="test",
+        max_retries=0,
+        sleep=lambda _: None,
+    )
+    value: Any = document
+    while isinstance(value, list):
+        (value,) = value
+    assert value == 0
+
+
+@pytest.mark.parametrize("depth", [33, 1200])
+def test_get_json_rejects_a_body_nested_past_the_bound(depth: int) -> None:
+    # A body this deep is not an answer to the request: it would escape as
+    # RecursionError downstream or make records that cannot be deep-copied.
+    body = ("[" * depth + "0" + "]" * depth).encode()
+    http = http_client(lambda _: httpx.Response(200, content=body))
+    with pytest.raises(SourceError, match=r"^test: response for /api is not JSON$"):
+        get_json(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+
+
+def _row(source: str, start: datetime) -> dict[str, Any]:
+    """A valid one-row document for ``source``, without the envelope around it."""
+    if source == "esett":
+        return esett_row(start, BiddingZone.SE3, sales=7.2, purchase=7.2)
+    if source == "svk":
+        return svk_row(
+            1,
+            start,
+            "SE3",
+            "up",
+            "mFRRCapacityMarket",
+            price=7.2,
+            volume=1.0,
+            swedish_offset=timedelta(hours=2),
+        )
+    if source == "fingrid":
+        return fingrid_row(319, start, start + INTERVAL, 21.0)
+    return {
+        "TimeUTC": start.strftime("%Y-%m-%dT%H:%M:%S"),
+        "PriceArea": "DK1",
+        "ImbalancePriceEUR": 79.27,
+        "ImbalancePriceDKK": 592.46,
+        "SpotPriceEUR": 79.27,
+        "DominatingDirection": 0,
+        "SatisfiedDemand": 0.0,
+        "aFRRVWAUpEUR": 0.0,
+        "aFRRVWADownEUR": 0.0,
+        "mFRRMarginalPriceUpEUR": 79.27,
+        "mFRRMarginalPriceDownEUR": 40.14,
+    }
+
+
+def _wrap(source: str, row_json: str) -> bytes:
+    if source == "esett":
+        return f"[{row_json}]".encode()
+    if source == "svk":
+        return f'{{"success": true, "result": {{"total": 1, "records": [{row_json}]}}}}'.encode()
+    if source == "fingrid":
+        return f'{{"data": [{row_json}], "pagination": {{"total": 1, "lastPage": 1}}}}'.encode()
+    return f'{{"total": 1, "records": [{row_json}]}}'.encode()
+
+
+def _fetch_json_client(source: str, http: httpx.Client, start: datetime, end: datetime) -> Any:
+    if source == "esett":
+        with ESettClient(http, max_retries=0) as client:
+            return client.imbalance_prices(start, end, [BiddingZone.SE3])
+    if source == "svk":
+        with SvKClient(http, max_retries=0) as client:
+            return client.capacity_market(ReserveProduct.MFRR, start, end, [BiddingZone.SE3])
+    if source == "fingrid":
+        with FingridClient("key", http, min_interval=0, max_retries=0) as client:
+            return client.series(319, start, end)
+    with EnergiDataServiceClient(http, max_retries=0) as client:
+        return client.imbalance_prices(start, end)
+
+
+def _json_server(body: bytes) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/package_show"):
+            return httpx.Response(200, json=svk_package_show())
+        return httpx.Response(200, content=body)
+
+    return http_client(handler)
+
+
+@pytest.mark.parametrize("source", ["esett", "eds", "fingrid", "svk"])
+@pytest.mark.parametrize("mode", ["conflict", "hidden-nan"])
+def test_every_json_client_rejects_a_repeated_member(source: str, mode: str) -> None:
+    # Conflicting values for one member are silently last-wins on a plain decode;
+    # a repeat can also erase a non-finite value before validation sees it.
+    start = datetime(2026, 1, 15, tzinfo=UTC)
+    end = start + timedelta(hours=1)
+    columns = {"esett": ("imblSalesPrice", "imblPurchasePrice")}.get(
+        source,
+        ({"svk": "price", "fingrid": "value"}.get(source, "ImbalancePriceEUR"),),
+    )
+    row = _row(source, start)
+    if mode == "hidden-nan":
+        for column in columns:
+            row[column] = float("nan")
+    value = "21.0" if mode == "hidden-nan" else "-999.0"
+    member = "".join(f',"{column}": {value}' for column in columns)
+    body = _wrap(source, json.dumps(row)[:-1] + member + "}")
+    with _json_server(body) as http, pytest.raises(SourceError):
+        _fetch_json_client(source, http, start, end)
+
+
+@pytest.mark.parametrize("source", ["esett", "eds", "fingrid", "svk"])
+def test_every_json_client_rejects_a_deeply_nested_member(source: str) -> None:
+    # An extra member of ~1,200 nested arrays is a ~2.6 KB body: it must not
+    # escape as RecursionError or make records that cannot be deep-copied.
+    start = datetime(2026, 1, 15, tzinfo=UTC)
+    end = start + timedelta(hours=1)
+    row = json.dumps(_row(source, start))[:-1] + ',"extra":' + "[" * 1200 + "0" + "]" * 1200 + "}"
+    with _json_server(_wrap(source, row)) as http, pytest.raises(SourceError):
+        _fetch_json_client(source, http, start, end)
+
+
 @pytest.mark.parametrize("status", [302, 204])
 def test_entsoe_status_outside_passthrough_has_no_path_slot(status: int) -> None:
     # ENTSO-E calls _request with an empty path because the request carries
@@ -784,10 +973,32 @@ def test_zlib_deflate_with_a_small_window_decodes(wbits: int, chunk: int) -> Non
     assert fetch_encoded(zlib.compress(payload, wbits=wbits), "deflate", chunk) == payload
 
 
+@pytest.mark.parametrize("size", [500, 501])
+def test_decoded_size_cap_boundary(monkeypatch: pytest.MonkeyPatch, size: int) -> None:
+    # Compressed raw bytes stay under the cap while the decoded ones do not.
+    monkeypatch.setattr(_http, "_LIMIT", 500)
+    packed = zlib.compress(b"x" * size)
+    if size <= 500:
+        assert fetch_encoded(packed, "deflate") == b"x" * size
+    else:
+        with pytest.raises(SourceError, match="exceeds 500 bytes"):
+            fetch_encoded(packed, "deflate")
+
+
 def test_raw_deflate_that_starts_with_a_zlib_looking_byte_decodes() -> None:
     packed = b"\x78\x02\x00\xfd\xff[]\x01\x00\x00\xff\xff"
     assert zlib.decompress(packed, -zlib.MAX_WBITS) == b"[]"
     assert fetch_encoded(packed, "deflate") == b"[]"
+
+
+def test_a_zlib_stream_cut_before_its_checksum_is_a_decoding_error() -> None:
+    # These bytes read as a zlib header plus an empty final stored block with
+    # no adler32: zlib consumes them silently without finishing. As raw deflate
+    # they are a stored block whose NLEN fails the complement check, so the
+    # end-of-body raw retry surfaces the error instead of yielding the zlib
+    # decoder's empty output.
+    with pytest.raises(httpx.DecodingError, match="invalid deflate body"):
+        fetch_encoded(b"\x78\x01\x01\x00\x00\xff\xff", "deflate")
 
 
 def test_public_client_reads_a_small_window_deflate_body() -> None:
@@ -911,6 +1122,24 @@ def test_error_detail_escapes_control_characters() -> None:
     assert "\\x0a" in message and "\\x1b" in message
 
 
+def test_error_detail_escapes_c1_control_characters() -> None:
+    # C1 controls carry terminal commands like the C0 ones do.
+    http = http_client(lambda _: httpx.Response(500, text="bad\x85\x9f\x80"))
+    with pytest.raises(SourceError) as exc_info:
+        _request(
+            http,
+            "https://example.test",
+            "/api",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    message = str(exc_info.value)
+    assert "\x85" not in message and "\x9f" not in message and "\x80" not in message
+    assert "\\x85" in message and "\\x9f" in message and "\\x80" in message
+
+
 @pytest.mark.parametrize("source", ["esett", "eds", "fingrid", "svk"])
 def test_query_after_close_of_an_owned_client_raises_runtime_error(source: str) -> None:
     start = datetime(2026, 1, 15, tzinfo=UTC)
@@ -943,6 +1172,68 @@ def test_every_gzip_member_is_decoded(chunk: int) -> None:
     # RFC 1952 allows several members in one body; all of them are the data.
     packed = gzip.compress(b'{"a": ') + gzip.compress(b"1}")
     assert fetch_encoded(packed, "gzip", chunk) == b'{"a": 1}'
+
+
+def fetch_buffered(data: bytes, encoding: str) -> bytes:
+    # A response built from bytes arrives already read, like one from a caching
+    # transport that buffers the body before returning it.
+    http = http_client(
+        lambda _: httpx.Response(200, headers={"Content-Encoding": encoding}, content=data)
+    )
+    with http:
+        response = _request(
+            http,
+            "https://example.test",
+            "/",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    content: bytes = response.content
+    return content
+
+
+def test_a_buffered_body_is_still_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    # httpx's decoded copy accepts any coding; only gzip and deflate were asked for.
+    with pytest.raises(SourceError, match="not requested"):
+        fetch_buffered(b"[]", "compress")
+    monkeypatch.setattr(_http, "_LIMIT", 4096)
+    with pytest.raises(SourceError, match="exceeds 4096"):
+        fetch_buffered(gzip.compress(b" " * 8192), "gzip")
+
+
+class ReadOnce(httpx.SyncByteStream):
+    # Like a pooled connection: iterating again would read another response.
+    def __init__(self, body: bytes) -> None:
+        self.body: bytes | None = body
+
+    def __iter__(self) -> Iterator[bytes]:
+        body, self.body = self.body, None
+        if body is None:
+            pytest.fail("a stream httpx already read was iterated again")
+        yield body
+
+
+def test_a_body_read_by_the_transport_is_not_read_again() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        response = httpx.Response(
+            200, headers={"Content-Encoding": "gzip"}, stream=ReadOnce(gzip.compress(b"[1]"))
+        )
+        response.read()
+        return response
+
+    with http_client(handler) as http:
+        response = _request(
+            http,
+            "https://example.test",
+            "/",
+            {},
+            source="test",
+            max_retries=0,
+            sleep=lambda _: None,
+        )
+    assert response.content == b"[1]"
 
 
 def test_null_padding_between_and_after_gzip_members_is_skipped() -> None:
@@ -1010,6 +1301,13 @@ def test_a_gzip_body_cut_short_is_a_decoding_error(cut: int) -> None:
     packed = gzip.compress(b'{"a": 1}' * 100)[:-cut]
     with pytest.raises(httpx.DecodingError, match="invalid gzip body"):
         fetch_encoded(packed, "gzip")
+
+
+@pytest.mark.parametrize("encoding", ["identity", "Identity"])
+def test_identity_content_encoding_is_a_plain_body(encoding: str) -> None:
+    # "identity" means the body is not encoded at all; it is not an
+    # unrequested coding.
+    assert fetch_encoded(b'{"ok": true}', encoding) == b'{"ok": true}'
 
 
 @pytest.mark.parametrize("encoding", ["br", "zstd", "gzip, br", "compress"])

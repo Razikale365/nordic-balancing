@@ -1,6 +1,6 @@
 [project]
 name = "nordic-balancing"
-version = "1.0.0rc1"
+version = "1.0.0rc2"
 description = "Python client for Nordic electricity balancing and imbalance data (Energinet, Fingrid, Svenska kraftnät, eSett, ENTSO-E), normalised to 15-minute UTC intervals."
 readme = "README.md"
 license = "MIT"
@@ -67,6 +67,10 @@ dev = [
     "pandas-stubs>=3.0.5.260914",
     "pandas>=2.1",
     "coverage>=7.6",
+]
+# Installed only by the release workflow, to check the built distributions.
+release = [
+    "twine==6.1.0",
 ]
 
 [build-system]

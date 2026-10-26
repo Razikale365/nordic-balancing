@@ -6,6 +6,7 @@ import os
 import struct
 import sys
 import traceback
+import tracemalloc
 import zipfile
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -784,8 +785,14 @@ def test_short_skeleton_keys_skip_the_skeleton_check() -> None:
         pytest.param(lambda key: key, id="raw"),
         pytest.param(lambda key: key.lower(), id="lowercase"),
         pytest.param(lambda key: key.upper(), id="uppercase"),
+        pytest.param(lambda key: key.title(), id="mixed_case"),
         pytest.param(lambda key: quote(key, safe=""), id="percent"),
         pytest.param(lambda key: quote(key, safe="").lower(), id="percent_lower_hex"),
+        pytest.param(lambda key: "".join(f"&#x{ord(c):x};" for c in key), id="xml_charref"),
+        pytest.param(lambda key: "".join(f"&#{ord(c)};" for c in key), id="xml_decimal_charref"),
+        pytest.param(lambda key: f"{key[:4]}<!-- -->{key[4:]}", id="xml_comment_split"),
+        pytest.param(lambda key: f"{key[:4]}<![CDATA[{key[4:]}]]>", id="xml_cdata_split"),
+        pytest.param(lambda key: f"{key[:4]}<?pi x?>{key[4:]}", id="xml_pi_split"),
     ],
 )
 def test_a_document_echoing_the_token_is_rejected(
@@ -801,6 +808,40 @@ def test_a_document_echoing_the_token_is_rejected(
     with pytest.raises(SourceError, match="response contains the API token") as caught:
         EntsoeClient(key, http).imbalance_prices(START, END, [BiddingZone.SE3])
     assert key not in "".join(traceback.format_exception(caught.value))
+
+
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-32"])
+def test_a_document_echoing_the_token_in_a_wide_encoding_is_rejected(
+    encoding: str,
+) -> None:
+    # UTF-16 parses, so the token lands in decoded text the byte scan cannot see;
+    # UTF-32 is unparseable to expat and is rejected as not XML either way.
+    key = "SyNtHeTiC/audit+Key=123"
+    body = ONE_HOUR.replace(
+        "</Point>", f"<flowDirection.direction>{key}</flowDirection.direction></Point>"
+    )
+    content = (f'<?xml version="1.0" encoding="{encoding}"?>' + body).encode(encoding)
+    http = http_client(lambda _: httpx.Response(200, content=content))
+    with pytest.raises(SourceError) as caught:
+        EntsoeClient(key, http).imbalance_prices(START, END, [BiddingZone.SE3])
+    assert key not in "".join(traceback.format_exception(caught.value))
+
+
+def test_a_document_with_escape_sequences_but_no_token_still_parses() -> None:
+    # A "&#" reference the decoder resolves, and a "\u" sequence XML never
+    # expands, both trip the decoded scan without carrying the token.
+    body = ONE_HOUR.replace(
+        "<imbalance_Price.amount>21.0<", "<imbalance_Price.amount>&#x32;1.0<", 1
+    )
+    body = body.replace(
+        "</Point>",
+        "<flowDirection.direction>A\\u0041</flowDirection.direction></Point>",
+        1,
+    )
+    prices = entsoe_client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+        START, END, [BiddingZone.SE3]
+    )
+    assert [p.imbalance_price_eur for p in prices] == [21.0, 21.5, 22.0, 22.5]
 
 
 def test_http_error_keeps_no_suppressed_exception_context() -> None:
@@ -1021,6 +1062,45 @@ def test_a03_fill_still_rejects_explicit_point_outside_chunk_window() -> None:
         entsoe_client(lambda _: httpx.Response(200, text=body), max_workers=1).imbalance_prices(
             datetime(2024, 1, 1, tzinfo=UTC), datetime(2025, 1, 10, tzinfo=UTC), [BiddingZone.DK1]
         )
+
+
+def test_a_point_exactly_at_window_end_is_rejected() -> None:
+    # The window end is exclusive; a point published at it is outside.
+    body = entsoe_document(
+        entsoe_series(
+            entsoe_period(
+                "2026-01-15T00:00Z",
+                "2026-01-15T02:00Z",
+                *(entsoe_point(index) for index in range(1, 6)),
+            )
+        )
+    )
+    with pytest.raises(SourceError, match="point outside requested window"):
+        entsoe_client(lambda _: httpx.Response(200, text=body)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+def test_chunking_stops_at_the_query_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A chunk landing exactly on query_end must end the loop: '<=' would mint
+    # the same zero-width chunk forever.
+    calls = 0
+    real_min = min
+
+    def bounded_min(first: Any, second: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls > 8:
+            pytest.fail("chunk loop did not stop at query_end")
+        return real_min(first, second)
+
+    monkeypatch.setattr(entsoe_module, "min", bounded_min, raising=False)
+    end = START + 2 * (END - START)
+    jobs = entsoe_module._jobs(START, end, [BiddingZone.SE3], max_chunk=END - START)
+    assert jobs == [
+        (BiddingZone.SE3, START, END),
+        (BiddingZone.SE3, END, end),
+    ]
 
 
 def test_a03_fill_work_is_bounded_by_window_for_year_long_period() -> None:
@@ -1491,6 +1571,10 @@ def test_zip_member_with_uppercase_xml_extension_parses() -> None:
         ),
         (entsoe_document(quarter_in("A04"), quarter_in("A05", 22.0)), "dual imbalance prices"),
         (entsoe_document(quarter_in("A04"), quarter_in("A04", 22.0)), "dual imbalance prices"),
+        # Only the A04/A05 pair merges: other or lowercase codes are not known to share a price.
+        (entsoe_document(quarter_in("A04"), quarter_in("A06")), "unsupported categories 'A06'"),
+        (entsoe_document(quarter_in("A06"), quarter_in("A07")), "categories 'A06', 'A07'"),
+        (entsoe_document(quarter_in("a04"), quarter_in("A05")), "unsupported categories 'a04'"),
         (
             entsoe_document(quarter_in("A04", resolution="PT60M"), quarter_in("A05")),
             "conflicting resolutions",
@@ -2348,6 +2432,28 @@ def test_zip_member_cap_is_ten_thousand() -> None:
         entsoe_module._members(archive)
 
 
+def test_zip_member_whose_stream_lies_past_the_limit_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The declared file_size is trusted only by the cheap pre-check; a member
+    # that inflates far past it is read in bounded steps, not inflated whole
+    # before the CRC check fails.
+    monkeypatch.setattr(entsoe_module, "_LIMIT", 4096)
+    archive = bytearray(zipped(b" " * (2 * 1024 * 1024)))
+    # file_size sits 24 bytes into the central-directory record: a small lie
+    # there passes the summed-size pre-check.
+    central = archive.rfind(b"PK\x01\x02")
+    archive[central + 24 : central + 28] = (100).to_bytes(4, "little")
+    tracemalloc.start()
+    try:
+        with pytest.raises(SourceError, match="not a valid ZIP archive"):
+            entsoe_module._members(bytes(archive))
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 1024 * 1024
+
+
 def test_zip_member_cap_counts_signatures_before_infolist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2392,6 +2498,30 @@ def test_documents_with_a_dtd_are_rejected_in_any_encoding(archive: bool, encodi
     content = zipped(body) if archive else body
     with pytest.raises(SourceError, match="document has a DTD"):
         entsoe_client(lambda _: httpx.Response(200, content=content)).imbalance_prices(
+            START, END, [BiddingZone.SE3]
+        )
+
+
+@pytest.mark.parametrize(
+    ("declared", "codec"),
+    [("utf-16-le", "utf-16-le"), ("utf-16-be", "utf-16-be"), ("no-such-codec", "utf-16-le")],
+)
+@pytest.mark.parametrize(
+    "doctype",
+    [
+        pytest.param("<!DOCTYPE x>", id="bare_doctype"),
+        pytest.param('<!DOCTYPE x [<!ENTITY u "U">]>', id="internal_entity"),
+    ],
+)
+def test_dtd_precheck_survives_a_declared_utf16_variant(
+    declared: str, codec: str, doctype: str
+) -> None:
+    # Declaring utf-16-le/be makes pyexpat raise ValueError, an unknown codec
+    # LookupError; the pre-check defers, so the document ends in the main
+    # parser's SourceError like any other unparseable body.
+    body = (f'<?xml version="1.0" encoding="{declared}"?>' + doctype + ONE_HOUR).encode(codec)
+    with pytest.raises(SourceError, match="not XML"):
+        entsoe_client(lambda _: httpx.Response(200, content=body)).imbalance_prices(
             START, END, [BiddingZone.SE3]
         )
 

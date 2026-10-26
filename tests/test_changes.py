@@ -25,8 +25,13 @@ def test_window_starting_at_a_change_does_not_report_it() -> None:
     assert changes_between(MARCH_2026, datetime(2026, 5, 1, tzinfo=UTC)) == []
 
 
-def test_window_ending_at_a_change_reports_it() -> None:
-    found = changes_between(datetime(2026, 1, 1, tzinfo=UTC), MARCH_2026)
+def test_window_ending_at_a_change_does_not_report_it() -> None:
+    # Every interval of [start, end) starts before the change, so all of them are old-rule.
+    assert changes_between(datetime(2026, 1, 1, tzinfo=UTC), MARCH_2026) == []
+
+
+def test_window_ending_one_quarter_after_a_change_reports_it() -> None:
+    found = changes_between(datetime(2026, 1, 1, tzinfo=UTC), MARCH_2026 + timedelta(minutes=15))
 
     assert [c.effective for c in found] == [MARCH_2026]
 

@@ -8,6 +8,26 @@ is listed here.
 
 - Add `reconcile_reserve_capacity`, `CapacityDivergence`, `CapacityReconciliationReport` and `DivergenceKind.VOLUME` to classify reserve capacity price, volume and coverage differences between sources.
 
+## 1.0.0rc2 — 2026-10-26
+
+Second release candidate: fixes from a wide pre-1.0 audit.
+
+### Security
+- **ENTSO-E and Fingrid:** a response that echoes the API key is rejected in any letter case and in any form the JSON or XML decoder turns back into the key (character references, `\uXXXX` and `\/` escapes, UTF-16/32 bodies, a key split by XML comments, CDATA or processing instructions), not only as raw or percent-encoded bytes.
+- **ENTSO-E:** each ZIP member is read in bounded steps, so a member that lies about its size can no longer make the library inflate it in full before rejecting it.
+
+### Changed
+- `changes_between` no longer reports a change taking effect exactly at `end`: no interval of the `[start, end)` window is under it.
+- JSON with a repeated member name, or nested more than 32 levels deep, raises `SourceError` after the usual retries instead of silently keeping the last value or failing with `RecursionError`.
+- **ENTSO-E:** equal imbalance prices merge only across the `A04`/`A05` category pair; any other category raises `SourceError`.
+- A `start` or `end` with nanoseconds (a pandas `Timestamp`) has them dropped instead of being rejected or losing an interval.
+
+### Fixed
+- **eSett:** a query whose `start` had sub-second digits lost the interval at each 31-day chunk boundary; chunk boundaries now sit on the quarter hour.
+- A response that a caller's transport read before returning it is still checked against the 64 MiB limit and for an unrequested encoding.
+- **ENTSO-E:** an XML declaration in UTF-16 or naming an unknown encoding raises `SourceError` instead of `ValueError` or `LookupError`.
+- The release workflow checks the distributions with a lockfile-pinned `twine`.
+
 ## 1.0.0rc1 — 2026-10-22
 
 Release candidate for 1.0: 0.4.0 plus the fixes below. Install it with

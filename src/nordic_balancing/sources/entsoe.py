@@ -30,12 +30,13 @@ from datetime import UTC, datetime, timedelta
 from operator import attrgetter
 from types import TracebackType
 from typing import Any, Self
-from urllib.parse import quote, unquote
+from urllib.parse import unquote
 from xml.etree import ElementTree
 from xml.parsers import expat
 
 import httpx
 
+from nordic_balancing._echo import echoes_key, xml_can_hide_key, xml_echoes_key
 from nordic_balancing._http import _LIMIT, _escape, _request, check_base_url
 from nordic_balancing.errors import NordicBalancingError, SourceError
 from nordic_balancing.models import (
@@ -62,6 +63,8 @@ _INSTANCE_LIMIT = "exceeds the allowed maximum"
 _HOUR = timedelta(hours=1)
 _NO = (BiddingZone.NO1, BiddingZone.NO2, BiddingZone.NO3, BiddingZone.NO4, BiddingZone.NO5)
 _MFRR_DIRECTIONS = {"A01": Direction.UP, "A02": Direction.DOWN}
+# Imbalance price categories (excess and insufficient balance) that may share one price.
+_MERGEABLE_CATEGORIES = frozenset({"A04", "A05"})
 _NO_DATA = "No matching data found"
 _PASSTHROUGH = frozenset({400})
 _RESOLUTIONS = {"PT15M": INTERVAL, "PT60M": _HOUR}
@@ -653,15 +656,6 @@ def _json_escape(match: re.Match[str]) -> str:
     return chr(int(escape[2:], 16))
 
 
-def _echoes_token(body: bytes, api_key: str) -> bool:
-    # A bytes find per form keeps it cheap on the data path: the raw key, its
-    # case folds and its percent-encoding.
-    key = api_key.encode()
-    encoded = quote(key, safe="").encode()
-    forms = (key, key.lower(), key.upper(), encoded, encoded.lower())
-    return any(form in body for form in forms)
-
-
 def _local(tag: str) -> str:
     return tag.rpartition("}")[2]
 
@@ -728,7 +722,21 @@ def _members(body: bytes) -> list[bytes]:
                     raise SourceError(f"{SOURCE}: ZIP archive has no XML member")
                 if sum(info.file_size for info in infos) > _LIMIT:
                     raise SourceError(f"{SOURCE}: ZIP members exceed {_LIMIT} bytes uncompressed")
-                members = [archive.read(info) for info in infos]
+                # The declared size is only advisory: a member may lie. Each
+                # stream is read past the bytes still allowed under _LIMIT, so
+                # a lied-about member stops the read at the cap instead of
+                # inflating in full before the CRC check fails.
+                members = []
+                inflated = 0
+                for info in infos:
+                    with archive.open(info) as stream:
+                        member = stream.read(_LIMIT - inflated + 1)
+                    inflated += len(member)
+                    if inflated > _LIMIT:
+                        raise SourceError(
+                            f"{SOURCE}: ZIP members exceed {_LIMIT} bytes uncompressed"
+                        )
+                    members.append(member)
         except (
             zipfile.BadZipFile,
             RuntimeError,
@@ -771,7 +779,10 @@ def _declares_dtd(member: bytes) -> bool:
         parser.Parse(member, True)
     except _DoctypeFound:
         return True
-    except expat.ExpatError:
+    except (expat.ExpatError, ValueError, LookupError):
+        # Unparseable to expat — including a declared utf-16-le/be encoding,
+        # which pyexpat rejects with ValueError. The document parse in _points
+        # fails on the same input and reports "document is not XML" there.
         return False
     return False
 
@@ -835,8 +846,12 @@ def _points(
     ]
     # A document echoing the credential would carry it into raw and pickles.
     # Checked only once the document read as an answer: one failing an earlier
-    # check reports what failed, redacted, like any other response.
-    if api_key and _echoes_token(member, api_key):
+    # check reports what failed, redacted, like any other response. The decoded
+    # scan runs only when the bytes could hide an encoded form; the parsed tree
+    # has already undone the character references and the wide encodings.
+    if api_key and (
+        echoes_key(member, api_key) or (xml_can_hide_key(member) and xml_echoes_key(root, api_key))
+    ):
         raise SourceError(f"{SOURCE}: response contains the API token")
     return points
 
@@ -1117,6 +1132,12 @@ def _reject_repeated_categories(
     if repeated:
         names = ", ".join(sorted(name or "none" for name in repeated))
         raise SourceError(f"{SOURCE}: duplicate price for category {names}")
+    # Every Nordic A85 duplicate seen live is the A04/A05 pair; another
+    # category is not known to carry the same price, so it is not merged.
+    unknown = sorted((existing_names | incoming_names) - _MERGEABLE_CATEGORIES)
+    if unknown:
+        names = ", ".join(_short(name) for name in unknown)
+        raise SourceError(f"{SOURCE}: equal prices in unsupported categories {names}")
 
 
 def _position(text: str) -> int:

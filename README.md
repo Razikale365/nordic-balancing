@@ -113,7 +113,7 @@ All observed source behaviour, with dates, is in [docs/SOURCE_NOTES.md](https://
 
 ## Status
 
-Release candidate for 1.0 (`1.0.0rc1`) on [PyPI](https://pypi.org/project/nordic-balancing/);
+Release candidate for 1.0 (`1.0.0rc2`) on [PyPI](https://pypi.org/project/nordic-balancing/);
 install it with `pip install --pre nordic-balancing`, since pip skips pre-releases by default. The
 public API is pinned by a snapshot test against [docs/API_CONTRACT.md](https://github.com/Razikale365/nordic-balancing/blob/main/docs/API_CONTRACT.md), and
 from 1.0 it follows Semantic Versioning. Every source is checked against its live API daily. Performance, including a comparison with entsoe-py and

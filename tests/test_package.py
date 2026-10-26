@@ -62,5 +62,9 @@ def test_live_workflow_scopes_the_api_keys_to_the_two_steps_that_read_them() -> 
 
 def test_release_checks_the_dists_with_a_pinned_twine() -> None:
     release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-    assert "- run: uvx twine@6.1.0 check dist/*" in release
-    assert "uvx twine check" not in release
+    groups = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+        "dependency-groups"
+    ]
+    assert "- run: uv run --locked --group release twine check dist/*" in release
+    assert "uvx twine" not in release
+    assert groups["release"] == ["twine==6.1.0"]
