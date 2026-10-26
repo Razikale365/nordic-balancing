@@ -127,6 +127,15 @@ def test_price_and_rounding_tolerance_boundaries(
     assert report.identical == 0
 
 
+def test_default_tolerances_are_one_cent_and_zero_mw() -> None:
+    def kinds_for(primary: ReserveCapacity, reference: ReserveCapacity) -> list[DivergenceKind]:
+        return kinds(reconcile_reserve_capacity([primary], [reference]))
+
+    assert kinds_for(record("a", price=10.0), record("b", price=10.01)) == [DivergenceKind.ROUNDING]
+    assert kinds_for(record("a", price=10.0), record("b", price=10.02)) == [DivergenceKind.PRICE]
+    assert kinds_for(record("a", volume=1.0), record("b", volume=1.001)) == [DivergenceKind.VOLUME]
+
+
 @pytest.mark.parametrize(
     ("primary_volume", "reference_volume", "tolerance", "diverges"),
     [
@@ -340,6 +349,8 @@ def test_divergences_sorted_by_start_zone_product_direction_kind() -> None:
         (START, BiddingZone.DK1, ReserveProduct.FCR_N, Direction.UP),
         (START, BiddingZone.DK1, ReserveProduct.FCR_N, Direction.NONE),
         (START, BiddingZone.DK1, ReserveProduct.FCR_N, Direction.DOWN),
+        # Product sorts before direction: this key follows every FCR-N one.
+        (START, BiddingZone.DK1, ReserveProduct.MFRR, Direction.DOWN),
     ]
     primary = [
         record("a", start=s, zone=z, product=p, direction=d, price=0.0, volume=0.0, resolution=HOUR)
@@ -361,9 +372,9 @@ def test_divergences_sorted_by_start_zone_product_direction_kind() -> None:
     assert reconcile_reserve_capacity(reversed(primary), reversed(reference)) == report
     assert report.compared == len(keys) and report.identical == 0
     assert report.counts() == {
-        DivergenceKind.PRICE: 6,
-        DivergenceKind.RESOLUTION: 6,
-        DivergenceKind.VOLUME: 6,
+        DivergenceKind.PRICE: 7,
+        DivergenceKind.RESOLUTION: 7,
+        DivergenceKind.VOLUME: 7,
     }
     assert report.products == (ReserveProduct.FCR_N, ReserveProduct.MFRR)
 
