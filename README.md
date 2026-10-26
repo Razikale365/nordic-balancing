@@ -61,7 +61,7 @@ frame = to_frame(prices).set_index(["start", "zone"])  # needs the pandas extra
 | DK1/DK2 imbalance prices with their components | `EnergiDataServiceClient().imbalance_prices(start, end, zones)` | none |
 | FI imbalance prices and mFRR components, or any Fingrid dataset | `FingridClient().imbalance_prices(start, end)`, `.series(dataset_id, start, end)` | `FINGRID_API_KEY` |
 | Reserve capacity (FCR, aFRR, mFRR) prices and volumes | `capacity_market(product, start, end)` on: `SvKClient` (SE mFRR, aFRR), `EnergiDataServiceClient` (DK; aFRR for all zones; FCR for SE), `FingridClient` (FI), `EntsoeClient` (NO; FI mFRR) | as above |
-| Where two sources disagree | `reconcile_imbalance_prices(primary, reference)` | none |
+| Where two sources disagree | `reconcile_imbalance_prices(primary, reference)`, `reconcile_reserve_capacity(primary, reference)` | none |
 
 Keys are free: ENTSO-E from the [Transparency Platform](https://transparency.entsoe.eu/),
 Fingrid from [developer-data.fingrid.fi](https://developer-data.fingrid.fi). Coverage and
@@ -83,8 +83,10 @@ The full text is in [docs/API_CONTRACT.md](https://github.com/Razikale365/nordic
 - **Transport errors are typed**: retries for 429/5xx/timeouts, then `RateLimitError` or
   `SourceError`, never a raw `httpx` exception.
 
-`reconcile_imbalance_prices` reports differences between two sources by kind (rounding,
-price, direction, resolution, missing, unpublished); it never merges series or picks a winner.
+`reconcile_imbalance_prices` and `reconcile_reserve_capacity` report differences between
+two sources by kind (rounding, price, volume, direction, resolution, missing, unpublished).
+The capacity function compares each product and direction separately. Neither function
+merges series or picks a winner.
 
 ## What it has found in the real data
 

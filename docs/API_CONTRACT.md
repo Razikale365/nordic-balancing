@@ -12,9 +12,11 @@ The public API consists of:
   - Client classes: `EnergiDataServiceClient`, `ESettClient`, `EntsoeClient`,
     `FingridClient`, `SvKClient`.
   - Record and report dataclasses: `ImbalancePrice`, `ReserveCapacity`,
-    `MarketChange`, `Divergence`, `ReconciliationReport`.
+    `MarketChange`, `Divergence`, `ReconciliationReport`, `CapacityDivergence`,
+    `CapacityReconciliationReport`.
   - Enums: `BiddingZone`, `Direction`, `ReserveProduct`, `DivergenceKind`.
-  - Functions: `changes_between`, `reconcile_imbalance_prices`, `to_frame`.
+  - Functions: `changes_between`, `reconcile_imbalance_prices`,
+    `reconcile_reserve_capacity`, `to_frame`.
   - Exceptions: `NordicBalancingError`, `SourceError`, `RateLimitError`.
   - Constants: `CHANGES`, `INTERVAL`, `__version__`.
 - The documented constructor parameters, public methods, properties, dataclass
@@ -405,7 +407,8 @@ breaking change under the compatibility policy above.
   `tests/test_public_api.py::test_public_api_snapshot`. An async API, if added, will
   be an addition in a minor release, not a breaking change.
 - **Reconciliation classifies, never merges.** Reconciliation classifies differences only;
-  `reconcile_imbalance_prices` never merges series or picks a source. Covered by
+  `reconcile_imbalance_prices` and `reconcile_reserve_capacity` never merge series
+  or pick a source. The imbalance function is covered by
   `tests/test_reconcile.py::test_identical_records_produce_no_divergences`,
   `tests/test_reconcile.py::test_one_interval_can_have_several_divergences`,
   `tests/test_reconcile.py::test_zones_in_only_one_input_are_reported_not_silently_dropped`,
@@ -425,6 +428,32 @@ breaking change under the compatibility policy above.
   equal" nor "within the tolerance": it is always a PRICE divergence, never
   identical or ROUNDING, covered by
   `tests/test_reconcile.py::test_non_finite_prices_are_price_divergences`.
+  `reconcile_reserve_capacity` compares `(zone, product, direction, start)` keys
+  over the intersection of zones AND the intersection of products in the inputs;
+  zones and products present in only one input are listed in coverage fields.
+  Directions, including `Direction.NONE` for FCR-N, are separate keys.
+  `CapacityReconciliationReport.divergences` sorts by
+  `(start, zone, product, direction, kind)`, using enum values. Missing records
+  yield only a missing divergence. Price uses the same PRICE/ROUNDING and
+  float-noise rules with `tolerance_eur_per_mw=0.01` (EUR/MW). Volume uses
+  `tolerance_mw=0.0` (MW) and the same float-noise rule: differences above it
+  yield VOLUME; those within it produce no divergence. Non-finite prices and
+  volumes always yield PRICE and VOLUME respectively, including against `None`.
+  Exactly one unpublished side yields UNPUBLISHED; if both price and volume are
+  one-sided, one UNPUBLISHED detail names both fields. Both tolerances must be
+  finite non-negative numbers, not bool. `identical` counts keys with no
+  divergence. Covered by
+  `tests/test_reconcile_capacity.py::test_17_oct_2026_fi_mfrr_zero_filled_capacity`,
+  `tests/test_reconcile_capacity.py::test_zones_and_products_in_only_one_input_are_reported`,
+  `tests/test_reconcile_capacity.py::test_common_zones_and_products_are_independent_intersections`,
+  `tests/test_reconcile_capacity.py::test_keys_differing_only_in_direction_are_separate`,
+  `tests/test_reconcile_capacity.py::test_divergences_sorted_by_start_zone_product_direction_kind`,
+  `tests/test_reconcile_capacity.py::test_price_and_rounding_tolerance_boundaries`,
+  `tests/test_reconcile_capacity.py::test_volume_default_and_custom_tolerance`,
+  `tests/test_reconcile_capacity.py::test_non_finite_against_unpublished_also_diverges`,
+  `tests/test_reconcile_capacity.py::test_unpublished_once_for_price_volume_or_both`,
+  `tests/test_reconcile_capacity.py::test_invalid_tolerances_rejected`, and
+  `tests/test_properties.py::test_reconcile_capacity_swapping_arguments_swaps_missing_counts`.
 - **Fingrid hourly records only for verified datasets.** `FingridClient.series()` has a verified
   hourly policy only for datasets 319, 244, 106, and 369 (per-interval prices and
   direction). Hourly records from any other dataset raise `SourceError` rather
