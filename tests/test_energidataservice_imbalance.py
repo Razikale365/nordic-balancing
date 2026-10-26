@@ -294,6 +294,23 @@ def test_an_exact_multiple_of_the_page_size_ends_on_an_empty_page() -> None:
     assert len(prices) == 20_000
 
 
+def test_paging_stops_when_a_full_page_repeats(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A server ignoring `offset` returns the same page forever; the duplicate
+    # row check is what stops the loop after page two.
+    monkeypatch.setattr("nordic_balancing.sources.energidataservice.PAGE_SIZE", 2)
+    offsets: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        offsets.append(request.url.params["offset"])
+        if len(offsets) > 4:
+            pytest.fail("paging did not stop on a repeated page")
+        return eds_page(imbalance_rows(START, 0, 2))
+
+    with pytest.raises(SourceError, match="duplicate record"):
+        eds_client(handler).imbalance_prices(START, END, [BiddingZone.DK1])
+    assert offsets == ["0", "2"]
+
+
 @pytest.mark.parametrize(
     "body",
     [

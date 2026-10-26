@@ -110,11 +110,13 @@ def changes_between(
     end: datetime,
     zones: Iterable[BiddingZone] | None = None,
 ) -> list[MarketChange]:
-    """Changes taking effect in ``(start, end]`` for any of ``zones`` (default: all).
+    """Changes taking effect strictly inside ``(start, end)`` for any of ``zones`` (default: all).
 
     A change exactly at ``start`` is excluded: data from ``start`` onwards is
-    already entirely under the new rule. ``zones`` must be a non-empty iterable
-    of ``BiddingZone`` values, as in the client query methods.
+    already entirely under the new rule. A change exactly at ``end`` is excluded
+    too: no interval of the ``[start, end)`` window starts at or after it.
+    ``zones`` must be a non-empty iterable of ``BiddingZone`` values, as in the
+    client query methods.
     """
     start_utc = to_utc(start, "start")
     end_utc = to_utc(end, "end")
@@ -135,5 +137,5 @@ def changes_between(
     return [
         change
         for change in CHANGES
-        if start_utc < change.effective <= end_utc and (wanted is None or change.zones & wanted)
+        if start_utc < change.effective < end_utc and (wanted is None or change.zones & wanted)
     ]

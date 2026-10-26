@@ -2,6 +2,7 @@
 
 import io
 import re
+import traceback
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
@@ -13,6 +14,7 @@ from xml.etree import ElementTree as ET
 import httpx
 import pytest
 from fakes import (
+    ENTSOE_KEY,
     FI_NO_END,
     FI_NO_FIXTURES,
     FI_NO_START,
@@ -1124,6 +1126,28 @@ def test_entsoe_mfrr_error_redaction() -> None:
     assert "test-token" not in str(exc.value)
 
 
+@pytest.mark.parametrize(
+    ("product", "process"),
+    [(ReserveProduct.FCR_N, "A52"), (ReserveProduct.MFRR, "A47")],
+)
+def test_entsoe_capacity_redacts_a_token_in_the_area_element(
+    product: ReserveProduct, process: str
+) -> None:
+    # The area check names the value it found; the outer redaction is what keeps
+    # the token out of the raised error and its chain.
+    xml = (
+        f'<Balancing_MarketDocument xmlns="{NS}"><type>A81</type>'
+        f"<process.processType>{process}</process.processType>"
+        f"<area_Domain.mRID>{ENTSOE_KEY}</area_Domain.mRID></Balancing_MarketDocument>"
+    )
+    with pytest.raises(SourceError, match="does not match requested") as caught:
+        entsoe_client(lambda _: httpx.Response(200, text=xml)).capacity_market(
+            product, FCR_START, FCR_START + HOUR, zones=[BiddingZone.NO1]
+        )
+    assert "[REDACTED_SECRET]" in str(caught.value)
+    assert ENTSOE_KEY not in "".join(traceback.format_exception(caught.value))
+
+
 # --- Delivery day clipping and fill ------------------------------------------------------------
 
 
@@ -1380,6 +1404,43 @@ def test_entsoe_fcr_flow_error_text_unchanged(where: str) -> None:
             ET.tostring(root), start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N
         )
     assert str(exc.value) == "entsoe: capacity flowDirection.direction must be A03"
+
+
+def test_a_split_price_quantity_series_is_rejected() -> None:
+    # The malformed FCR-N documents ENTSO-E published for 2014-12-15..19 and
+    # 2016-10-26..11-03 put price and quantity in separate series, let Periods
+    # span several days and scaled the price series by 100; refuse, don't guess.
+    def malformed_series(fields: str) -> str:
+        return (
+            "<TimeSeries><businessType>B95</businessType>"
+            "<flowDirection.direction>A03</flowDirection.direction>"
+            "<quantity_Measure_Unit.name>MAW</quantity_Measure_Unit.name>"
+            "<currency_Unit.name>EUR</currency_Unit.name>"
+            "<curveType>A03</curveType>"
+            "<Period><timeInterval><start>2014-12-15T00:00Z</start>"
+            "<end>2014-12-19T00:00Z</end></timeInterval>"
+            "<resolution>PT60M</resolution>"
+            f"<Point><position>1</position>{fields}</Point></Period></TimeSeries>"
+        )
+
+    body = (
+        f'<Balancing_MarketDocument xmlns="{NS}"><type>A81</type>'
+        "<process.processType>A52</process.processType>"
+        + malformed_series("<procurement_Price.amount>1720</procurement_Price.amount>")
+        + malformed_series("<quantity>14.4</quantity>")
+        + "</Balancing_MarketDocument>"
+    )
+    with pytest.raises(SourceError, match="missing"):
+        capacity_prices(body)
+
+
+def test_a_body_one_byte_over_the_size_cap_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(entsoe, "_LIMIT", 8)
+    assert len(b"<x>yy</x>") == 9
+    with pytest.raises(SourceError, match="exceeds 8 bytes"):
+        capacity_prices("<x>yy</x>")
 
 
 # --- Parsing and fixtures ----------------------------------------------------------------------

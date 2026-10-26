@@ -781,9 +781,18 @@ def test_esett_hourly_quarters_map_to_published_row(
             if row["mainDirRegPowerPerMBA"] is None
             else Direction(int(row["mainDirRegPowerPerMBA"]))
         )
+        expected_up, expected_down = row["upRegPrice"], row["downRegPrice"]
+        # The documented DK placeholder: all four prices 0.0 and no direction is unpublished.
+        if (
+            price.zone in (BiddingZone.DK1, BiddingZone.DK2)
+            and row["imblSalesPrice"] == row["imblPurchasePrice"] == expected_up == expected_down
+            and expected_up == 0.0
+            and expected_dir in (Direction.NONE, None)
+        ):
+            expected_single = expected_up = expected_down = expected_dir = None
         assert price.imbalance_price_eur == expected_single
-        assert price.mfrr_up_price_eur == row["upRegPrice"]
-        assert price.mfrr_down_price_eur == row["downRegPrice"]
+        assert price.mfrr_up_price_eur == expected_up
+        assert price.mfrr_down_price_eur == expected_down
         assert price.dominating_direction == expected_dir
         assert price.raw == row
     expected_keys = sorted(

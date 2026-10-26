@@ -35,7 +35,10 @@ Everything else is private:
   not an API change. `CHANGES` covers changes to imbalance-price definitions;
   changes to a capacity market's definition (for example the EDS FCR-N/FCR-D
   price-basis change at `2024-02-01`) are documented per dataset under "Capacity
-  market methods", not as `MarketChange` entries. `changes_between` raises
+  market methods", not as `MarketChange` entries. `changes_between(start, end)`
+  returns the changes taking effect strictly inside `(start, end)`: a change at
+  `start` already applies to the whole window, and one at `end` to none of it.
+  `changes_between` raises
   `ValueError` when `end` is before `start`, and when `zones` is given but is
   empty or contains a value that is not a `BiddingZone` — a bare `BiddingZone`
   or zone-name string is not an iterable of zones and raises the same
@@ -191,7 +194,8 @@ See [FIELD_MATRIX.md](FIELD_MATRIX.md) for per-source field availability and how
 - Query window (`[start, end)`): client query methods require timezone-aware
   `start` and `end` datetimes (converting any UTC offset to UTC) with `end > start`
   and return only intervals whose `start` is in `[start, end)`, at any sub-second
-  precision of `start` and `end`. A `start`/`end` that is not a `datetime`
+  precision of `start` and `end`. Precision below a microsecond (a pandas
+  `Timestamp` with nanoseconds) is dropped. A `start`/`end` that is not a `datetime`
   raises `TypeError`; an aware datetime whose UTC conversion overflows the
   representable range (near `datetime.min`/`max`) raises `ValueError`, and so
   does any `start`/`end` outside the years 2 to 9997 in UTC.
@@ -278,7 +282,9 @@ bidding zone, product, direction, and 15-minute UTC interval:
   ENTSO-E XML values must be ASCII `xs:decimal` text and positions ASCII
   `xs:positiveInteger` text (`1_0`, `1e5` and non-ASCII digits raise); a singleton
   field read by the parser that appears twice raises `SourceError` rather than using
-  either value.
+  either value. Likewise, a JSON response with a repeated member name at any depth,
+  or nested more than 32 objects or arrays deep, is undecodable: it is retried within
+  `max_retries` and then raises `SourceError`.
 - **Pagination and duplicates**: paginated fetches must match the total row count
   reported by the source. Energi Data Service reports `total` per page: it pages by
   offset, with a sort key unique per row, until a page returns fewer than the page
@@ -287,7 +293,8 @@ bidding zone, product, direction, and 15-minute UTC interval:
   - ENTSO-E imbalance prices (A85): an interval published under distinct price
     categories (`A04` and `A05`) at the same resolution with an equal price
     collapses to one record,
-    keeping all categories in `raw["categories"]`.
+    keeping all categories in `raw["categories"]`. An equal price under any other
+    category code raises `SourceError`.
   - ENTSO-E FCR-N and mFRR capacity (A81): identical quantity/price repeats across
     documents, ZIP members or TimeSeries collapse by zone, quarter and direction
     after A03 filling; differing values and repeated positions within a Period
@@ -514,7 +521,15 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   URL or a request it logs. `httpcore` logs response headers at `DEBUG` and `httpx` logs the
   response status line at `INFO`, so a server that echoed a key in a response header or status
   line would expose it there; no supported provider is known to do so. A response body that
-  echoes the key is rejected (`SourceError`, no provider text).
+  echoes the key is rejected (`SourceError`, no provider text), in any letter case and
+  in any encoding the JSON or XML decoder would turn back into the key.
+- **Accepted (part of the contract).** A caller's `httpx` transport that reads a response
+  body before returning it (some caching or logging wrappers do) hands over a body that
+  `httpx` has already decompressed. The 64 MiB limit and the rejection of unrequested
+  encodings still apply, but such a gzip body keeps only its first member, as in
+  `httpx`. Responses read by the library itself are decompressed in bounded steps and
+  keep every member. Covered by `tests/test_http.py::test_a_buffered_body_is_still_checked`
+  and `tests/test_http.py::test_a_body_read_by_the_transport_is_not_read_again`.
 - **Accepted (part of the contract).** Redirects are not followed and proxy errors
   are not retried: a `3xx` raises `SourceError` naming the status
   (`tests/test_http.py::test_fingrid_client_reports_redirect_status`), and an

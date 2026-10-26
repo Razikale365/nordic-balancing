@@ -211,6 +211,27 @@ def test_fall_back_day_is_the_last_sunday_of_october() -> None:
     ]
 
 
+def test_eds_fcr_extends_the_window_over_the_end_years_fall_back_day() -> None:
+    # A window whose covered fall-back day lies in the end year still gets its
+    # two published first hours; looking at the start year alone misses it.
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return eds_page([])
+
+    eds_client(handler).capacity_market(
+        ReserveProduct.FCR_N,
+        datetime(2026, 11, 1, tzinfo=UTC),
+        datetime(2027, 10, 31, 1, 30, tzinfo=UTC),
+        zones=(BiddingZone.DK2,),
+    )
+    # 2027-10-31 is the 2027 fall-back day; the request end grows past its two
+    # first hours.
+    assert seen[0].url.params["start"] == "2026-11-01T00:00"
+    assert seen[0].url.params["end"] == "2027-10-31T02:00"
+
+
 # --- FCR query shape ---------------------------------------------------------------------------
 
 
@@ -485,6 +506,33 @@ def test_eds_nd_stops_paging_when_every_row_invents_an_auction_type(
             zones=(BiddingZone.DK2,),
         )
     assert len(calls) <= 3
+
+
+def test_eds_fcr_rejects_a_ninth_auction_type() -> None:
+    # The cap is eight distinct auctions per (hour, area, product): the ninth
+    # row in one group is the boundary.
+    rows = [{**ND_TOTAL, "AuctionType": a} for a in ["Total", *(f"bid-{i}" for i in range(8))]]
+    with pytest.raises(SourceError, match="more than 8 auction types"):
+        eds_fcr(rows, FCR_START, FCR_START + HOUR)
+
+
+def test_eds_fcr_row_cap_leaves_room_for_the_repeated_fall_back_hour() -> None:
+    # The row bound counts one extra slot per covered year for the fall-back
+    # day's 01:01. A hostile 00:00 row beside the published 01:00/01:01 pair
+    # still fits it, so the consistency check below is the one that rejects it.
+    auctions = ["Total", *(f"bid-{i}" for i in range(7))]
+    rows = [
+        {**ND_TOTAL, "HourUTC": utc, "HourDK": local, "AuctionType": auction}
+        for utc, local in (
+            ("2025-10-26T00:00:00", "2025-10-26T01:00:00"),
+            ("2025-10-26T01:00:00", "2025-10-26T02:00:00"),
+            ("2025-10-26T01:01:00", "2025-10-26T02:01:00"),
+            ("2025-10-26T02:00:00", "2025-10-26T03:00:00"),
+        )
+        for auction in auctions
+    ]
+    with pytest.raises(SourceError, match="published alongside"):
+        eds_fcr(rows, FALL_BACK, FALL_BACK + 3 * HOUR)
 
 
 def test_eds_error_messages_bound_echoed_provider_values() -> None:

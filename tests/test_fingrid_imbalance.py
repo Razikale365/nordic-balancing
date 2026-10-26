@@ -5,7 +5,7 @@ import json
 import os
 import threading
 import traceback
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta, timezone
 from itertools import pairwise
@@ -550,6 +550,70 @@ def test_a_response_echoing_the_api_key_is_rejected(echoed: str) -> None:
     assert echoed not in str(caught.value)
 
 
+@pytest.mark.parametrize(
+    "encode",
+    [
+        pytest.param(
+            lambda text, key: text.replace(key, "".join(f"\\u{ord(c):04x}" for c in key)).encode(),
+            id="json_unicode_escapes",
+        ),
+        pytest.param(
+            lambda text, key: text.replace(key, "s3%63r/t%3De%2Bt").encode(),
+            id="mixed_percent",
+        ),
+        pytest.param(
+            lambda text, key: text.replace(key, key.replace("/", "\\/")).encode(),
+            id="json_slash_escape",
+        ),
+        pytest.param(lambda text, key: text.encode("utf-16"), id="utf-16"),
+        pytest.param(lambda text, key: text.encode("utf-32"), id="utf-32"),
+    ],
+)
+def test_a_response_echoing_the_key_in_an_encoding_is_rejected(
+    encode: Callable[[str, str], bytes],
+) -> None:
+    # In each form the key's own bytes are absent: JSON escapes decode into the
+    # document's strings, a per-character mix of raw and percent escapes needs
+    # the pattern, and wide encodings interleave zero bytes.
+    key = "s3cr/t=e+t"
+    record = {**PUBLISHED, "echoed_key": key}
+    text = json.dumps({"data": [record], "pagination": {"total": 1, "lastPage": 1}})
+    content = encode(text, key)
+    assert key.encode() not in content
+    with (
+        http_client(lambda _: httpx.Response(200, content=content)) as http,
+        FingridClient(key, http, sleep=lambda _: None, clock=lambda: 0.0) as fingrid,
+        pytest.raises(SourceError, match="response contains the API key") as caught,
+    ):
+        fingrid.series(319, START, END)
+    assert key not in "".join(traceback.format_exception(caught.value))
+
+
+def test_a_response_with_escape_sequences_but_no_key_still_parses() -> None:
+    # "\u" and "&#" sequences trip the decoded scan; without the key the
+    # decoded document's strings hold nothing to reject.
+    record = {**PUBLISHED, "note": "a\\u0062c &#x64;one"}
+    body = json.dumps({"data": [record], "pagination": {"total": 1, "lastPage": 1}})
+    client = fingrid_client(lambda _: httpx.Response(200, text=body))
+    assert client.series(319, START, END) == [(START, 21.0)]
+
+
+def test_a_numeric_field_holding_the_key_is_never_echoed() -> None:
+    # finite_number must never echo its input: a Fingrid field can hold the key.
+    # Written as \uXXXX escapes; whichever check fires first, the key must appear
+    # nowhere in the exception or its chain.
+    escaped = "".join(f"\\u{ord(c):04x}" for c in FINGRID_KEY)
+    body = json.dumps(
+        {
+            "data": [{**PUBLISHED, "value": FINGRID_KEY}],
+            "pagination": {"total": 1, "lastPage": 1},
+        }
+    ).replace(json.dumps(FINGRID_KEY), f'"{escaped}"')
+    with pytest.raises(SourceError) as caught:
+        fingrid_client(lambda _: httpx.Response(200, text=body)).series(319, START, END)
+    assert FINGRID_KEY not in "".join(traceback.format_exception(caught.value))
+
+
 def test_strips_surrounding_whitespace_from_key_and_redacts_stripped_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -815,6 +879,36 @@ def test_a_total_larger_than_the_window_is_rejected_after_one_request() -> None:
     with pytest.raises(SourceError, match="total"):
         fingrid_client(handler).series(319, START, END)
     assert pages == ["1"]
+
+
+def test_a_total_one_over_the_window_bound_is_rejected() -> None:
+    # [START, END) can hold five rows (four quarters and one hourly start);
+    # a total of six cannot be honest.
+    body = {"data": [], "pagination": {"total": 6, "lastPage": 1}}
+    with pytest.raises(SourceError, match="exceeds the 5 rows"):
+        fingrid_client(lambda _: httpx.Response(200, json=body)).series(319, START, END)
+
+
+def test_a_full_page_is_capped_at_the_requested_page_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A server reporting a perPage above the requested pageSize does not make
+    # a page holding every requested row look short.
+    monkeypatch.setattr("nordic_balancing.sources.fingrid.PAGE_SIZE", 2)
+    pages = [[row(quarter=q) for q in pair] for pair in ((0, 1), (2, 3))]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        number = int(request.url.params["page"])
+        return httpx.Response(
+            200,
+            json={
+                "data": pages[number - 1],
+                "pagination": {"total": 4, "lastPage": 2, "perPage": 5},
+            },
+        )
+
+    values = fingrid_client(handler).series(319, START, END)
+    assert values == [(START + i * INTERVAL, 21.0) for i in range(4)]
 
 
 def test_an_inflated_last_page_is_bounded() -> None:

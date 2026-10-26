@@ -8,6 +8,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fakes import (
+    eds_client,
+    eds_server,
+    esett_client,
+    esett_server,
     http_client,
 )
 from hypothesis import given
@@ -127,6 +131,13 @@ def test_raw_top_level_is_read_only() -> None:
 def test_raw_preserves_json_like_types() -> None:
     raw = {"t": (1, 2), "l": [1], "d": {"k": None}, "n": 1.5, "s": "x"}
     assert dict(price(raw).raw) == raw
+
+
+def test_raw_is_a_full_mapping_with_len_and_repr() -> None:
+    record = price({"a": 1, "b": [2]})
+    assert len(record.raw) == 2
+    assert list(record.raw) == ["a", "b"]
+    assert repr(record.raw) == repr({"a": 1, "b": [2]})
 
 
 def test_raw_deep_copies_other_mutable_containers() -> None:
@@ -398,3 +409,38 @@ def test_entsoe_chunking_at_the_last_supported_year_does_not_overflow() -> None:
             datetime(_MAX_YEAR, 12, 31, tzinfo=UTC),
             datetime(_MAX_YEAR, 12, 31, 23, 45, tzinfo=UTC),
         )
+
+
+def test_to_utc_returns_a_plain_datetime_without_sub_microseconds() -> None:
+    pd = pytest.importorskip("pandas")
+    # pandas.Timestamp is a datetime subclass carrying nanoseconds; 15-minute
+    # window arithmetic works at microsecond resolution, so the finer part is
+    # dropped, not rounded.
+    stamp = to_utc(pd.Timestamp("2026-01-15 12:15:00.000000001Z"), "start")
+    assert type(stamp) is datetime
+    assert stamp.tzinfo is UTC
+    assert stamp == datetime(2026, 1, 15, 12, 15, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        lambda start, end: esett_client(esett_server).imbalance_prices(
+            start, end, [BiddingZone.SE3]
+        ),
+        lambda start, end: eds_client(eds_server).imbalance_prices(start, end),
+    ],
+    ids=["esett", "eds"],
+)
+def test_sub_microsecond_window_edges_return_the_same_records(query: Any) -> None:
+    pd = pytest.importorskip("pandas")
+    nanosecond = pd.Timedelta(1, "ns")
+    start = pd.Timestamp("2026-01-15 12:00Z")
+    end = pd.Timestamp("2026-01-15 12:30Z")
+
+    shifted = query(start + nanosecond, end + nanosecond)
+    exact = query(start.to_pydatetime(), end.to_pydatetime())
+
+    assert [record.start for record in shifted] == [record.start for record in exact]
+    assert shifted == exact
+    assert len(shifted) > 0

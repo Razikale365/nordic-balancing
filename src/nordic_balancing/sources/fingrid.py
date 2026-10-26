@@ -2,7 +2,6 @@
 
 import math
 import os
-import re
 import threading
 import time
 from collections.abc import Callable
@@ -13,6 +12,7 @@ from typing import Any, Self
 
 import httpx
 
+from nordic_balancing._echo import echoes_key, json_can_hide_key, json_echoes_key
 from nordic_balancing._http import ACCEPT_ENCODING, check_base_url, get_json, read_capped
 from nordic_balancing._validate import finite_number, reject_duplicate
 from nordic_balancing.errors import NordicBalancingError, SourceError
@@ -60,7 +60,6 @@ class _AuthenticatedTransport(httpx.BaseTransport):
         self._http = http
         self._api_key = api_key
         self._before_request = before_request
-        self._key_pattern = _key_pattern(api_key)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         self._before_request()
@@ -78,8 +77,12 @@ class _AuthenticatedTransport(httpx.BaseTransport):
             )
             # A 200 body echoes into returned data; if it carries the credential
             # it is not an answer to return. The message must not repeat the
-            # provider's text.
-            if response.status_code == 200 and self._key_pattern.search(content):
+            # provider's text. The decoded scan runs only when the bytes could
+            # hide a JSON escape or a wide encoding the raw scan cannot see.
+            if response.status_code == 200 and (
+                echoes_key(content, self._api_key)
+                or (json_can_hide_key(content) and json_echoes_key(content, self._api_key))
+            ):
                 raise SourceError(f"{SOURCE}: response contains the API key")
             return httpx.Response(
                 response.status_code,
@@ -483,17 +486,6 @@ class FingridClient:
                 "data changed or truncated"
             )
         return rows
-
-
-def _key_pattern(api_key: str) -> re.Pattern[bytes]:
-    # The key is printable ASCII, so each character is one byte. An echo may
-    # carry it raw, case-normalised, or percent-escaped per character in either
-    # hex case, like a URL — the same shapes _redact covers in entsoe.py.
-    parts = []
-    for char in api_key:
-        escaped = "%" + "".join(f"[{d}{d.lower()}]" for d in f"{ord(char):02X}")
-        parts.append(f"(?:{escaped}|{re.escape(char)})")
-    return re.compile("".join(parts).encode("ascii"), re.IGNORECASE)
 
 
 def _page_rows(body: Any) -> list[Any]:
