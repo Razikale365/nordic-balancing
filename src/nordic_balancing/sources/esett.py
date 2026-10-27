@@ -41,7 +41,8 @@ _VALUE_KEY_SET = frozenset(_VALUE_KEYS)
 _ZONES = dict(BiddingZone.__members__)
 _DIRECTIONS = {float(d): d for d in Direction}
 # DK1/DK2 mark an interval that is not settled yet with 0.0 in every price
-# column instead of null; SE, NO and FI use null, so the signature is DK-only.
+# column instead of null (and a non-zero imblSpotDifferencePrice); SE, NO and
+# FI use null, so the signature is DK-only.
 _DK_ZONES = frozenset({BiddingZone.DK1, BiddingZone.DK2})
 _EIC_CODES = {
     BiddingZone.DK1: "10YDK-1--------W",
@@ -250,6 +251,12 @@ def _number(record: dict[str, Any], column: str) -> float | None:
     return finite_number(value, source=SOURCE, column=column)
 
 
+def _is_zero(value: object) -> bool:
+    # Only a published number counts: a null (or anything else) is no evidence
+    # of a settled price, so the row stays unpublished.
+    return type(value) in (int, float) and value == 0
+
+
 def _direction(record: dict[str, Any]) -> Direction | None:
     value = _number(record, "mainDirRegPowerPerMBA")
     if value is None:
@@ -302,12 +309,15 @@ def _parse_imbalance(record: object, times: dict[str, datetime]) -> ImbalancePri
     if (
         zone in _DK_ZONES
         and sales == purchase == up == down == 0.0
-        and direction in (Direction.NONE, None)
+        and not _is_zero(record.get("imblSpotDifferencePrice"))
     ):
         # The pre-settlement DK placeholder is not a price; report it as
         # unpublished, like the null rows the other zones send for it. Its
-        # direction is 0 as observed; a null one is no settlement either. An
-        # all-zero row with an activation direction is a real settled price.
+        # direction may be -1, 0 or 1, so only the spot difference tells it
+        # apart: a settled price of 0.0 differs from spot only when spot is not
+        # 0.0 too, and every all-zero settled row seen (34 in 2025-2026, all
+        # matching Energi Data Service) has a difference of exactly 0.0, while
+        # every placeholder seen has minus the spot price there.
         single = up = down = direction = None
     # start comes from _parse_time (a plain UTC datetime) and record was decoded for
     # this call alone; hourly quarters are copied from it through dataclasses.replace.

@@ -107,6 +107,7 @@ def esett_row(
     up: float | None = None,
     down: float | None = None,
     main_direction: float | None = None,
+    spot_difference: float | None = None,
 ) -> dict[str, Any]:
     return {
         "timestampUTC": iso_z(stamp),
@@ -116,6 +117,7 @@ def esett_row(
         "upRegPrice": up,
         "downRegPrice": down,
         "mainDirRegPowerPerMBA": main_direction,
+        "imblSpotDifferencePrice": spot_difference,
     }
 
 

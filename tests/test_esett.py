@@ -450,17 +450,69 @@ def test_dk_equal_non_zero_prices_without_a_direction_stay_real() -> None:
     assert prices[0].dominating_direction is Direction.NONE
 
 
-def test_dk_all_zero_prices_with_an_activation_direction_stay_real() -> None:
-    # A settled zero-price interval still reports its regulation direction; only the
-    # placeholder also has mainDirRegPowerPerMBA == 0.
-    record = {**DK_PLACEHOLDER, "mainDirRegPowerPerMBA": 1.0}
+@pytest.mark.parametrize("difference", [-170.92, None, "0", False])
+@pytest.mark.parametrize("flow", [1.0, -1.0, 0.0, None])
+def test_dk_placeholder_is_unpublished_whatever_its_direction(
+    flow: float | None, difference: object
+) -> None:
+    # Placeholders were seen live with direction -1, 0 and 1; only a published
+    # spot difference of exactly zero marks an all-zero row as settled.
+    record = {
+        **DK_PLACEHOLDER,
+        "mainDirRegPowerPerMBA": flow,
+        "imblSpotDifferencePrice": difference,
+    }
     prices = esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
         datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
         datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
         [BiddingZone.DK2],
     )
+    assert prices[0].imbalance_price_eur is None
+    assert prices[0].mfrr_up_price_eur is None
+    assert prices[0].mfrr_down_price_eur is None
+    assert prices[0].dominating_direction is None
+
+
+# Verbatim eSett row, settled: spot was 0.0 (Energi Data Service agrees), so the
+# imbalance price is a real 0.0 and the spot difference is exactly zero.
+DK_SETTLED_ZERO: dict[str, Any] = {
+    "timestamp": "2026-10-25T02:15:00",
+    "timestampUTC": "2026-10-25T01:15:00Z",
+    "mba": "DK1",
+    "imblSalesPrice": 0.0,
+    "imblPurchasePrice": 0.0,
+    "upRegPrice": 0.0,
+    "downRegPrice": 0.0,
+    "mainDirRegPowerPerMBA": 0.0,
+    "imblSpotDifferencePrice": 0.0,
+    "upRegPriceFrrA": 32.11,
+    "downRegPriceFrrA": -14.49,
+    "valueOfAvoidedActivation": None,
+    "incentivisingComponent": None,
+}
+
+
+@pytest.mark.parametrize(
+    ("flow", "direction"),
+    [(0.0, Direction.NONE), (1.0, Direction.UP), (-1.0, Direction.DOWN), (None, None)],
+)
+@pytest.mark.parametrize("difference", [0.0, 0])
+def test_dk_all_zero_row_with_a_zero_spot_difference_is_a_real_price(
+    flow: float | None, direction: Direction | None, difference: float
+) -> None:
+    record = {
+        **DK_SETTLED_ZERO,
+        "mainDirRegPowerPerMBA": flow,
+        "imblSpotDifferencePrice": difference,
+    }
+    prices = esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
+        datetime(2026, 10, 25, 1, 15, tzinfo=UTC),
+        datetime(2026, 10, 25, 1, 30, tzinfo=UTC),
+        [BiddingZone.DK1],
+    )
     assert prices[0].imbalance_price_eur == 0.0
-    assert prices[0].dominating_direction is Direction.UP
+    assert prices[0].mfrr_up_price_eur == prices[0].mfrr_down_price_eur == 0.0
+    assert prices[0].dominating_direction is direction
 
 
 def test_all_zero_row_is_real_for_non_dk_zones() -> None:
@@ -730,29 +782,7 @@ def test_purchase_only_price_is_kept_not_dropped() -> None:
     assert price.raw["imblSalesPrice"] is None
 
 
-def test_dk_all_zero_prices_with_a_null_direction_are_the_unpublished_placeholder() -> None:
-    record = {**DK_PLACEHOLDER, "mainDirRegPowerPerMBA": None}
-    prices = esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
-        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
-        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
-        [BiddingZone.DK2],
-    )
-    assert prices[0].imbalance_price_eur is None
-    assert prices[0].dominating_direction is None
-
-
 def test_rejects_sales_purchase_disagreement_on_an_all_float_row() -> None:
     record = {**PUBLISHED, "imblPurchasePrice": 22.0}
     with pytest.raises(SourceError, match="esett: single-price model violated"):
         esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(START, END)
-
-
-def test_dk_all_zero_prices_with_a_down_direction_stay_real() -> None:
-    record = {**DK_PLACEHOLDER, "mainDirRegPowerPerMBA": -1.0}
-    prices = esett_client(lambda _: httpx.Response(200, json=[record])).imbalance_prices(
-        datetime(2026, 10, 18, 20, 30, tzinfo=UTC),
-        datetime(2026, 10, 18, 20, 45, tzinfo=UTC),
-        [BiddingZone.DK2],
-    )
-    assert prices[0].imbalance_price_eur == 0.0
-    assert prices[0].dominating_direction is Direction.DOWN

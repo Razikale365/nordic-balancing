@@ -726,9 +726,11 @@ def _esett_hourly_response_case(
     if first not in chosen:
         chosen.append(first)
     finite = st.floats(-500, 500, allow_nan=False, allow_infinity=False)
+    # 0.0 is drawn often so DK all-zero rows (settled or placeholder) occur.
+    price = st.one_of(st.none(), st.just(0.0), finite)
     rows: list[dict[str, Any]] = []
     for zone, h in chosen:
-        single = draw(st.one_of(st.none(), finite))
+        single = draw(price)
         mode = draw(st.sampled_from(("both", "sales", "purchase")))
         sales = single if mode in ("both", "sales") else None
         purchase = single if mode in ("both", "purchase") else None
@@ -738,9 +740,10 @@ def _esett_hourly_response_case(
                 zone,
                 sales=sales,
                 purchase=purchase,
-                up=draw(st.one_of(st.none(), finite)),
-                down=draw(st.one_of(st.none(), finite)),
+                up=draw(price),
+                down=draw(price),
                 main_direction=draw(st.sampled_from((None, -1.0, 0.0, 1.0))),
+                spot_difference=draw(st.one_of(st.none(), st.just(0.0), finite)),
             )
         )
     return start, end, zones, rows
@@ -782,12 +785,13 @@ def test_esett_hourly_quarters_map_to_published_row(
             else Direction(int(row["mainDirRegPowerPerMBA"]))
         )
         expected_up, expected_down = row["upRegPrice"], row["downRegPrice"]
-        # The documented DK placeholder: all four prices 0.0 and no direction is unpublished.
+        # The documented DK placeholder: all four prices 0.0 and a spot difference
+        # that is not exactly 0.0 is unpublished, whatever its direction.
         if (
             price.zone in (BiddingZone.DK1, BiddingZone.DK2)
             and row["imblSalesPrice"] == row["imblPurchasePrice"] == expected_up == expected_down
             and expected_up == 0.0
-            and expected_dir in (Direction.NONE, None)
+            and row["imblSpotDifferencePrice"] != 0.0
         ):
             expected_single = expected_up = expected_down = expected_dir = None
         assert price.imbalance_price_eur == expected_single

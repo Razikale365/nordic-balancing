@@ -4,6 +4,11 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the public API is defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it
 is listed here.
 
+## 1.0.0rc3 — unreleased
+
+### Fixed
+- **eSett:** a DK1/DK2 placeholder for an interval not settled yet is recognised by its non-zero spot difference instead of its direction. Placeholders that carry an up or down direction were returned as a settled price of `0.0`, and real settled prices of `0.0` (spot also `0.0`) with no direction were returned as unpublished. Checked against every DK row from 2025 to October 2026 and against Energi Data Service.
+
 ## 1.0.0rc2 — 2026-10-26
 
 Second release candidate: fixes from a wide pre-1.0 audit.
