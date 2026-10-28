@@ -94,6 +94,9 @@ Each is reproducible with a script in [examples/](https://github.com/Razikale365
   `0.0` where eSett has a price ([entsoe_validation](https://github.com/Razikale365/nordic-balancing/blob/main/examples/entsoe_validation/README.md)).
 - **eSett marks unsettled DK intervals with `0.0`** in every price column instead of null.
   This library returns `None` for them, as for any unpublished value.
+- **eSett first publishes Finnish prices as `0.0`** and replaces them with the settled price
+  about an hour later, while Fingrid and ENTSO-E have the settled price from the start. Nothing
+  in the row tells that `0.0` from a real one, so for recent FI prices use Fingrid or ENTSO-E.
 - **Reading "unpublished" as zero is invisible downstream.** In a battery replay on
   [ArcticGrid](https://github.com/Razikale365/nordic-balancing/blob/main/benchmarks/arcticgrid_reference/README.md), one unpublished quarter read as
   0 EUR/MWh changed the dispatch but left the cash total identical.

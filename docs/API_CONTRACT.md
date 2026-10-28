@@ -281,6 +281,12 @@ bidding zone, product, direction, and 15-minute UTC interval:
   too) and is kept with its direction. Known limitation, accepted: a placeholder for
   an interval whose spot price is exactly `0.0` cannot be told apart and is returned
   as a settled `0.0`; none was seen in 2025-2026.
+  Known limitation, accepted: eSett FI (since at least October 2026) first
+  publishes an interval with `imblSalesPrice` `0.0` about two hours after it ends
+  and replaces it with the settled price about an hour later; that interim `0.0`
+  is returned as a price. No column tells it apart from a settled `0.0`, which FI
+  has dozens of times a month. For FI prices in the first three hours, use Fingrid
+  or ENTSO-E, which publish the settled price from the start.
 - **Numbers**: numeric source values must be finite JSON numbers convertible to
   `float` (`bool`, `NaN`, and infinities are rejected with `SourceError`).
   ENTSO-E XML values must be ASCII `xs:decimal` text and positions ASCII
