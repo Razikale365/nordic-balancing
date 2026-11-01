@@ -4,7 +4,14 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the public API is defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it
 is listed here.
 
-## Unreleased
+## 1.0.0 — 2026-11-01
+
+First stable release, with the same code as 1.0.0rc3. From this version the public API in
+[docs/API_CONTRACT.md](docs/API_CONTRACT.md) follows Semantic Versioning (see "Compatibility
+promise" under 1.0.0rc1). Upgrading from 0.4.0: read the three release-candidate entries below.
+
+The candidates ran against every source's live API daily and were used by a reference consumer
+the author built; no outside user has reported on them yet.
 
 ### Documentation
 - **eSett:** FI intervals are first published with a price of `0.0` and settled about an hour later; the API contract lists it as a known limitation.
