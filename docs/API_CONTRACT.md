@@ -326,8 +326,10 @@ bidding zone, product, direction, and 15-minute UTC interval:
   and then raise `RateLimitError` (or immediately when `Retry-After` exceeds
   300 seconds). `Retry-After` delay-seconds accepts ASCII digits with an optional
   decimal fraction; HTTP-date values are converted to a delay, and missing or
-  malformed values use the default 10-second delay. HTTP 502/504,
-  timeouts, dropped connections and undecodable response bodies are retried within
+  malformed values use the default 10-second delay. HTTP 502, 504, 527 and 599
+  (gateway errors; the ENTSO-E gateway was seen answering 599 for a connect timeout
+  and 527 for an interrupted connection), timeouts, dropped connections and
+  undecodable response bodies are retried within
   the same `max_retries` budget and then raise `SourceError`. Every client raises
   `ValueError` at construction for a `base_url` that is not an absolute http or https
   URL or that contains a user name or password; `EntsoeClient` and `FingridClient`,
@@ -511,6 +513,21 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   and `tests/test_energidataservice_imbalance.py::test_rejects_malformed_records`.
   `DominatingDirection=null` becomes `None`
   (`tests/test_energidataservice_imbalance.py::test_null_dominating_direction_is_none`).
+- **Accepted (part of the contract).** Energi Data Service: while an interval's
+  `ImbalancePriceEUR` is still `null`, `aFRRVWAUpEUR` and `aFRRVWADownEUR` are often
+  `0.0` and can change later. In polls every 15 minutes from 24 October to 3 November
+  2026, 847 of 1,481 such zeros (counted per interval, zone and direction) changed to a
+  non-zero price when the imbalance price appeared, and the rest stayed `0.0`, which is
+  also a normal settled value. The library returns them as published. Treat a `0.0` in
+  `afrr_up_vwa_eur` or `afrr_down_vwa_eur` as unknown while `imbalance_price_eur` is
+  `None`; a set imbalance price does not guarantee they are final.
+- **Accepted (part of the contract).** Fingrid mFRR capacity: a whole delivery day can
+  read 0 EUR/MW, with 0 MW in one or both directions. The hours from 2026-10-16T22:00Z
+  to 2026-10-17T22:00Z read 0 EUR/MW in both directions, with 0 MW up and 650 MW down,
+  when first polled on 2026-10-24, and the procured prices and volumes when polled on
+  2026-10-30; the hours from 2025-12-11T22:00Z to 2025-12-12T22:00Z read 0 MW at
+  0 EUR/MW in both directions on 2026-11-03. Nothing in the datasets tells such a day apart from a
+  day without procurement, so the library returns the zeros as published.
 - **Accepted (part of the contract).** SvK: `SvKClient` filters on every
   quarter-hour `start_time_utc` of the requested hours, so a move to 15-minute
   rows is fetched rather than filtered out; any record whose `start_time_utc`
