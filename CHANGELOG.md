@@ -6,6 +6,9 @@ is listed here.
 
 ## 1.1.0 — unreleased
 
+### Added
+- `reconcile_reserve_capacity`, `CapacityDivergence`, `CapacityReconciliationReport` and `DivergenceKind.VOLUME` classify reserve capacity price, volume and coverage differences between sources.
+
 ### Fixed
 - HTTP 527 and 599 are retried like 502 and 504, within `max_retries`, by every client instead of raising `SourceError` on the first attempt. The ENTSO-E gateway was seen answering 599 for a connect timeout and 527 for an interrupted connection.
 
