@@ -14,7 +14,9 @@ from nordic_balancing.errors import RateLimitError, SourceError
 # Throttling: exhausting the retries raises RateLimitError.
 _RATE_LIMIT_STATUSES = frozenset({429, 503})
 # Transient gateway failures: retried, then reported as an ordinary HTTP error.
-_TRANSIENT_STATUSES = frozenset({502, 504})
+# The ENTSO-E gateway answers 599 for a connect timeout and 527 for an
+# interrupted connection.
+_TRANSIENT_STATUSES = frozenset({502, 504, 527, 599})
 _TRANSIENT_ERRORS = (
     httpx.TimeoutException,
     httpx.NetworkError,

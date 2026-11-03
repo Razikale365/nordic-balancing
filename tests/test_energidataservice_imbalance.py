@@ -158,7 +158,7 @@ def test_rejects_bad_retry_budget(retries: Any) -> None:
         EnergiDataServiceClient(max_retries=retries)
 
 
-@pytest.mark.parametrize("status", [502, 504])
+@pytest.mark.parametrize("status", [502, 504, 527, 599])
 def test_retries_transient_gateway_errors(status: int) -> None:
     responses = iter([httpx.Response(status), eds_page([PUBLISHED])])
     sleeps: list[float] = []
@@ -167,7 +167,7 @@ def test_retries_transient_gateway_errors(status: int) -> None:
     assert sleeps == [10.0]
 
 
-@pytest.mark.parametrize("status", [502, 504])
+@pytest.mark.parametrize("status", [502, 504, 527, 599])
 def test_exhausted_gateway_errors_are_source_errors_not_rate_limits(status: int) -> None:
     calls: list[httpx.Request] = []
 

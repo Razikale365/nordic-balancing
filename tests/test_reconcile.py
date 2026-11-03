@@ -308,7 +308,7 @@ def test_same_key_in_both_inputs_is_not_a_duplicate() -> None:
     assert report.compared == 1
 
 
-@pytest.mark.parametrize("tolerance", [-0.5, float("nan"), float("inf"), True])
+@pytest.mark.parametrize("tolerance", [-0.5, float("nan"), float("inf"), True, 10**309, -(10**309)])
 def test_invalid_tolerance_rejected(tolerance: float) -> None:
     with pytest.raises(ValueError, match="tolerance_eur"):
         reconcile_imbalance_prices([record("a")], [record("b")], tolerance_eur=tolerance)

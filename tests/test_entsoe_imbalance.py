@@ -560,7 +560,7 @@ def test_entsoe_client_rejects_an_unsafe_base_url(base_url: str, match: str) -> 
 # --- Token redaction and logging ---------------------------------------------------------------
 
 
-@pytest.mark.parametrize("status", [401, 403, 500])
+@pytest.mark.parametrize("status", [401, 403, 500, 527, 599])
 def test_http_errors_include_status_and_redact_token(status: int) -> None:
     with pytest.raises(SourceError, match=f"entsoe: HTTP {status}") as caught:
         entsoe_client(
@@ -621,7 +621,7 @@ def test_parallel_requests_raise_the_first_failing_job_with_token_redacted() -> 
     assert ENTSOE_KEY not in str(caught.value)
 
 
-@pytest.mark.parametrize("status", [200, 400, 401, 500])
+@pytest.mark.parametrize("status", [200, 400, 401, 500, 599])
 def test_redacts_tokens_before_error_text_truncation(status: int) -> None:
     secret = ENTSOE_KEY + "-0123456789abcdef"
     detail = "x" * 185 + secret + " rejected"
@@ -900,6 +900,42 @@ def test_retries_429_then_parses() -> None:
     )
     assert sleeps == [2.5]
     assert len(prices) == 4
+
+
+# The gateway's own error body, as returned for a connect timeout and an interrupted connection.
+GATEWAY_ERROR = (
+    '{"uuAppErrorMap":{"uu-gateway-router/connectTimeout":{"type":"error",'
+    '"message":"Unable to access service."}}}'
+)
+
+
+@pytest.mark.parametrize("status", [502, 504, 527, 599])
+def test_retries_gateway_errors_then_parses(status: int) -> None:
+    responses = iter(
+        [httpx.Response(status, text=GATEWAY_ERROR), httpx.Response(200, text=ONE_HOUR)]
+    )
+    sleeps: list[float] = []
+    prices = entsoe_client(lambda _: next(responses), sleeps).imbalance_prices(
+        START, END, [BiddingZone.SE3]
+    )
+    assert sleeps == [10.0]
+    assert len(prices) == 4
+
+
+@pytest.mark.parametrize("status", [527, 599])
+def test_exhausted_gateway_errors_raise_source_error_with_status(status: int) -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(status, text=GATEWAY_ERROR)
+
+    sleeps: list[float] = []
+    with pytest.raises(SourceError, match=f"entsoe: HTTP {status}") as caught:
+        entsoe_client(handler, sleeps).imbalance_prices(START, END, [BiddingZone.SE3])
+    assert not isinstance(caught.value, RateLimitError)
+    assert len(calls) == 4
+    assert sleeps == [10.0, 10.0, 10.0]
 
 
 def test_retry_budget_is_bounded_and_reports_source() -> None:

@@ -56,10 +56,12 @@ from nordic_balancing import (
     ESettClient,
     FingridClient,
     ImbalancePrice,
+    ReserveCapacity,
     ReserveProduct,
     SourceError,
     SvKClient,
     reconcile_imbalance_prices,
+    reconcile_reserve_capacity,
 )
 from nordic_balancing.sources import energidataservice, entsoe, fingrid
 
@@ -467,6 +469,109 @@ def test_reconcile_swapping_arguments_swaps_missing_counts(
     reverse_counts = reverse.counts()
     for kind in DivergenceKind:
         assert counts.get(kind, 0) == reverse_counts.get(swapped.get(kind, kind), 0)
+
+
+@st.composite
+def _capacity_series(
+    draw: st.DrawFn,
+    source: str,
+    keys: list[tuple[BiddingZone, ReserveProduct, Direction, datetime]] | None = None,
+) -> list[ReserveCapacity]:
+    if keys is None:
+        keys = draw(st.lists(_capacity_key(), unique=True, min_size=1, max_size=8))
+    return [
+        ReserveCapacity(
+            start=start,
+            zone=zone,
+            product=product,
+            direction=direction,
+            price_eur_per_mw=draw(st.one_of(st.none(), st.floats(-1000, 1000))),
+            volume_mw=draw(st.one_of(st.none(), st.floats(0, 2000))),
+            source=source,
+            resolution=draw(st.sampled_from((INTERVAL, HOUR))),
+            raw={},
+        )
+        for zone, product, direction, start in keys
+    ]
+
+
+def _capacity_key() -> st.SearchStrategy[tuple[BiddingZone, ReserveProduct, Direction, datetime]]:
+    return st.tuples(
+        st.sampled_from(BiddingZone),
+        st.sampled_from(ReserveProduct),
+        st.sampled_from(Direction),
+        st.datetimes(
+            min_value=datetime(2020, 1, 1),
+            max_value=datetime(2030, 1, 1),
+            timezones=st.just(UTC),
+        ),
+    )
+
+
+@st.composite
+def _capacity_series_pair(
+    draw: st.DrawFn,
+) -> tuple[list[ReserveCapacity], list[ReserveCapacity]]:
+    shared = draw(st.lists(_capacity_key(), unique=True, min_size=1, max_size=6))
+    primary_only = [
+        k for k in draw(st.lists(_capacity_key(), unique=True, max_size=4)) if k not in shared
+    ]
+    taken = {*shared, *primary_only}
+    reference_only = [
+        k for k in draw(st.lists(_capacity_key(), unique=True, max_size=4)) if k not in taken
+    ]
+    return (
+        draw(_capacity_series("a", shared + primary_only)),
+        draw(_capacity_series("b", shared + reference_only)),
+    )
+
+
+@given(records=_capacity_series("a"))
+@settings(max_examples=30, deadline=None)
+def test_reconcile_capacity_identical_input_has_no_divergences(
+    records: list[ReserveCapacity],
+) -> None:
+    report = reconcile_reserve_capacity(records, records)
+    assert report.compared == len(records)
+    assert report.identical == report.compared
+    assert report.divergences == ()
+
+
+@given(series=_capacity_series_pair())
+@settings(max_examples=30, deadline=None)
+def test_reconcile_capacity_swapping_arguments_swaps_missing_counts(
+    series: tuple[list[ReserveCapacity], list[ReserveCapacity]],
+) -> None:
+    primary, reference = series
+    forward = reconcile_reserve_capacity(primary, reference)
+    reverse = reconcile_reserve_capacity(reference, primary)
+    primary_keys = {(r.zone, r.product, r.direction, r.start) for r in primary}
+    reference_keys = {(r.zone, r.product, r.direction, r.start) for r in reference}
+    common_zones = {k[0] for k in primary_keys} & {k[0] for k in reference_keys}
+    common_products = {k[1] for k in primary_keys} & {k[1] for k in reference_keys}
+    compared_keys = {
+        k for k in primary_keys | reference_keys if k[0] in common_zones and k[1] in common_products
+    }
+    counts = forward.counts()
+    assert forward.compared == reverse.compared == len(compared_keys)
+    assert forward.identical == reverse.identical
+    assert counts.get(DivergenceKind.MISSING_IN_REFERENCE, 0) == len(
+        (primary_keys - reference_keys) & compared_keys
+    )
+    assert counts.get(DivergenceKind.MISSING_IN_PRIMARY, 0) == len(
+        (reference_keys - primary_keys) & compared_keys
+    )
+    swapped = {
+        DivergenceKind.MISSING_IN_PRIMARY: DivergenceKind.MISSING_IN_REFERENCE,
+        DivergenceKind.MISSING_IN_REFERENCE: DivergenceKind.MISSING_IN_PRIMARY,
+    }
+    reverse_counts = reverse.counts()
+    for kind in DivergenceKind:
+        assert counts.get(kind, 0) == reverse_counts.get(swapped.get(kind, kind), 0)
+    assert forward.primary_only_zones == reverse.reference_only_zones
+    assert forward.reference_only_zones == reverse.primary_only_zones
+    assert forward.primary_only_products == reverse.reference_only_products
+    assert forward.reference_only_products == reverse.primary_only_products
 
 
 @dataclass(frozen=True, slots=True)

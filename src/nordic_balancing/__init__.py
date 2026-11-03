@@ -14,10 +14,13 @@ from nordic_balancing.models import (
     ReserveProduct,
 )
 from nordic_balancing.reconcile import (
+    CapacityDivergence,
+    CapacityReconciliationReport,
     Divergence,
     DivergenceKind,
     ReconciliationReport,
     reconcile_imbalance_prices,
+    reconcile_reserve_capacity,
 )
 from nordic_balancing.sources import (
     EnergiDataServiceClient,
@@ -33,6 +36,8 @@ __all__ = [
     "CHANGES",
     "INTERVAL",
     "BiddingZone",
+    "CapacityDivergence",
+    "CapacityReconciliationReport",
     "Direction",
     "Divergence",
     "DivergenceKind",
@@ -52,5 +57,6 @@ __all__ = [
     "__version__",
     "changes_between",
     "reconcile_imbalance_prices",
+    "reconcile_reserve_capacity",
     "to_frame",
 ]
