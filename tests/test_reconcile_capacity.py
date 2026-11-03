@@ -327,7 +327,20 @@ def test_mixed_sources_duplicates_and_wrong_types_rejected(label: str) -> None:
 
 @pytest.mark.parametrize("name", ["tolerance_eur_per_mw", "tolerance_mw"])
 @pytest.mark.parametrize(
-    "value", [-0.5, float("nan"), float("inf"), -float("inf"), True, False, None, "0.01", 1j]
+    "value",
+    [
+        -0.5,
+        float("nan"),
+        float("inf"),
+        -float("inf"),
+        True,
+        False,
+        None,
+        "0.01",
+        1j,
+        10**309,
+        -(10**309),
+    ],
 )
 def test_invalid_tolerances_rejected(name: str, value: Any) -> None:
     with pytest.raises(ValueError, match=f"^{name} must be a finite non-negative number$"):

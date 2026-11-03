@@ -12,6 +12,8 @@ is listed here.
 ### Fixed
 - HTTP 527 and 599 are retried like 502 and 504, within `max_retries`, by every client instead of raising `SourceError` on the first attempt. The ENTSO-E gateway was seen answering 599 for a connect timeout and 527 for an interrupted connection.
 
+- `reconcile_imbalance_prices` raises `ValueError` for an integer `tolerance_eur` too large to convert to a float, as for any other invalid tolerance, instead of `OverflowError`.
+
 ### Documentation
 - **Energi Data Service:** `afrr_up_vwa_eur` and `afrr_down_vwa_eur` can read `0.0` while the imbalance price is still `None` and be filled in later; the API contract lists it as a known limitation.
 - **Fingrid:** a delivery day of mFRR capacity can read 0 EUR/MW, with 0 MW in one or both directions, and be corrected about two weeks later; the API contract lists it as a known limitation.

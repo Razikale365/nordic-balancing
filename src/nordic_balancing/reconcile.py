@@ -82,6 +82,18 @@ class ReconciliationReport:
         return dict(Counter(d.kind for d in self.divergences))
 
 
+def _check_tolerance(name: str, tolerance: object) -> None:
+    """Raise ValueError unless ``tolerance`` is a finite non-negative int or float."""
+    if isinstance(tolerance, bool) or not isinstance(tolerance, int | float):
+        raise ValueError(f"{name} must be a finite non-negative number")
+    try:
+        finite = math.isfinite(tolerance)
+    except OverflowError:  # an int too large for a float
+        finite = False
+    if not finite or tolerance < 0:
+        raise ValueError(f"{name} must be a finite non-negative number")
+
+
 def reconcile_imbalance_prices(
     primary: Iterable[ImbalancePrice],
     reference: Iterable[ImbalancePrice],
@@ -102,13 +114,7 @@ def reconcile_imbalance_prices(
     The result describes differences; it never merges the series and never
     decides which source is right.
     """
-    if (
-        isinstance(tolerance_eur, bool)
-        or not isinstance(tolerance_eur, int | float)
-        or not math.isfinite(tolerance_eur)
-        or tolerance_eur < 0
-    ):
-        raise ValueError("tolerance_eur must be a finite non-negative number")
+    _check_tolerance("tolerance_eur", tolerance_eur)
     primary_source, primary_records = _index(primary, "primary")
     reference_source, reference_records = _index(reference, "reference")
     primary_zones = {zone for zone, _ in primary_records}
@@ -344,17 +350,8 @@ def reconcile_reserve_capacity(
     The result describes differences; it never merges the series and never
     decides which source is right.
     """
-    for name, tolerance in (
-        ("tolerance_eur_per_mw", tolerance_eur_per_mw),
-        ("tolerance_mw", tolerance_mw),
-    ):
-        if (
-            isinstance(tolerance, bool)
-            or not isinstance(tolerance, int | float)
-            or not math.isfinite(tolerance)
-            or tolerance < 0
-        ):
-            raise ValueError(f"{name} must be a finite non-negative number")
+    _check_tolerance("tolerance_eur_per_mw", tolerance_eur_per_mw)
+    _check_tolerance("tolerance_mw", tolerance_mw)
     primary_source, primary_records = _index_capacity(primary, "primary")
     reference_source, reference_records = _index_capacity(reference, "reference")
     primary_zones = {key[0] for key in primary_records}
