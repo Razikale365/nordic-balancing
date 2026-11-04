@@ -4,6 +4,11 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the public API is defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it
 is listed here.
 
+## Unreleased
+
+### Documentation
+- **Fingrid:** mFRR activation datasets 375/376 are the peak MW of each quarter hour, the downward one is published as negative values, and dominating direction 369 changes within the hour although it is described per hour; `examples/mfrr_activation` checks this on one 48-hour window.
+
 ## 1.1.0 — 2026-11-03
 
 Adds reserve capacity reconciliation and retries two more gateway statuses. Everything in
