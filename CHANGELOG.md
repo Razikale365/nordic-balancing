@@ -11,6 +11,7 @@ Documentation only; no code or behaviour changes.
 ### Documentation
 - **eSett:** the FI interim price of `0.0` appears about an hour after an interval ends, only for intervals starting on the hour or at a quarter past, and is replaced about two hours later. The API contract said two hours and one hour.
 - **Fingrid:** the zero-filled mFRR capacity day of 17 October 2026 was a day not yet filled in: ENTSO-E carried its prices and volumes throughout. The 1.1.0 entry below called it corrected.
+- **API contract:** a new section, "Value lifecycle", lists in one table every placeholder and partial value a source is known to return, what the library returns for it and how to tell.
 - **Source notes:** Svenska kraftnät's capacity rows for a delivery day first appear after the day has started; an imbalance interval can stay unpublished for days at every source at once; Energi Data Service published two mFRR capacity days in October 2026 after delivery.
 
 ## 1.1.0 — 2026-11-03
