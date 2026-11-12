@@ -33,6 +33,10 @@ Observed 2026-10-09 unless noted; file references are under
 - vs eSett, DK 2025-03-10: 62/192 dominating-direction disagreements with
   identical prices; the cause is a hypothesis
   (`examples/reconciliation/README.md`).
+- `mFRRCapacityMarket` (DK1, DK2) is normally published at about 07:45Z on the day
+  before delivery. The delivery days 2026-10-29 and 2026-10-30 were absent from hourly
+  polls up to and through delivery, in both directions, and were first seen on
+  2026-11-03T03:30Z.
 
 ### eSett
 
@@ -44,6 +48,11 @@ Observed 2026-10-09 unless noted; file references are under
   mFRR EAM go-live on 2025-03-04 (`examples/mfrr_transition/README.md`).
 - Trailing unpublished intervals arrive as records with a null price, not as
   missing rows (`examples/entsoe_py_comparison/REPORT.md`, section 4).
+- An interval can stay unpublished for days at every source at once. In polls from
+  24 October to 8 November 2026, the interval starting 2026-10-30T14:30Z was still
+  missing 48 hours after it ended in all 12 zones, and at Energi Data Service, ENTSO-E
+  and Fingrid too; 2026-11-03T15:45Z took 17 to 41 hours and 2026-11-06T15:30Z more
+  than 44.
 
 ### Fingrid
 
@@ -64,6 +73,10 @@ Observed 2026-10-09 unless noted; file references are under
 - One hourly record per zone and direction (up/down), repeated over quarters;
   `price_unit EUR-MW` and `volume_unit MW` are enforced.
 - Queries filter on explicit hour lists, chunked at 168 h.
+- A delivery day's rows (23:00Z to 23:00Z) first appear at about 02:00Z on that day,
+  after its first hours have begun. In hourly polls for delivery from 1 to 7 November
+  2026, 17 % of the mFRR and 20 % of the aFRR quarter-hours were first seen after
+  delivery had started.
 
 ### ENTSO-E Transparency Platform
 
