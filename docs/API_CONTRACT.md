@@ -284,11 +284,15 @@ bidding zone, product, direction, and 15-minute UTC interval:
   an interval whose spot price is exactly `0.0` cannot be told apart and is returned
   as a settled `0.0`; none was seen in 2025-2026.
   Known limitation, accepted: eSett FI (since at least October 2026) first
-  publishes an interval with `imblSalesPrice` `0.0` about two hours after it ends
-  and replaces it with the settled price about an hour later; that interim `0.0`
-  is returned as a price. No column tells it apart from a settled `0.0`, which FI
-  has dozens of times a month. For FI prices in the first three hours, use Fingrid
-  or ENTSO-E, which publish the settled price from the start.
+  publishes part of its intervals with `imblSalesPrice` `0.0` about an hour after
+  they end and replaces it with the settled price about two hours later; that
+  interim `0.0` is returned as a price. In polls every 15 minutes from 25 October
+  to 7 November 2026 this happened only for intervals starting on the hour (325 of
+  336) or at a quarter past (237 of 336), never for the other two (0 of 671), which
+  got the settled price directly, 75 to 105 minutes after they ended. No column
+  tells the interim `0.0` apart from a settled `0.0`, which FI has dozens of times
+  a month. For FI prices in the first three hours, use Fingrid or ENTSO-E, which
+  publish the settled price from the start.
 - **Numbers**: numeric source values must be finite JSON numbers convertible to
   `float` (`bool`, `NaN`, and infinities are rejected with `SourceError`).
   ENTSO-E XML values must be ASCII `xs:decimal` text and positions ASCII
@@ -554,9 +558,13 @@ Every item below is classified for `1.0.0` as `accepted (part of the contract)` 
   read 0 EUR/MW, with 0 MW in one or both directions. The hours from 2026-10-16T22:00Z
   to 2026-10-17T22:00Z read 0 EUR/MW in both directions, with 0 MW up and 650 MW down,
   when first polled on 2026-10-24, and the procured prices and volumes when polled on
-  2026-10-30; the hours from 2025-12-11T22:00Z to 2025-12-12T22:00Z read 0 MW at
-  0 EUR/MW in both directions on 2026-11-03. Nothing in the datasets tells such a day apart from a
-  day without procurement, so the library returns the zeros as published.
+  2026-10-30. ENTSO-E's mFRR series for FI had carried those same prices and volumes
+  since 2026-10-24, in all 96 quarter-hours and both directions, so that day's zeros
+  were values Fingrid had not filled in yet. The hours from 2025-12-11T22:00Z to
+  2025-12-12T22:00Z read 0 MW at 0 EUR/MW in both directions on 2026-11-03. Nothing in
+  Fingrid's datasets tells such a day apart from a day without procurement, so the
+  library returns the zeros as published; where it matters, compare with
+  `EntsoeClient.capacity_market` using `reconcile_reserve_capacity`.
 - **Accepted (part of the contract).** SvK: `SvKClient` filters on every
   quarter-hour `start_time_utc` of the requested hours, so a move to 15-minute
   rows is fetched rather than filtered out; any record whose `start_time_utc`
