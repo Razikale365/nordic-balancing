@@ -15,6 +15,7 @@
     "ImbalancePrice",
     "MarketChange",
     "NordicBalancingError",
+    "PlaceholderPattern",
     "RateLimitError",
     "ReconciliationReport",
     "ReserveCapacity",
@@ -23,6 +24,7 @@
     "SvKClient",
     "__version__",
     "changes_between",
+    "placeholder_pattern",
     "reconcile_imbalance_prices",
     "reconcile_reserve_capacity",
     "to_frame"
@@ -353,6 +355,19 @@
       "methods": {},
       "properties": {}
     },
+    "PlaceholderPattern": {
+      "attributes": {},
+      "bases": [
+        "StrEnum"
+      ],
+      "kind": "enum",
+      "members": {
+        "EDS_AFRR_AVERAGE": "eds_afrr_average",
+        "ENTSOE_LONE_PLACEHOLDER": "entsoe_lone_placeholder"
+      },
+      "methods": {},
+      "properties": {}
+    },
     "RateLimitError": {
       "attributes": {},
       "bases": [
@@ -485,6 +500,10 @@
     "changes_between": {
       "kind": "function",
       "signature": "(start: datetime.datetime, end: datetime.datetime, zones: collections.abc.Iterable[nordic_balancing.models.BiddingZone] | None = None) -> list[nordic_balancing.changes.MarketChange]"
+    },
+    "placeholder_pattern": {
+      "kind": "function",
+      "signature": "(record: nordic_balancing.models.ImbalancePrice | nordic_balancing.models.ReserveCapacity) -> nordic_balancing.lifecycle.PlaceholderPattern | None"
     },
     "reconcile_imbalance_prices": {
       "kind": "function",
