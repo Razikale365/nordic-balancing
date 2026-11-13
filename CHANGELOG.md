@@ -4,7 +4,11 @@ All notable changes to this project. Versions follow [PEP 440](https://peps.pyth
 the public API is defined in [docs/API_CONTRACT.md](docs/API_CONTRACT.md), and any change to it
 is listed here.
 
-## Unreleased
+## 1.2.0 — 2026-11-13
+
+Marks the one placeholder the ENTSO-E client keeps as data, adds a helper that names the
+placeholder pattern a record fits, and documents when a returned value is not final.
+No returned value changes; everything in 1.1.0 keeps working as documented.
 
 ### Added
 - ENTSO-E mFRR capacity records built from a lone zero/zero placeholder Period carry `raw["lone_placeholder"] = True`; the key is absent from every other record. When repeats of a key have equal values, the record without the key is kept. No returned value changes.

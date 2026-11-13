@@ -75,7 +75,7 @@ The full text is in [docs/API_CONTRACT.md](https://github.com/Razikale365/nordic
 
 - **Exact windows.** Timezone-aware `[start, end)` in, exactly the intervals starting in it out.
 - **No gap filling.** An interval the source did not return is absent; a value it has not
-  published is `None`, never `0`.
+  published is `None`. The library never fills in a `0` of its own.
 - **Duplicates raise**, even with equal values, except for a few documented source patterns.
 - **Pagination is checked** against the total the source reports.
 - **Numbers are validated**: finite JSON numbers only.
@@ -87,6 +87,10 @@ The full text is in [docs/API_CONTRACT.md](https://github.com/Razikale365/nordic
 two sources by kind (rounding, price, volume, direction, resolution, missing, unpublished).
 The capacity function compares each product and direction separately. Neither function
 merges series or picks a winner.
+
+A source can itself send a number in place of a value it has not filled in yet. The known
+cases are listed under "Value lifecycle" in the API contract, and `placeholder_pattern(record)`
+names the two that show in a single record.
 
 ## What it has found in the real data
 
@@ -116,7 +120,7 @@ All observed source behaviour, with dates, is in [docs/SOURCE_NOTES.md](https://
 
 ## Status
 
-Stable: `1.1.0` on [PyPI](https://pypi.org/project/nordic-balancing/), installed with
+Stable: `1.2.0` on [PyPI](https://pypi.org/project/nordic-balancing/), installed with
 `pip install nordic-balancing`. The public API is pinned by a snapshot test against
 [docs/API_CONTRACT.md](https://github.com/Razikale365/nordic-balancing/blob/main/docs/API_CONTRACT.md)
 and follows Semantic Versioning. Every source is checked against its live API daily. Performance, including a comparison with entsoe-py and
