@@ -345,6 +345,38 @@ bidding zone, product, direction, and 15-minute UTC interval:
   caller-supplied HTTP client open, although Fingrid closes its own authenticated
   wrapper.
 
+### Value lifecycle: when a returned value is not final
+
+Every source serves only its current values, so a record shows what the source held at the
+moment of the request. A value can be in one of four states, and the library can tell them
+apart only where the source does:
+
+- **Unpublished**: the source has no value yet. The record is absent, or the field is `None`.
+- **Placeholder**: the source returns a number that stands in for a value it has not filled in.
+- **Partial**: the value is real but incomplete, and a known later step will change it.
+- **Published**: none of the above. A published value can still be changed by the source
+  later (a revision); no source says when or why. In polls from 24 October to 11 November
+  2026, imbalance prices were revised between two hours and ten days after they first
+  appeared.
+
+The table lists every placeholder and partial value known so far, what the library returns for
+it, and how a caller can tell. Each row is described in full elsewhere in this document.
+
+| Source and field | What the source returns | What the library returns | How to tell |
+|---|---|---|---|
+| eSett, DK1/DK2 imbalance prices | Placeholder: `0.0` in every price column, with a spot difference that is not exactly `0` | `None` | Nothing to do. If the spot price is exactly `0.0` the placeholder is returned as `0.0`: compare with Energi Data Service. |
+| eSett, FI imbalance price | Placeholder: `0.0` about an hour after the interval ends, replaced about two hours later | `0.0` | Compare with Fingrid or ENTSO-E, which have the settled price from the start. |
+| Energi Data Service, `afrr_up_vwa_eur` and `afrr_down_vwa_eur` | Placeholder: often `0.0` while the imbalance price is still null | `0.0` | Treat as unknown while `imbalance_price_eur` is `None`. |
+| Energi Data Service, FCR-N and FCR-D price | Partial: the Total is the volume-weighted average of the auctions cleared so far | The Total as published | `raw["auctions"]` lists the auctions behind it; a later auction changes the Total. |
+| Fingrid, mFRR capacity | Placeholder: a whole delivery day at 0 EUR/MW, filled in later | The zeros as published | Compare with `EntsoeClient.capacity_market` using `reconcile_reserve_capacity`. |
+| ENTSO-E, mFRR capacity | Placeholder: a Period with one Point of quantity 0 and price 0 | Dropped when the same response has the real series for that zone, direction and Period; otherwise the zeros | Compare with the national source where there is one. |
+
+No placeholder or partial value is known for Fingrid or ENTSO-E imbalance prices, for
+Svenska kraftnät, or for the other Energi Data Service capacity datasets. A zero from any
+source that another source contradicts at the same moment is more likely a placeholder than
+a price: `reconcile_imbalance_prices` and `reconcile_reserve_capacity` report such
+differences.
+
 ## Supported Python and dependencies
 
 - **Python**: every CPython release `>= 3.11` that is still under upstream support
