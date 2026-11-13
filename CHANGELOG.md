@@ -6,7 +6,9 @@ is listed here.
 
 ## Unreleased
 
-Documentation only; no code or behaviour changes.
+### Added
+- ENTSO-E mFRR capacity records built from a lone zero/zero placeholder Period carry `raw["lone_placeholder"] = True`; the key is absent from every other record. When repeats of a key have equal values, the record without the key is kept. No returned value changes.
+- `placeholder_pattern` and `PlaceholderPattern` name the placeholder pattern a single record matches (an Energi Data Service aFRR average of `0.0` with no imbalance price, or an ENTSO-E lone placeholder), or return `None`.
 
 ### Documentation
 - **eSett:** the FI interim price of `0.0` appears about an hour after an interval ends, only for intervals starting on the hour or at a quarter past, and is replaced about two hours later. The API contract said two hours and one hour.

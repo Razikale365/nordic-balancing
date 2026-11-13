@@ -5,6 +5,7 @@ from importlib.metadata import version
 from nordic_balancing.changes import CHANGES, MarketChange, changes_between
 from nordic_balancing.errors import NordicBalancingError, RateLimitError, SourceError
 from nordic_balancing.frame import to_frame
+from nordic_balancing.lifecycle import PlaceholderPattern, placeholder_pattern
 from nordic_balancing.models import (
     INTERVAL,
     BiddingZone,
@@ -48,6 +49,7 @@ __all__ = [
     "ImbalancePrice",
     "MarketChange",
     "NordicBalancingError",
+    "PlaceholderPattern",
     "RateLimitError",
     "ReconciliationReport",
     "ReserveCapacity",
@@ -56,6 +58,7 @@ __all__ = [
     "SvKClient",
     "__version__",
     "changes_between",
+    "placeholder_pattern",
     "reconcile_imbalance_prices",
     "reconcile_reserve_capacity",
     "to_frame",

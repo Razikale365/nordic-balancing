@@ -14,8 +14,9 @@ The public API consists of:
   - Record and report dataclasses: `ImbalancePrice`, `ReserveCapacity`,
     `MarketChange`, `Divergence`, `ReconciliationReport`, `CapacityDivergence`,
     `CapacityReconciliationReport`.
-  - Enums: `BiddingZone`, `Direction`, `ReserveProduct`, `DivergenceKind`.
-  - Functions: `changes_between`, `reconcile_imbalance_prices`,
+  - Enums: `BiddingZone`, `Direction`, `ReserveProduct`, `DivergenceKind`,
+    `PlaceholderPattern`.
+  - Functions: `changes_between`, `placeholder_pattern`, `reconcile_imbalance_prices`,
     `reconcile_reserve_capacity`, `to_frame`.
   - Exceptions: `NordicBalancingError`, `SourceError`, `RateLimitError`.
   - Constants: `CHANGES`, `INTERVAL`, `__version__`.
@@ -160,7 +161,10 @@ raises `TypeError`. Read fields by attribute access.
   rule: exactly one Point, at position 1, with quantity 0 and price 0, and another
   non-placeholder TimeSeries in the **same response** must provide values for the
   same zone, direction and exact Period start/end. Without that counterpart, the
-  zero/zero series is kept as real data. Nonzero one-Point series, multiple-Point
+  zero/zero series is kept as real data, and each of its records carries
+  `raw["lone_placeholder"] = True`; the key is absent from every other record. If
+  repeats of the same key have equal values, the record without the key wins on
+  collapse: a real series that confirms 0/0 outranks the placeholder shape. Nonzero one-Point series, multiple-Point
   series and malformed series are not exempted. All source metadata and points
   are validated before filtering, independent of document/member order.
   Observed on delivery day **2025-06-05** (Period starts **2025-06-04T22:00Z**)
@@ -366,10 +370,20 @@ it, and how a caller can tell. Each row is described in full elsewhere in this d
 |---|---|---|---|
 | eSett, DK1/DK2 imbalance prices | Placeholder: `0.0` in every price column, with a spot difference that is not exactly `0` | `None` | Nothing to do. If the spot price is exactly `0.0` the placeholder is returned as `0.0`: compare with Energi Data Service. |
 | eSett, FI imbalance price | Placeholder: `0.0` about an hour after the interval ends, replaced about two hours later | `0.0` | Compare with Fingrid or ENTSO-E, which have the settled price from the start. |
-| Energi Data Service, `afrr_up_vwa_eur` and `afrr_down_vwa_eur` | Placeholder: often `0.0` while the imbalance price is still null | `0.0` | Treat as unknown while `imbalance_price_eur` is `None`. |
+| Energi Data Service, `afrr_up_vwa_eur` and `afrr_down_vwa_eur` | Placeholder: often `0.0` while the imbalance price is still null | `0.0` | Treat as unknown while `imbalance_price_eur` is `None`; `placeholder_pattern(record)` returns `PlaceholderPattern.EDS_AFRR_AVERAGE` for such a record. |
 | Energi Data Service, FCR-N and FCR-D price | Partial: the Total is the volume-weighted average of the auctions cleared so far | The Total as published | `raw["auctions"]` lists the auctions behind it; a later auction changes the Total. |
 | Fingrid, mFRR capacity | Placeholder: a whole delivery day at 0 EUR/MW, filled in later | The zeros as published | Compare with `EntsoeClient.capacity_market` using `reconcile_reserve_capacity`. |
-| ENTSO-E, mFRR capacity | Placeholder: a Period with one Point of quantity 0 and price 0 | Dropped when the same response has the real series for that zone, direction and Period; otherwise the zeros | Compare with the national source where there is one. |
+| ENTSO-E, mFRR capacity | Placeholder: a Period with one Point of quantity 0 and price 0 | Dropped when the same response has the real series for that zone, direction and Period; otherwise the zeros, with `raw["lone_placeholder"] = True` on each record | `placeholder_pattern(record)` returns `PlaceholderPattern.ENTSOE_LONE_PLACEHOLDER` for such a record. Compare with the national source where there is one. |
+
+`placeholder_pattern(record)` takes one `ImbalancePrice` or `ReserveCapacity` and returns the
+`PlaceholderPattern` the record fits, or `None`; any other argument raises `TypeError`. The
+patterns are `EDS_AFRR_AVERAGE` (an Energi Data Service record with `afrr_up_vwa_eur` or
+`afrr_down_vwa_eur` equal to `0.0` while `imbalance_price_eur` is `None`) and
+`ENTSOE_LONE_PLACEHOLDER` (an ENTSO-E record with `raw["lone_placeholder"]` set to `True`).
+A match means the record fits a known placeholder pattern, not that the value is wrong: an
+aFRR average of `0.0` often stays `0.0`, and a zero/zero day can be genuine. Patterns that
+need a second source or a later poll (eSett's Finnish `0.0`, Fingrid's zero day, a partial FCR
+total) cannot be seen in one record and are not covered.
 
 No placeholder or partial value is known for Fingrid or ENTSO-E imbalance prices, for
 Svenska kraftnät, or for the other Energi Data Service capacity datasets. A zero from any

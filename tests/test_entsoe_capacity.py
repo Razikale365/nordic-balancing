@@ -567,6 +567,76 @@ def test_entsoe_lone_placeholders_are_kept(zone: BiddingZone, copies: int) -> No
     assert {r.start for r in result} == {PLACEHOLDER_START + q * INTERVAL for q in range(96)}
     assert all(r.direction is Direction.UP and r.product is ReserveProduct.MFRR for r in result)
     assert all(r.price_eur_per_mw == 0.0 and r.volume_mw == 0.0 for r in result)
+    assert all(r.raw["lone_placeholder"] is True for r in result)
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
+def test_entsoe_records_beside_a_counterpart_carry_no_marker(zone: BiddingZone) -> None:
+    root, _, _ = placeholder_case(zone)
+    result = fetch_placeholder_case(ET.tostring(root), zone)
+    assert len(result) == 96
+    assert all("lone_placeholder" not in r.raw for r in result)
+
+
+@pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])
+def test_entsoe_ordinary_mfrr_response_carries_no_marker(zone: BiddingZone) -> None:
+    result = fetch_placeholder_case(placeholder_archive(zone), zone)
+    assert len(result) == 192
+    assert all("lone_placeholder" not in r.raw for r in result)
+
+
+def test_entsoe_fcr_one_point_zero_series_carries_no_marker() -> None:
+    root = ET.fromstring((FI_NO_FIXTURES.parent / "fcr" / "entsoe-no1.xml").read_bytes())
+    series = root.find("{*}TimeSeries")
+    assert series is not None
+    period = series.find("{*}Period")
+    assert period is not None
+    points = period.findall("{*}Point")
+    for point in points[1:]:
+        period.remove(point)
+    for field in ("quantity", "procurement_Price.amount"):
+        node = points[0].find(f"{{*}}{field}")
+        assert node is not None
+        node.text = "0"
+    start = datetime(2026, 10, 5, 22, tzinfo=UTC)
+    result = fi_no_entsoe_fetch(
+        ET.tostring(root), start=start, end=start + 3 * HOUR, product=ReserveProduct.FCR_N
+    )
+    assert len(result) == 12
+    assert all(r.price_eur_per_mw == r.volume_mw == 0.0 for r in result)
+    assert all("lone_placeholder" not in r.raw for r in result)
+
+
+@pytest.mark.parametrize("marked_first", [True, False])
+def test_entsoe_equal_values_prefer_the_unmarked_record(
+    monkeypatch: pytest.MonkeyPatch, marked_first: bool
+) -> None:
+    zone = BiddingZone.NO1
+    root, real, _ = placeholder_case(zone)
+    for point in real.findall("{*}Period/{*}Point"):
+        for field in ("quantity", "procurement_Price.amount"):
+            node = point.find(f"{{*}}{field}")
+            assert node is not None
+            node.text = "0"
+    root.remove(next(s for s in root.findall("{*}TimeSeries") if s is not real))
+    unmarked = fetch_placeholder_case(ET.tostring(root), zone)
+    root, real, _ = placeholder_case(zone)
+    root.remove(real)
+    marked = fetch_placeholder_case(ET.tostring(root), zone)
+    assert all("lone_placeholder" not in r.raw for r in unmarked)
+    assert all(r.raw["lone_placeholder"] is True for r in marked)
+    answers = iter([marked, unmarked] if marked_first else [unmarked, marked])
+    monkeypatch.setattr(entsoe, "_CAPACITY_CHUNK", 12 * HOUR)
+    monkeypatch.setattr(EntsoeClient, "_fetch_capacity", lambda *a, **k: next(answers))
+    with (
+        http_client(lambda request: httpx.Response(200)) as http,
+        EntsoeClient("test-token", http, max_workers=1) as client,
+    ):
+        result = client.capacity_market(
+            ReserveProduct.MFRR, PLACEHOLDER_START, PLACEHOLDER_END, zones=[zone]
+        )
+    assert len(result) == 96
+    assert all("lone_placeholder" not in r.raw for r in result)
 
 
 @pytest.mark.parametrize("zone", [BiddingZone.NO1, BiddingZone.FI])

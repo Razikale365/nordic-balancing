@@ -313,7 +313,15 @@ class EntsoeClient:
                             f"{SOURCE}: duplicate capacity with differing values for mFRR "
                             f"{record.zone} at {record.start} ({record.direction.name})"
                         )
-                    collected.setdefault(key, record)
+                    if existing is not None and (
+                        existing.raw.get("lone_placeholder") is True
+                        and record.raw.get("lone_placeholder") is not True
+                    ):
+                        # Equal values: a real series confirming them wins over the
+                        # lone placeholder shape.
+                        collected[key] = record
+                    else:
+                        collected.setdefault(key, record)
         except SourceError as exc:
             # The sanitized error is raised after the handler: inside it the new
             # error would keep the original as __context__, provider text and all.
@@ -397,8 +405,24 @@ class EntsoeClient:
                 else Direction.NONE
             )
             point_start = point.start.isoformat()
+            lone_placeholder = product is ReserveProduct.MFRR and point.capacity_placeholder
             for quarter in range(4):
                 # point.start is a plain UTC datetime (_time) and each raw is new and flat.
+                raw: dict[str, object] = {
+                    "zone": zone.value,
+                    "start": point_start,
+                    "resolution": point.resolution,
+                    "curveType": point.curve_type,
+                    "namespace": point.namespace,
+                    "quantity": point.quantity,
+                    "procurement_Price.amount": point.amount,
+                    "flow_direction": point.flow_direction,
+                    "businessType": "B95",
+                    "currency_Unit.name": "EUR",
+                    "quantity_Measure_Unit.name": "MAW",
+                }
+                if lone_placeholder:
+                    raw["lone_placeholder"] = True
                 records.append(
                     _owned_reserve_capacity(
                         start=point.start + quarter * INTERVAL,
@@ -409,19 +433,7 @@ class EntsoeClient:
                         volume_mw=point.quantity,
                         source=SOURCE,
                         resolution=_HOUR,
-                        raw={
-                            "zone": zone.value,
-                            "start": point_start,
-                            "resolution": point.resolution,
-                            "curveType": point.curve_type,
-                            "namespace": point.namespace,
-                            "quantity": point.quantity,
-                            "procurement_Price.amount": point.amount,
-                            "flow_direction": point.flow_direction,
-                            "businessType": "B95",
-                            "currency_Unit.name": "EUR",
-                            "quantity_Measure_Unit.name": "MAW",
-                        },
+                        raw=raw,
                     )
                 )
         return records
