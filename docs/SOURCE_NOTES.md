@@ -65,6 +65,14 @@ Observed 2026-10-09 unless noted; file references are under
   value before 2025-03-18T23:00Z and keeps the loser under
   `raw["<dataset>_superseded"]` (`fingrid.py`,
   `test_live_overlap_hour_uses_the_hourly_value_settled_by_esett`).
+- mFRR activation datasets 375/376 (total), 385/386 (scheduled) and 389/390 (direct) are
+  15-minute MW series from 2025-03-04. Fingrid describes 375/376 and 389/390 as the maximum
+  power of the quarter hour (385/386 do not say): not energy and not average power. The
+  downward datasets are published as zero or negative values, which the metadata does not
+  say (2026-06-17 to 2026-06-19: 147 values below zero, none above). Up and down peaks often
+  share a quarter (121 of 192). Dominating direction 369 is described per hour from activated
+  energy, but its values change within the hour, and it cannot always be derived from the
+  peaks (`examples/mfrr_activation/README.md`).
 
 ### Svenska kraftnät
 
