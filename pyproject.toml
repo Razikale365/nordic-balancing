@@ -53,7 +53,7 @@ benchmarks = [
     "psutil>=6.0",
 ]
 benchmarks-compare = [
-    "entsoe-py==0.8.1",
+    "entsoe-py==0.8.1; python_full_version >= '3.11.5'",
     "esett-py==0.1.0",
     "fingrid-py==0.2.0",
     "clarigrid==0.2.0",
