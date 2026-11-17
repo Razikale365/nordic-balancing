@@ -912,6 +912,63 @@ def test_entsoe_mfrr_identical_series_in_one_document_collapse(zone: BiddingZone
     assert result == fi_no_entsoe_fetch(fi_no_xml_member(zone), zone=zone)
 
 
+def shifted_member(days: int, extra_mw: float) -> bytes:
+    """The live NO1 member moved by whole days, with every quantity raised by ``extra_mw``."""
+    text = fi_no_xml_member().decode()
+    text = re.sub(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z",
+        lambda m: (datetime.strptime(m[0], "%Y-%m-%dT%H:%MZ") + timedelta(days=days)).strftime(
+            "%Y-%m-%dT%H:%MZ"
+        ),
+        text,
+    )
+    text = re.sub(
+        r"<quantity>([^<]+)</quantity>",
+        lambda m: f"<quantity>{float(m[1]) + extra_mw}</quantity>",
+        text,
+    )
+    return text.encode()
+
+
+@pytest.mark.parametrize("split", ["members", "chunks"])
+def test_entsoe_restarted_series_mrids_keep_every_day(split: str) -> None:
+    # ENTSO-E numbers TimeSeries mRIDs from 1 in every document (both members of the
+    # live NO1 archive use 1 and 2). Records are keyed by zone, start and direction,
+    # so a later day that reuses those mRIDs keeps its own values, whether it arrives
+    # in another member of the same response or in the response for another chunk.
+    first = fi_no_xml_member()
+    assert re.findall(rb"<TimeSeries>\s*<mRID>(\d+)</mRID>", first) == [b"1", b"2"]
+    days = 1 if split == "members" else 7
+    later = shifted_member(days, 1.0)
+    assert re.findall(rb"<TimeSeries>\s*<mRID>(\d+)</mRID>", later) == [b"1", b"2"]
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params["periodStart"])
+        if split == "members":
+            return httpx.Response(200, content=zip_members(first, later))
+        own = first if request.url.params["periodStart"] == "202610072200" else later
+        return httpx.Response(200, content=zip_members(own))
+
+    records = entsoe_client(handler, max_workers=1).capacity_market(
+        ReserveProduct.MFRR,
+        FI_NO_START,
+        FI_NO_START + timedelta(days=days + 1),
+        zones=(BiddingZone.NO1,),
+    )
+    one_day = fi_no_entsoe_fetch()
+    assert len(seen) == (1 if split == "members" else 2)
+    assert len(one_day) == 192
+    assert len(records) == 2 * len(one_day)
+    values = {(r.start, r.direction): (r.volume_mw, r.price_eur_per_mw) for r in records}
+    for record in one_day:
+        assert record.volume_mw is not None
+        key = (record.start, record.direction)
+        assert values[key] == (record.volume_mw, record.price_eur_per_mw)
+        later_key = (record.start + timedelta(days=days), record.direction)
+        assert values[later_key] == (record.volume_mw + 1.0, record.price_eur_per_mw)
+
+
 @pytest.mark.parametrize("zone,delivery_day,start", EARLY_DUPLICATE_FIXTURES)
 def test_entsoe_historical_identical_series_exact_values(
     zone: BiddingZone,
