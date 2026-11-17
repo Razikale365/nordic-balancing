@@ -14,6 +14,7 @@ with a deterministic price per timestamp. No network access is used.
 Run: uv run --with entsoe-py==0.8.1 python examples/entsoe_py_comparison/repro_issue_529.py
 """
 
+import importlib.metadata
 import io
 import zipfile
 from collections.abc import Mapping
@@ -27,6 +28,7 @@ from entsoe import EntsoePandasClient
 from nordic_balancing import EntsoeClient
 from nordic_balancing.models import BiddingZone
 
+ENTSOE_PY = importlib.metadata.version("entsoe-py")
 NS = "urn:iec62325.351:tc57wg16:451-6:balancingdocument:4:0"
 LOCAL = ZoneInfo("Europe/Stockholm")
 START = datetime(2023, 12, 30, tzinfo=LOCAL)
@@ -54,7 +56,7 @@ def a85_zip(start: datetime, end: datetime) -> bytes:
         cursor += QUARTER
     fmt = "%Y-%m-%dT%H:%MZ"
     xml = (
-        f'<Balancing_MarketDocument xmlns="{NS}">'
+        f'<Balancing_MarketDocument xmlns="{NS}"><type>A85</type>'
         "<TimeSeries>"
         "<currency_Unit.name>EUR</currency_Unit.name>"
         "<curveType>A01</curveType>"
@@ -139,7 +141,7 @@ def main() -> None:
 
     index, calls = run_entsoe_py()
     missing_py = expected_local.difference(index)
-    print("entsoe-py 0.8.1 EntsoePandasClient.query_imbalance_prices('SE_3'):")
+    print(f"entsoe-py {ENTSOE_PY} EntsoePandasClient.query_imbalance_prices('SE_3'):")
     print("  block queries issued (periodStart -> periodEnd, UTC):")
     for period_start, period_end in calls:
         print(f"    {period_start} -> {period_end}")
@@ -150,7 +152,7 @@ def main() -> None:
         "  => issue #529",
         "REPRODUCED: one row lost per year-block boundary"
         if reproduced
-        else "did NOT reproduce on entsoe-py 0.8.1",
+        else f"did NOT reproduce on entsoe-py {ENTSOE_PY}",
     )
     print()
 
